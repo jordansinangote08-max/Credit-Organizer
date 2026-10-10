@@ -1,5 +1,4 @@
 const KEY='sahodplan.v1';
-const KINDS={essential:'Rent / food / allowance',bill:'Utilities & bills',loan:'Installment loan',card:'Credit card',flex:'Can be cut'};
 // Starting data: only the installments. Everything else starts empty.
 // rev marks the data upgrades below as already applied, so they don't add creditors or cards back.
 const DEFAULTS={ver:2,salary:0,payday:24,thirteenth:0,efund:5000,buffer:2000,income:[],sources:[],accounts:[],rev:7,items:[
@@ -18,7 +17,7 @@ const SRC_TPL=[
 const clone=o=>JSON.parse(JSON.stringify(o));
 const $=s=>document.querySelector(s);
 const num=v=>{const n=parseFloat(v);return isFinite(n)?n:0};
-const peso=n=>'₱'+(Math.round(n*100)/100).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
+const peso=n=>{const v=Math.round(n*100)/100;return (v<0?'−₱':'₱')+Math.abs(v).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -95,6 +94,23 @@ function ensureLinks(){
     if(i.kind!=='card'||i.noAcct)return;
     if(i.acct&&S.accounts.some(a=>a.key===i.acct))return;
     const a={id:uid++,key:genKey(),name:i.name,last4:'',limit:null,stmt:null};S.accounts.push(a);i.acct=a.key;
+  });
+  ensureCats();
+}
+// ---------- categories ----------
+// Bills are grouped into your own categories. Each one has a color and counts as one of the
+// kinds above, which decides how its bills are treated (paid first, installments, cards…).
+const COLORS=['green','blue','orange','amber','purple','pink','teal','slate'];
+const KIND_OPTS=[['bill','Bills you must pay'],['essential','Essentials (rent, food)'],['loan','Installments'],['card','Credit cards'],['flex','Can be cut']];
+const CAT_DEFAULTS=[['loan','Installments','orange'],['card','Credit cards','blue'],['essential','Rent, food & allowance','green'],['bill','Utilities & bills','amber'],['flex','Can be cut','purple']];
+const catOf=i=>S.cats.find(c=>c.key===i.cat)||S.cats.find(c=>c.kind===i.kind);
+function newCat(kind){const d=CAT_DEFAULTS.find(x=>x[0]===kind)||[kind,'Bills','slate'];const c={key:genKey(),name:d[1],color:d[2],kind};S.cats.push(c);return c}
+// every bill sits in a category whose kind matches its own
+function ensureCats(){
+  if(!Array.isArray(S.cats)||!S.cats.length)S.cats=CAT_DEFAULTS.map(([kind,name,color])=>({key:genKey(),name,color,kind}));
+  S.items.forEach(i=>{
+    const c=S.cats.find(x=>x.key===i.cat);if(c&&c.kind===i.kind)return;
+    i.cat=(S.cats.find(x=>x.kind===i.kind)||newCat(i.kind)).key;
   });
 }
 const billOf=a=>S.items.find(i=>i.acct===a.key);
@@ -201,7 +217,7 @@ function renderTimeline(C){
       if(e.in){bal+=e.amt;return `<div class="ev in"><span class="nm">${esc(e.name)}</span><span class="r"><span class="a">+${peso(e.amt)}</span></span></div>`}
       bal-=e.l.need;const paid=isPaid(e.l.i);
       const pill=paid?'<span class="pill ok">Paid</span>':e.l.got>=e.l.need-0.004?'':e.l.got<0.005?'<span class="pill bad">No funds</span>':`<span class="pill warn">Short ${peso(e.l.need-e.l.got)}</span>`;
-      return `<div class="ev${paid?' paid':''}" data-k="${esc(e.l.i.kind)}"><span class="nm">${esc(e.l.i.name)}</span><span class="r">${pill}<span class="a">−${peso(e.l.need)}</span></span></div>`;
+      return `<div class="ev${paid?' paid':''}" data-c="${esc(catOf(e.l.i)?.color||'slate')}"><span class="nm"><span class="vh">${esc(catOf(e.l.i)?.name||'')}: </span>${esc(e.l.i.name)}</span><span class="r">${pill}<span class="a">−${peso(e.l.need)}</span></span></div>`;
     }).join('');
     return `<div class="day"><div class="d">${fmtD(d)}<small>${WD[d.getDay()]}</small></div><div>${rows}<div class="bal${bal<0?' neg':''}"><span>${bal<0?'Not enough on hand':'On hand after'}</span><span class="num">${peso(bal)}</span></div></div></div>`;
   }).join('')||'<p class="empty">Nothing scheduled.</p>';
@@ -209,43 +225,69 @@ function renderTimeline(C){
 
 // ---------- bills ----------
 let editingId=null;
-const GROUPS=[['loan','Installments'],['card','Credit cards'],['essential','Rent, food & allowance'],['bill','Utilities & bills'],['flex','Can be cut']];
+const catOptions=sel=>S.cats.map(c=>`<option value="${esc(c.key)}" ${c.key===sel?'selected':''}>${esc(c.name)}</option>`).join('');
 function itemForm(i){
   return `<div class="form" data-id="${i.id}">
-    <div class="field wide"><label for="n${i.id}">Name</label><input id="n${i.id}" data-k="name" value="${esc(i.name)}"></div>
-    <div class="field"><label for="k${i.id}">Type</label><select id="k${i.id}" data-k="kind">${Object.entries(KINDS).map(([k,v])=>`<option value="${k}" ${k===i.kind?'selected':''}>${v}</option>`).join('')}</select></div>
-    <div class="field"><label for="a${i.id}">${i.kind==='card'?'Statement amount':'Monthly amount'}</label><input id="a${i.id}" data-k="amount" type="number" step="0.01" min="0" value="${i.amount??''}"></div>
-    <div class="field"><label for="d${i.id}">Due day</label><input id="d${i.id}" data-k="day" type="number" min="1" max="31" value="${i.day??''}"></div>
-    ${i.kind==='loan'?`<div class="field"><label for="l${i.id}">Payments left</label><input id="l${i.id}" data-k="left" type="number" min="0" value="${i.left??''}"></div><div class="field"><label for="t${i.id}">Total payments</label><input id="t${i.id}" data-k="total" type="number" min="0" value="${i.total??''}"></div>`:''}
-    ${i.kind==='card'||i.kind==='loan'?`<div class="field"><label for="r${i.id}">Interest %/month</label><input id="r${i.id}" data-k="rate" type="number" step="0.01" min="0" value="${i.rate??''}"></div>`:''}
-    <div class="acts"><button class="danger" data-del="${i.id}">Remove</button><button class="btn" data-done="1">Done</button></div>
+    <div class="field wide"><label for="n${i.id}">Name</label><input id="n${i.id}" data-k="name" placeholder="e.g. Meralco" value="${esc(i.name)}"></div>
+    <div class="field wide"><label for="k${i.id}">Category</label><select id="k${i.id}" data-k="cat">${catOptions(catOf(i)?.key)}</select></div>
+    <div class="field"><label for="a${i.id}">${i.kind==='card'?'Statement amount':'Monthly amount'}</label><input id="a${i.id}" data-k="amount" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" value="${i.amount??''}"></div>
+    <div class="field"><label for="d${i.id}">Due day</label><input id="d${i.id}" data-k="day" type="number" inputmode="numeric" min="1" max="31" value="${i.day??''}"></div>
+    ${i.kind==='loan'?`<div class="field"><label for="l${i.id}">Payments left</label><input id="l${i.id}" data-k="left" type="number" inputmode="numeric" min="0" value="${i.left??''}"></div><div class="field"><label for="t${i.id}">Total payments</label><input id="t${i.id}" data-k="total" type="number" inputmode="numeric" min="0" value="${i.total??''}"></div>`:''}
+    ${i.kind==='card'||i.kind==='loan'?`<div class="field"><label for="r${i.id}">Interest %/month</label><input id="r${i.id}" data-k="rate" type="number" inputmode="decimal" step="0.01" min="0" value="${i.rate??''}"></div>`:''}
+    <div class="acts"><button class="danger" data-del="${i.id}">Remove bill</button><button class="btn" data-done="1">Done</button></div>
   </div>`;
 }
 function itemRow(i,start){
   const amt=num(i.amount),paid=isPaid(i),meta=[`<span>Due ${fmtD(dueOf(i,start))}</span>`];
   if(i.kind==='loan'&&num(i.left))meta.push(`<span>${num(i.left)} left</span>`);
   if(i.kind!=='card'&&i.bbLast4)meta.push(`<span>•••• ${esc(i.bbLast4)}</span>`);
-  if(i.kind==='card'){const a=acctOf(i);if(a){if(a.last4)meta.push(`<span>•••• ${esc(a.last4)}</span>`);if(a.stmt)meta.push(`<span>Statement ${ord(num(a.stmt))}</span>`);const L=num(a.limit);if(L>0&&amt>0){const p=amt/L*100;meta.push(`<span style="color:${p>50?'var(--bad)':p>30?'var(--warn)':'var(--ok)'}">${p.toFixed(0)}% of ${peso(L)} limit</span>`)}}}
-  if(paid)meta.unshift(`<span style="color:var(--ok);font-weight:600">Paid · clears in ${Math.max(1,Math.ceil((DAY-(Date.now()-num(i.paidAt)))/3600000))}h</span>`);
-  return `<div class="bill${paid?' done':''}"><div><div class="nm">${esc(i.name)}</div><div class="mt">${meta.join('')}</div></div>
+  if(i.kind==='card'){const a=acctOf(i);if(a){if(a.last4)meta.push(`<span>•••• ${esc(a.last4)}</span>`);if(a.stmt)meta.push(`<span>Statement ${ord(num(a.stmt))}</span>`);const L=num(a.limit);if(L>0&&amt>0){const p=amt/L*100;meta.push(`<span class="${p>50?'t-bad':p>30?'t-warn':'t-ok'}">${p.toFixed(0)}% of ${peso(L)} limit</span>`)}}}
+  if(paid)meta.unshift(`<span class="t-ok">Paid · clears in ${Math.max(1,Math.ceil((DAY-(Date.now()-num(i.paidAt)))/3600000))}h</span>`);
+  return `<div class="bill${paid?' done':''}"><div><div class="nm">${esc(i.name||'Untitled bill')}</div><div class="mt">${meta.join('')}</div></div>
     <div class="rt">${amt>0?`<span class="amt">${peso(amt)}</span>`:'<span class="pill warn">Add amount</span>'}
     <div class="bt">${paid?`<button class="ghost" data-unpaid="${i.id}">Undo</button>`:`<button class="ghost" data-edit="${i.id}">Edit</button>${amt>0?`<button class="paidbtn" data-paid="${i.id}">Paid</button>`:''}`}</div></div></div>`;
 }
 function renderItems(){
+  ensureCats();
   const start=cycleStart();
-  const hidden=S.items.filter(isHiddenPaid),open=S.items.filter(i=>!isHiddenPaid(i));
-  const vis=open.filter(i=>inCycle(i,start));
-  const html=GROUPS.map(([k,label])=>{
-    const its=vis.filter(i=>i.kind===k);if(!its.length)return '';
+  const hidden=S.items.filter(isHiddenPaid),vis=S.items.filter(i=>!isHiddenPaid(i)&&inCycle(i,start));
+  const html=S.cats.map(c=>{
+    const its=vis.filter(i=>i.cat===c.key);if(!its.length)return '';
     its.sort((a,b)=>(isPaid(a)-isPaid(b))||dueOf(a,start)-dueOf(b,start));
     const due=its.filter(i=>!isPaid(i)).reduce((s,i)=>s+num(i.amount),0);
-    return `<div class="grp" data-k="${k}"><div class="grp-h"><h3>${label}<span>${its.length}</span></h3><span class="sub">${peso(due)}</span></div>${its.map(i=>i.id===editingId?itemForm(i):itemRow(i,start)).join('')}</div>`;
+    return `<div class="grp" data-c="${esc(c.color)}"><div class="grp-h"><h3>${esc(c.name)}<span>${its.length}</span></h3><span class="sub">${peso(due)}</span></div>${its.map(i=>i.id===editingId?itemForm(i):itemRow(i,start)).join('')}</div>`;
   }).join('');
   const left=vis.filter(i=>!isPaid(i)).reduce((s,i)=>s+num(i.amount),0);
   $('#itemList').innerHTML=(html||'<p class="empty">Nothing left to pay this cycle.</p>')+
     `<div class="tot"><span>Still to pay</span><span>${peso(left)}</span></div>`+
     (hidden.length?`<details class="paidlist"><summary>Paid this cycle (${hidden.length})</summary><ul>${hidden.map(i=>`<li><span>${esc(i.name)}</span><span class="num">${peso(num(i.amount))}</span></li>`).join('')}</ul></details>`:'');
+  if($('#catDlg').open)renderCats();
 }
+
+// ---------- categories window ----------
+// One button opens a small window listing the categories; pick one to edit it, or add a new one.
+let catEditing=null,catDeleting=false;
+function renderCats(){
+  const box=$('#catBody'),c=S.cats.find(x=>x.key===catEditing);
+  if(!c){
+    $('#catTitle').textContent='Categories';
+    box.innerHTML=`<ul class="catlist">${S.cats.map(x=>{const n=S.items.filter(i=>i.cat===x.key).length;
+      return `<li data-c="${esc(x.color)}"><button class="catrow" data-catedit="${esc(x.key)}"><span class="dot"></span><span class="nm">${esc(x.name)}</span><span class="muted small">${n} bill${n===1?'':'s'}</span><span class="go" aria-hidden="true">Edit</span></button></li>`}).join('')}</ul>
+      <div class="dlg-acts"><button class="ghost" data-catnew="1">+ New category</button><button class="btn" data-catclose="1">Done</button></div>`;
+    return;
+  }
+  const n=S.items.filter(i=>i.cat===c.key).length,others=S.cats.filter(x=>x!==c);
+  $('#catTitle').textContent=c.name.trim()?'Edit category':'New category';
+  box.innerHTML=`<div class="catform" data-cat="${esc(c.key)}">
+    <div class="field"><label for="cn">Name</label><input id="cn" data-ck="name" value="${esc(c.name)}" placeholder="e.g. Subscriptions"></div>
+    <div class="field"><span id="ccl">Color</span><div class="swatches" role="group" aria-labelledby="ccl">${COLORS.map(k=>`<button class="sw" data-c="${k}" data-sw="${k}" aria-pressed="${k===c.color}" aria-label="${k[0].toUpperCase()+k.slice(1)}"></button>`).join('')}</div></div>
+    <div class="field"><label for="ck">Counts as</label><select id="ck" data-ck="kind">${KIND_OPTS.map(([k,v])=>`<option value="${k}" ${k===c.kind?'selected':''}>${v}</option>`).join('')}</select></div>
+    ${catDeleting?`<div class="confirm"><label for="cm">Move its ${n} bill${n===1?'':'s'} to</label><select id="cm">${others.map(x=>`<option value="${esc(x.key)}">${esc(x.name)}</option>`).join('')}</select><div class="row"><button class="btn danger-btn" data-catdelyes="1">Move and delete</button><button class="ghost" data-catdelno="1">Cancel</button></div></div>`
+      :`<div class="dlg-acts">${others.length?`<button class="danger" data-catdel="1">Delete</button>`:'<span></span>'}<button class="btn" data-catdone="1">Done</button></div>`}
+  </div>`;
+}
+function openCats(){catEditing=null;catDeleting=false;renderCats();$('#catDlg').showModal()}
+function closeCatEdit(){const c=S.cats.find(x=>x.key===catEditing);if(c&&!c.name.trim()){c.name='Untitled';save()}catEditing=null;catDeleting=false;renderItems();render();renderCats()}
 
 // ---------- installments ----------
 const ord=n=>{if(!n)return '?';const v=n%100;return n+((v>=11&&v<=13)?'th':({1:'st',2:'nd',3:'rd'}[n%10]||'th'))};
@@ -290,7 +332,7 @@ function renderIncome(){
     <input data-k="label" aria-label="What is it" placeholder="What is it?" value="${esc(x.label||'')}">
     <input data-k="amount" aria-label="Amount" type="number" inputmode="decimal" step="0.01" min="0" placeholder="₱0.00" value="${x.amount??''}">
     <input data-k="date" aria-label="Date it arrives" type="date" value="${esc(x.date||'')}">
-    <button class="x" data-incdel="${x.id}" aria-label="Remove">×</button>
+    <button class="x" data-incdel="${x.id}" aria-label="Remove ${esc(x.label||'this money')}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     <span class="tag ${t.c}" id="tag${x.id}">${t.t}</span></div>`}).join('')||'<p class="empty">No other money yet. Add one below.</p>';
   renderIncSum();
 }
@@ -376,7 +418,7 @@ function renderAhead(C){
     const d=shiftCycle(C.start,m);
     const ln=loans.filter(l=>(num(l.left)+(isPaid(l)?1:0))>m).reduce((s,l)=>s+num(l.amount),0);
     const free=Math.max(0,salary-ln-fixed),w=v=>(v/scale*100).toFixed(2)+'%';
-    rows+=`<div class="mrow"><span>${MON[d.getMonth()]} ${String(d.getFullYear()).slice(2)}</span><div class="track"><div class="seg loan" style="width:${w(ln)}"></div><div class="seg fixed" style="width:${w(fixed)}"></div><div class="seg free" style="width:${w(free)}"></div></div><span class="num" style="text-align:right">${peso(free)}</span></div>`;
+    rows+=`<div class="mrow"><span>${MON[d.getMonth()]} ${String(d.getFullYear()).slice(2)}</span><div class="track" role="img" aria-label="Installments ${peso(ln)}, rent and bills ${peso(fixed)}, free ${peso(free)}"><div class="seg loan" style="width:${w(ln)}"></div><div class="seg fixed" style="width:${w(fixed)}"></div><div class="seg free" style="width:${w(free)}"></div></div><span class="num" style="text-align:right">${peso(free)}</span></div>`;
   }
   $('#monthList').innerHTML=loans.length?rows:'<p class="empty">No installments listed.</p>';
 }
@@ -442,21 +484,61 @@ document.addEventListener('click',e=>{const g=e.target.closest('[data-goto]');if
 
 $('#itemList').addEventListener('input',e=>{
   const row=e.target.closest('.form');if(!row)return;const it=S.items.find(i=>i.id==row.dataset.id),k=e.target.dataset.k;if(!it||!k)return;
-  it[k]=k==='name'||k==='kind'?e.target.value:(e.target.value===''?null:num(e.target.value));
+  if(k==='cat'){const c=S.cats.find(x=>x.key===e.target.value);if(!c)return;it.cat=c.key;setKind(it,c.kind);ensureLinks();commit();renderItems();const f=$('#k'+it.id);f&&f.focus();return}
+  it[k]=k==='name'?e.target.value:(e.target.value===''?null:num(e.target.value));
   if(k==='name'){const a=acctOf(it);if(a)a.name=it.name}
   if(k==='day')delete it.bbDue;
-  if(k==='kind'&&it.kind==='card'){delete it.noAcct;ensureLinks()}
-  commit();if(k==='kind'){renderItems();const f=$('#k'+it.id);f&&f.focus()}
+  commit();
 });
+// moving a bill into a category of another kind makes it that kind of bill
+function setKind(it,kind){
+  if(it.kind===kind)return;
+  if(it.kind==='card'&&kind!=='card'){delete it.acct;it.noAcct=true}
+  if(kind==='card')delete it.noAcct;
+  if(kind==='loan'){if(it.left===undefined)it.left=null;if(it.total===undefined)it.total=null}
+  it.kind=kind;
+}
 $('#itemList').addEventListener('click',e=>{
   const t=e.target.closest('button');if(!t)return;
   if(t.dataset.del){S.items=S.items.filter(i=>i.id!=t.dataset.del);editingId=null;save();renderAll();return}
   if(t.dataset.edit){editingId=+t.dataset.edit;renderItems();const f=$('#a'+editingId);f&&f.focus();return}
-  if(t.dataset.done){editingId=null;renderItems();return}
+  if(t.dataset.done){const it=S.items.find(i=>i.id===editingId);if(it&&!it.name.trim()){it.name='New bill';save()}editingId=null;renderItems();render();return}
   const id=t.dataset.paid||t.dataset.unpaid;if(!id)return;const it=S.items.find(i=>i.id==id);if(!it)return;
   t.dataset.paid?markPaid(it):undoPaid(it);save();renderItems();render();
 });
-$('#addBtn').addEventListener('click',()=>{const it={id:uid++,name:'New bill',kind:'bill',amount:null,day:clampPd()};S.items.push(it);editingId=it.id;save();renderItems();render();const f=$('#n'+it.id);f&&(f.focus(),f.select())});
+function deleteCat(c,to){
+  if(to){S.items.forEach(i=>{if(i.cat===c.key){i.cat=to.key;setKind(i,to.kind)}})}
+  S.cats=S.cats.filter(x=>x!==c);catEditing=null;catDeleting=false;ensureLinks();save();renderAll();renderCats();
+}
+$('#addBtn').addEventListener('click',()=>{
+  const c=S.cats.find(x=>x.kind==='bill')||S.cats[0];
+  const it={id:uid++,name:'New bill',kind:c.kind,cat:c.key,amount:null,day:clampPd()};
+  if(c.kind==='loan')Object.assign(it,{left:null,total:null,rate:null});
+  S.items.push(it);ensureLinks();editingId=it.id;save();renderItems();render();const f=$('#n'+it.id);f&&(f.focus(),f.select());
+});
+$('#catBtn').addEventListener('click',openCats);
+$('#catDlg').addEventListener('close',()=>{closeCatEdit()});
+$('#catDlg').addEventListener('click',e=>{
+  if(e.target===e.currentTarget){e.currentTarget.close();return} // tap outside the window
+  const t=e.target.closest('button');if(!t)return;
+  const c=S.cats.find(x=>x.key===catEditing);
+  if(t.dataset.catclose){$('#catDlg').close();return}
+  if(t.dataset.catedit){catEditing=t.dataset.catedit;catDeleting=false;renderCats();$('#cn').focus();return}
+  if(t.dataset.catnew){const used=new Set(S.cats.map(x=>x.color)),n={key:genKey(),name:'',color:COLORS.find(k=>!used.has(k))||'slate',kind:'bill'};
+    S.cats.push(n);catEditing=n.key;catDeleting=false;save();renderCats();$('#cn').focus();return}
+  if(!c)return;
+  if(t.dataset.sw){c.color=t.dataset.sw;save();renderItems();render();renderCats();const b=$(`#catBody [data-sw="${c.color}"]`);b&&b.focus();return}
+  if(t.dataset.catdone){closeCatEdit();return}
+  if(t.dataset.catdel){if(S.items.some(i=>i.cat===c.key)){catDeleting=true;renderCats();$('#cm').focus()}else deleteCat(c,null);return}
+  if(t.dataset.catdelno){catDeleting=false;renderCats();return}
+  if(t.dataset.catdelyes){deleteCat(c,S.cats.find(x=>x.key===$('#cm').value));return}
+});
+$('#catDlg').addEventListener('input',e=>{
+  const c=S.cats.find(x=>x.key===catEditing),k=e.target.dataset.ck;if(!c||!k)return;
+  if(k==='name'){c.name=e.target.value;save();renderItems();return}
+  if(k==='kind'){c.kind=e.target.value;S.items.forEach(i=>{if(i.cat===c.key)setKind(i,c.kind)});ensureLinks();commit();renderItems()}
+});
+
 
 function openEdit(id){editingId=id;selectTab('bills');renderItems();const f=$('#n'+id);f&&f.focus()}
 $('#instList').addEventListener('click',e=>{
@@ -570,15 +652,27 @@ async function syncBillBuddy(){
     if(!bank||!due||!(amt>0))return;
     const kind=bbKind(b),l4=String(b.last4||'').replace(/\D/g,'').slice(-4),key=b.account_key||null;
     const ofBank=i=>squash(i.name).includes(bank),free=i=>!claimed.has(i)&&(!i.bbKey||i.bbKey===key);
-    // same account as last time, then same last 4 digits, then same bank and type
+    // same account as last time, then same last 4 digits (same type first, then any), then same bank and type
     // (several loans at one bank: the one with this amount, then this due day)
     let it=(key&&S.items.find(i=>i.bbKey===key&&!claimed.has(i)))
       ||(l4&&S.items.find(i=>i.kind===kind&&free(i)&&last4Of(i)===l4))
+      ||(l4&&S.items.find(i=>free(i)&&last4Of(i)===l4))
       ||(()=>{const c=S.items.filter(i=>i.kind===kind&&free(i)&&ofBank(i)&&!(l4&&last4Of(i)));
         return c.find(i=>near(i.amount,amt))||c.find(i=>num(i.day)===due.getDate())||(c.length===1?c[0]:null)})();
     // an earlier sync filed this statement under the wrong type (a loan as "UnionBank CC"): fix or drop that copy
     const wrong=S.items.filter(i=>i!==it&&i.kind!==kind&&!claimed.has(i)&&i.bbDue===b.due_date&&near(i.amount,amt)&&ofBank(i));
     if(wrong.length){changed=true;if(!it){it=wrong.shift();refile(it,kind,b.bank)}wrong.forEach(removeItem)}
+    // the last 4 digits decide which card it is: a card in Accounts with these digits and no bill
+    // (its bill was removed, or an older sync gave the card a second account) gets this bill back,
+    // under the name you gave the card
+    const mine=kind==='card'&&l4?S.accounts.find(a=>a.last4===l4&&!S.items.some(i=>i.acct===a.key)):null;
+    if(mine&&it&&it.kind==='card'){
+      const dup=acctOf(it);it.acct=mine.key;it.name=mine.name;delete it.noAcct;changed=true;
+      if(dup&&!num(dup.limit)&&!num(dup.stmt)&&!S.items.some(i=>i.acct===dup.key))S.accounts=S.accounts.filter(x=>x!==dup);
+    }else if(mine&&!it){
+      it={id:uid++,name:mine.name,kind,amount:null,day:null,rate:3,acct:mine.key};
+      S.items.push(it);ensureLinks();changed=true;
+    }
     if(!it){
       it={id:uid++,name:b.bank+BB_SUFFIX[kind],kind,amount:null,day:null,rate:kind==='card'?3:null};
       if(kind==='loan')Object.assign(it,{left:null,total:null});
@@ -687,12 +781,12 @@ function renderAuth(){
   document.body.classList.toggle('locked',!cloudReady);
   $('#authBtn').hidden=!cloudUser;
   $('#authForm').hidden=!sb||!authKnown||!!cloudUser;
-  $('#authWho').textContent=cloudUser?.email||'';
+  $('#authWho').textContent=cloudUser?.email||'';$('#authWho').title=cloudUser?.email||'';
 }
 function signedOut(){
   cloudUser=null;cloudReady=false;clearTimeout(cloudTimer);cloudTimer=null;
   S=clone(DEFAULTS);prepare();editingId=null;syncInputs();renderAll();fillBB();
-  setSync('off','Sign in to open your planner');renderAuth();
+  setSync('','Sign in to open your planner');renderAuth();
 }
 function initCloud(){
   if(!CFG.supabaseUrl||!CFG.supabaseAnonKey||!window.supabase){setSync('off','Cloud saving is not set up. Add your Supabase details to config.js.');renderAuth();return}

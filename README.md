@@ -12,6 +12,10 @@ Plain static files, no build step. Open `index.html` or serve the folder (e.g. `
 - `vendor/` – the Supabase client library (v2.116.0), served locally
 - `manifest.webmanifest`, `icon*.{svg,png}` – install to home screen
 
+## Bills and categories
+
+Each category's bills sit together on a background of that category's color. **Categories** (on the Bills tab) opens a small window: add a category, or pick one to rename it, change its color, choose what it counts as (bills you must pay, essentials, installments, credit cards, or can be cut) or delete it. A category that still has bills asks where to move them. To move a bill, tap Edit on it and pick its category.
+
 ## Saving
 
 Everything is stored in Supabase: you sign in first, and the planner loads from and saves to your account. Nothing is kept in the browser except the sign-in (so the device opens straight in) and your email address. Without `config.js` filled in, the planner shows a setup message instead.
@@ -28,6 +32,7 @@ How it syncs:
 
 - Every change saves to your account about a second later; a failed save retries every 5 seconds.
 - Coming back to the app picks up changes made on another device.
+- A BillBuddy card is recognised by its last 4 digits: if a card in Accounts has the same last 4, the bill goes onto that card under the name you gave it, even after you removed its bill. A second copy an older sync made of that card is folded back in.
 - BillBuddy's link and key are saved in your account too, so every signed-in device syncs with it.
 - A device stays signed in: Supabase keeps the sign-in on the device and renews it automatically, so the planner opens straight away. The email address is also remembered to fill in the sign-in form.
 - An open planner reloads itself when a newer version is published (checked when you come back to it and every 5 minutes). The database also rejects saves from an older copy, so it can't put back outdated data. If you set up Supabase before this rule existed, run `supabase/schema.sql` again.
