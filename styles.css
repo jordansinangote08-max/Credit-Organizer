@@ -193,6 +193,11 @@ button:not(:disabled):active{transform:scale(.97)}
 .acct:first-child{border-top:0;padding-top:0}
 .acct-h{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
 .acct-h h3{display:flex;align-items:baseline;gap:4px 10px;flex-wrap:wrap;min-width:0;overflow-wrap:anywhere}
+.loan-h h3{display:flex;align-items:baseline;gap:4px 10px;flex-wrap:wrap;overflow-wrap:anywhere}
+.loan-h .l4{font-family:var(--mono);font-weight:400;font-size:.85rem;color:var(--muted);letter-spacing:.06em}
+.ask4{border:0;cursor:pointer;font-family:var(--body);letter-spacing:0;align-self:center}
+@media (hover:hover){.ask4:hover{filter:brightness(.95)}}
+@media (pointer:coarse){.ask4{min-height:var(--tap);padding-inline:14px}}
 .acct-h .l4{font-family:var(--mono);font-weight:400;font-size:.85rem;color:var(--muted);letter-spacing:.06em}
 .acct-h .lim{font-family:var(--mono);font-weight:500;text-align:right;flex:none}
 .acct-h .lim small{display:block;font-family:var(--body);font-size:.75rem;color:var(--muted);font-weight:400}
