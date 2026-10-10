@@ -127,6 +127,8 @@ function ensureCats(){
 }
 const billOf=a=>S.items.find(i=>i.acct===a.key);
 const acctOf=i=>i.acct?S.accounts.find(a=>a.key===i.acct):null;
+// a card's last 4 digits live on its account, other bills keep them on the bill
+const last4Of=i=>(i.kind==='card'&&acctOf(i)?.last4)||i.bbLast4||'';
 
 // ---------- saving ----------
 // Saved to Supabase only (see the cloud section at the end); nothing is kept in the browser.
@@ -248,6 +250,7 @@ function itemForm(i){
     ${repeats(i)?`<label class="check wide"><input type="checkbox" id="rp${i.id}" data-k="repeat" ${i.once?'':'checked'}><span>Repeats every month</span></label>
     ${i.once?'':`<div class="field wide"><label for="u${i.id}">Stops after</label><input id="u${i.id}" data-k="until" type="month" placeholder="YYYY-MM" pattern="[0-9]{4}-[0-9]{2}" value="${esc(i.until||'')}" aria-describedby="uh${i.id}"><span class="hint" id="uh${i.id}">The last month it's due. Leave empty if it never stops.</span></div>`}`:''}
     ${i.kind==='loan'?`<div class="field"><label for="l${i.id}">Payments left</label><input id="l${i.id}" data-k="left" type="number" inputmode="numeric" min="0" value="${i.left??''}"></div><div class="field"><label for="t${i.id}">Total payments</label><input id="t${i.id}" data-k="total" type="number" inputmode="numeric" min="0" value="${i.total??''}"></div>`:''}
+    ${i.kind==='card'||i.kind==='loan'?`<div class="field"><label for="f4${i.id}">Last 4 digits</label><input id="f4${i.id}" data-k="last4" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="1234" autocomplete="off" value="${esc(last4Of(i))}"><span class="hint">So BillBuddy bills land on this one.</span></div>`:''}
     ${i.kind==='card'||i.kind==='loan'?`<div class="field"><label for="r${i.id}">Interest %/month</label><input id="r${i.id}" data-k="rate" type="number" inputmode="decimal" step="0.01" min="0" value="${i.rate??''}"></div>`:''}
     <div class="acts"><button class="danger" data-del="${i.id}">Remove bill</button><button class="btn" data-done="1">Done</button></div>
   </div>`;
@@ -324,10 +327,10 @@ function renderInst(){
     if(left>0){monthly+=pay;remaining+=pay*left;if(!last||end>last)last=end}
     const done=total?Math.max(0,total-left):null;
     return `<div class="loan">
-      <div class="loan-h"><div><h3>${esc(i.name)}</h3><span class="muted small">${i.rate!=null&&i.rate!==''?num(i.rate)+'%'+(i.addon?' add-on':'')+'/mo · ':''}due every ${ord(num(i.day))}</span></div><span class="pay">${peso(pay)}<span class="muted small">/mo</span></span></div>
+      <div class="loan-h"><div><h3>${esc(i.name)}${last4Of(i)?`<span class="l4">•••• ${esc(last4Of(i))}</span>`:''}</h3><span class="muted small">${i.rate!=null&&i.rate!==''?num(i.rate)+'%'+(i.addon?' add-on':'')+'/mo · ':''}due every ${ord(num(i.day))}</span></div><span class="pay">${peso(pay)}<span class="muted small">/mo</span></span></div>
       ${total?`<div class="bar" role="img" aria-label="${done} of ${total} paid"><i style="width:${Math.round(done/total*100)}%"></i></div>`:''}
       <div class="facts">${total?`<span><b>${done}/${total}</b> paid</span>`:''}<span><b>${left}</b> left</span><span><b>${peso(pay*left)}</b> to go</span><span>Ends <b>${end?MON[end.getMonth()]+' '+end.getFullYear():'—'}</b></span></div>
-      <div class="acts">${isPaid(i)?`<span class="pill ok">Paid this month</span>${!isHiddenPaid(i)?`<button class="ghost" data-iundo="${i.id}">Undo</button>`:''}`:''}<button class="ghost" data-iedit="${i.id}">Edit</button>${left>0&&!isPaid(i)?`<button class="paidbtn" data-ipaid="${i.id}">Paid</button>`:''}</div>
+      <div class="acts">${isPaid(i)?`<span class="pill ok">Paid this month</span>${!isHiddenPaid(i)?`<button class="ghost" data-iundo="${i.id}">Undo</button>`:''}`:''}${last4Of(i)?'':`<button class="pill warn ask4" data-iedit4="${i.id}">Add last 4</button>`}<button class="ghost" data-iedit="${i.id}">Edit</button>${left>0&&!isPaid(i)?`<button class="paidbtn" data-ipaid="${i.id}">Paid</button>`:''}</div>
     </div>`;
   }).join('');
   $('#instSum').innerHTML=`<div><span class="label">Per month</span><span class="v">${peso(monthly)}</span></div><div><span class="label">Still to pay</span><span class="v">${peso(remaining)}</span></div><div><span class="label">All done by</span><span class="v">${last?MON[last.getMonth()]+' '+last.getFullYear():'—'}</span></div>`;
@@ -457,7 +460,7 @@ const ucls=p=>p>50?'bad':p>30?'warn':'';
 function acctForm(a){
   return `<div class="form" data-aid="${a.id}">
     <div class="field wide"><label for="an${a.id}">Card name</label><input id="an${a.id}" data-k="name" value="${esc(a.name)}"></div>
-    <div class="field"><label for="a4${a.id}">Last 4 digits</label><input id="a4${a.id}" data-k="last4" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="1234" autocomplete="off" value="${esc(a.last4||'')}"></div>
+    <div class="field"><label for="a4${a.id}">Last 4 digits</label><input id="a4${a.id}" data-k="last4" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="1234" autocomplete="off" value="${esc(a.last4||'')}"><span class="hint">So BillBuddy bills land on this one.</span></div>
     <div class="field"><label for="al${a.id}">Credit limit (₱)</label><input id="al${a.id}" data-k="limit" type="number" min="0" step="0.01" value="${a.limit??''}"></div>
     <div class="field"><label for="as${a.id}">Statement day</label><input id="as${a.id}" data-k="stmt" type="number" min="1" max="31" value="${a.stmt??''}"></div>
     <div class="field"><label for="ad${a.id}">Payment due day</label><input id="ad${a.id}" data-k="due" type="number" min="1" max="31" value="${billOf(a)?.day??''}"></div>
@@ -477,7 +480,7 @@ function renderAccounts(){
     facts.push(`<span>Using <b>${peso(U)}</b>${L>0?` of ${peso(L)}`:''}</span>`);
     if(L>0)facts.push(`<span>Available <b>${peso(Math.max(0,L-U))}</b></span>`);
     return `<div class="acct" data-k="card">
-      <div class="acct-h"><h3>${esc(a.name)}${a.last4?`<span class="l4">•••• ${esc(a.last4)}</span>`:''}</h3>
+      <div class="acct-h"><h3>${esc(a.name)}${a.last4?`<span class="l4">•••• ${esc(a.last4)}</span>`:`<button class="pill warn ask4" data-aedit4="${a.id}">Add last 4</button>`}</h3>
         <span class="lim">${L>0?peso(L):'—'}<small>credit limit</small></span></div>
       ${p!==null?`<div class="ubar" role="img" aria-label="${p.toFixed(0)}% of limit used"><i class="${ucls(p)}" style="width:${Math.min(100,p).toFixed(1)}%"></i></div>`:''}
       <div class="facts">${p!==null?`<span><b>${p.toFixed(0)}%</b> used</span>`:''}${facts.join('')}</div>
@@ -511,6 +514,8 @@ $('#itemList').addEventListener('input',e=>{
     if(e.target.checked){delete it.once;const d=parseD(it.date);if(d){it.day=d.getDate();delete it.date}}
     else{it.once=true;it.date=it.date||iso(dueOf(it,cycleStart()));delete it.until}
     commit();renderItems();const f=$('#rp'+it.id);f&&f.focus();return}
+  if(k==='last4'){const v=e.target.value.replace(/\D/g,'').slice(0,4);if(v!==e.target.value)e.target.value=v;
+    const a=it.kind==='card'&&acctOf(it);if(a)a.last4=v;else if(v)it.bbLast4=v;else delete it.bbLast4;commit();renderAccounts();return}
   if(k==='until'||k==='date'){if(e.target.value)it[k]=e.target.value;else delete it[k];commit();return}
   it[k]=k==='name'?e.target.value:(e.target.value===''?null:num(e.target.value));
   if(k==='name'){const a=acctOf(it);if(a)a.name=it.name}
@@ -571,8 +576,9 @@ $('#catDlg').addEventListener('input',e=>{
 function openEdit(id){editingId=id;selectTab('bills');renderItems();const f=$('#n'+id);f&&f.focus()}
 $('#instList').addEventListener('click',e=>{
   const t=e.target.closest('button');if(!t)return;
-  const id=t.dataset.ipaid||t.dataset.iundo||t.dataset.iedit,it=S.items.find(i=>i.id==id);if(!it)return;
+  const id=t.dataset.ipaid||t.dataset.iundo||t.dataset.iedit||t.dataset.iedit4,it=S.items.find(i=>i.id==id);if(!it)return;
   if(t.dataset.iedit){openEdit(it.id);return}
+  if(t.dataset.iedit4){openEdit(it.id);const f=$('#f4'+it.id);f&&f.focus();return}
   t.dataset.ipaid?markPaid(it):undoPaid(it);save();renderItems();render();
 });
 $('#instAdd').addEventListener('click',()=>{const it={id:uid++,name:'New installment',kind:'loan',amount:null,day:clampPd(),left:null,total:null,rate:null};S.items.push(it);save();render();openEdit(it.id)});
@@ -607,6 +613,7 @@ $('#acctList').addEventListener('input',e=>{
 $('#acctList').addEventListener('click',e=>{
   const t=e.target.closest('button');if(!t)return;
   if(t.dataset.aedit){acctEditing=+t.dataset.aedit;renderAccounts();const f=$('#al'+acctEditing);f&&f.focus();return}
+  if(t.dataset.aedit4){acctEditing=+t.dataset.aedit4;renderAccounts();const f=$('#a4'+acctEditing);f&&f.focus();return}
   if(t.dataset.adone){acctEditing=null;renderAccounts();renderItems();return}
   if(t.dataset.adel){const a=S.accounts.find(x=>x.id==t.dataset.adel);const b=a&&billOf(a);if(b){delete b.acct;b.noAcct=true}S.accounts=S.accounts.filter(x=>x.id!=t.dataset.adel);acctEditing=null;save();renderAccounts();renderItems()}
 });
@@ -653,7 +660,6 @@ function bbKind(b){
 }
 const BB_SUFFIX={card:' CC',loan:' Loan',bill:''};
 const near=(a,b)=>Math.abs(num(a)-num(b))<0.01;
-const last4Of=i=>(i.kind==='card'&&acctOf(i)?.last4)||i.bbLast4||'';
 // drop a bill's card account unless you filled something in on it
 function unlinkAcct(it){const a=acctOf(it);delete it.acct;if(a&&!num(a.limit)&&!num(a.stmt)&&!a.last4&&!S.items.some(x=>x.acct===a.key))S.accounts=S.accounts.filter(x=>x!==a)}
 function removeItem(it){S.items=S.items.filter(x=>x!==it);unlinkAcct(it)}
