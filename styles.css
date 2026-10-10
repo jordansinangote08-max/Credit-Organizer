@@ -289,3 +289,14 @@ details.sec:not([open]){gap:0}
   .app{display:block}
   .side{position:static}
 }
+
+/* ---------- account ---------- */
+.acctbar{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap}
+#authWho{overflow-wrap:anywhere}
+.ghost.sm{padding:4px 10px;font-size:.8rem}
+.authform{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:grid;gap:10px}
+.authform .row{flex-wrap:nowrap}
+.authform input{flex:1;min-width:0;background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.authform input:focus{border-color:var(--accent);outline:none}
+.btn:disabled{opacity:.6;cursor:default}
+@media (pointer:coarse){.authform input{font-size:16px}.ghost.sm{min-height:36px}}

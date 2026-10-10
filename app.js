@@ -95,17 +95,16 @@ const billOf=a=>S.items.find(i=>i.acct===a.key);
 const acctOf=i=>i.acct?S.accounts.find(a=>a.key===i.acct):null;
 
 // ---------- saving ----------
-let cloud=null,cloudTimer=null,cloudReady=false;
+// Always kept on this device; also saved to Supabase while signed in (see the cloud section at the end).
+let sb=null,cloudUser=null,cloudAt=null,cloudTimer=null,cloudReady=false;
 function setSync(cls,txt){const el=$('#syncState');el.className='sync '+cls;el.textContent=txt}
 const snapshot=()=>JSON.stringify(S,(k,v)=>k==='id'?undefined:v);
+const saveLocal=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
 function save(){
-  try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
-  if(!cloud||!cloudReady)return;
+  saveLocal();
+  if(!cloudReady)return;
   clearTimeout(cloudTimer);setSync('busy','Saving…');
-  cloudTimer=setTimeout(async()=>{
-    try{await cloud.set({state:snapshot(),savedAt:Date.now()});setSync('ok','Saved to your account')}
-    catch(e){setSync('off','Not saved to cloud. Kept on this device.')}
-  },700);
+  cloudTimer=setTimeout(pushCloud,700);
 }
 
 // ---------- paid tracking ----------
@@ -519,19 +518,6 @@ function adopt(next){
   if(!next||!Array.isArray(next.items)||next.ver!==DEFAULTS.ver)return;
   S=next;prepare();rollover();editingId=null;syncInputs();renderAll();
 }
-async function connectCloud(){
-  for(let k=0;k<30&&!(window.claude&&window.claude.use);k++)await new Promise(r=>setTimeout(r,100));
-  if(!window.claude||!window.claude.use){setSync('off','Saved on this device only');return}
-  try{
-    const [db,user]=await Promise.all([window.claude.use('db'),window.claude.use('user')]);
-    const id=db&&user?await user.id():null;
-    if(!db||!id){setSync('off','Sign in to save to your account');return}
-    cloud=db.collection('data/users/'+id).doc('planner');
-    const snap=await cloud.get();cloudReady=true;
-    if(snap.exists){try{adopt(JSON.parse(snap.data().state))}catch(e){}save()}
-    else save();
-  }catch(e){cloud=null;setSync('off','Could not reach your account. Saved on this device.')}
-}
 prepare();rollover();save();syncInputs();renderAll();
 // ---------- BillBuddy ----------
 // Card bills come from BillBuddy: each one fills the matching credit card's
@@ -590,6 +576,75 @@ $('#bbClear').addEventListener('click',()=>{
   try{localStorage.removeItem(BB_KEY)}catch(e){}
   $('#bbUrl').value='';$('#bbKey').value='';bbState('off','Not connected');
 });
-connectCloud().finally(syncBillBuddy);
 setInterval(syncBillBuddy,60000);
 setInterval(()=>{if(rollover())save();if(editingId==null&&!document.activeElement?.closest?.('.form'))renderItems();render()},60000);
+
+// ---------- cloud (Supabase) ----------
+// One row per user in public.planner_state (see supabase/schema.sql); Row Level Security keeps it private.
+// Connection details come from config.js. Without them the planner stays on this device only.
+const CFG=window.PLANNER_CONFIG||{};
+async function pushCloud(){
+  cloudTimer=null;
+  const {data,error}=await sb.from('planner_state').upsert({user_id:cloudUser.id,state:JSON.parse(snapshot())}).select('updated_at').single();
+  if(cloudTimer)return; // a newer save is already queued
+  if(error){console.warn('Supabase save failed',error);setSync('off','Not saved to cloud. Kept on this device.');return}
+  cloudAt=data.updated_at;setSync('ok','Saved to your account');
+}
+async function pullCloud(){
+  const {data,error}=await sb.from('planner_state').select('state,updated_at').eq('user_id',cloudUser.id).maybeSingle();
+  if(error)throw error;
+  return data;
+}
+async function startCloud(user){
+  cloudUser=user;cloudReady=false;setSync('busy','Loading your account…');
+  try{
+    const row=await pullCloud();
+    if(cloudUser?.id!==user.id)return;
+    cloudReady=true;
+    // the account's copy wins; a new account starts from what is on this device
+    if(row&&row.state&&row.state.ver===DEFAULTS.ver){adopt(row.state);saveLocal();cloudAt=row.updated_at;setSync('ok','Saved to your account')}
+    else save();
+  }catch(e){console.warn('Supabase load failed',e);setSync('off','Could not reach your account. Saved on this device.')}
+}
+// pick up changes made on another device when you come back to this one
+document.addEventListener('visibilitychange',async()=>{
+  if(document.hidden||!cloudReady||cloudTimer)return;
+  try{
+    const row=await pullCloud();
+    if(!row||row.updated_at===cloudAt||cloudTimer||row.state?.ver!==DEFAULTS.ver)return;
+    if(document.activeElement?.matches?.('input,select'))return;
+    adopt(row.state);saveLocal();cloudAt=row.updated_at;
+  }catch(e){}
+});
+function renderAuth(){
+  const btn=$('#authBtn');btn.hidden=!sb;
+  btn.textContent=cloudUser?'Sign out':'Sign in';
+  btn.setAttribute('aria-expanded',String(!cloudUser&&!$('#authForm').hidden));
+  if(cloudUser)$('#authForm').hidden=true;
+  $('#authWho').textContent=cloudUser?cloudUser.email||'':'';
+}
+function initCloud(){
+  if(!CFG.supabaseUrl||!CFG.supabaseAnonKey||!window.supabase){setSync('off','Saved on this device only');return}
+  sb=window.supabase.createClient(CFG.supabaseUrl,CFG.supabaseAnonKey);
+  sb.auth.onAuthStateChange((ev,session)=>{
+    const u=session?.user||null;
+    if(u&&cloudUser?.id!==u.id)setTimeout(()=>startCloud(u),0); // not inside the auth callback
+    else if(!u){cloudUser=null;cloudReady=false;clearTimeout(cloudTimer);cloudTimer=null;setSync('off','Sign in to save to the cloud')}
+    setTimeout(renderAuth,0);
+  });
+  renderAuth();
+}
+$('#authBtn').addEventListener('click',async()=>{
+  if(cloudUser){await sb.auth.signOut();return}
+  const f=$('#authForm');f.hidden=!f.hidden;renderAuth();if(!f.hidden)$('#authEmail').focus();
+});
+$('#authForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const email=$('#authEmail').value.trim(),msg=$('#authMsg'),b=$('#authSend');if(!email)return;
+  b.disabled=true;msg.textContent='Sending…';
+  const {error}=await sb.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+location.pathname}});
+  b.disabled=false;
+  msg.textContent=error?'Could not send the link: '+error.message:'Check your email and open the sign-in link on this device.';
+});
+
+initCloud();syncBillBuddy();
