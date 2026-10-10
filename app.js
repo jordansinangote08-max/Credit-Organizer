@@ -541,18 +541,18 @@ const BB_KEY=KEY+'.billbuddy';
 const bbConf=()=>{try{return JSON.parse(localStorage.getItem(BB_KEY))||{}}catch(e){return {}}};
 const squash=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
 const bbState=(cls,txt)=>{const el=$('#bbState');el.className='sync '+cls;el.textContent=txt};
-let bbBusy=false;
+let bbBusy=false,bbAgain=false;
 async function syncBillBuddy(){
   const {url,key}=bbConf();
   if(!url||!key){bbState('off','Not connected');return}
-  if(bbBusy)return;bbBusy=true;
+  if(bbBusy){bbAgain=true;return}bbBusy=true;
   let bills;
   try{
     const r=await fetch(url,{headers:{Authorization:'Bearer '+key},cache:'no-store'});
     if(r.status===401){bbState('off','Wrong API key');return}
     const j=await r.json();if(!j.ok)throw new Error(j.error||'BillBuddy returned an error');bills=j.bills||[];
   }catch(e){console.warn('BillBuddy sync failed',e);bbState('off','Could not reach BillBuddy. Check the link.');return}
-  finally{bbBusy=false}
+  finally{bbBusy=false;if(bbAgain){bbAgain=false;setTimeout(syncBillBuddy,0)}}
   let changed=false;
   bills.forEach(b=>{
     const bank=squash(b.bank),due=parseD(b.due_date),amt=num(b.amount);
@@ -570,14 +570,23 @@ async function syncBillBuddy(){
   bbState('ok',`Synced ${bills.length} bill${bills.length===1?'':'s'} at ${t.getHours()%12||12}:${String(t.getMinutes()).padStart(2,'0')} ${t.getHours()<12?'AM':'PM'}`);
 }
 {const c=bbConf();$('#bbUrl').value=c.url||'';$('#bbKey').value=c.key||''}
-$('#bbSave').addEventListener('click',()=>{
-  const url=$('#bbUrl').value.trim(),key=$('#bbKey').value.trim();
+// connects on its own once both the link and the key are filled in
+let bbTimer=null;
+function bbConnect(){
+  const url=$('#bbUrl').value.trim(),key=$('#bbKey').value.trim(),c=bbConf();
+  if(!url&&!key){try{localStorage.removeItem(BB_KEY)}catch(e){}bbState('off','Not connected');return}
   if(!/^https:\/\//i.test(url)){bbState('off','The link must start with https://');return}
   if(!key){bbState('off','Enter the API key');return}
+  if(url===c.url&&key===c.key)return;
   try{localStorage.setItem(BB_KEY,JSON.stringify({url,key}))}catch(e){bbState('off','Could not save on this device');return}
   bbState('busy','Syncing…');syncBillBuddy();
+}
+['bbUrl','bbKey'].forEach(id=>{const el=$('#'+id);
+  el.addEventListener('input',()=>{clearTimeout(bbTimer);bbTimer=setTimeout(bbConnect,800)});
+  el.addEventListener('change',()=>{clearTimeout(bbTimer);bbConnect()});
 });
 $('#bbClear').addEventListener('click',()=>{
+  clearTimeout(bbTimer);
   try{localStorage.removeItem(BB_KEY)}catch(e){}
   $('#bbUrl').value='';$('#bbKey').value='';bbState('off','Not connected');
 });

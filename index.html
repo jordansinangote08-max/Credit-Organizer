@@ -18,8 +18,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="styles.css?v=2">
-<script src="app.js?v=2" defer></script>
+<link rel="stylesheet" href="styles.css?v=3">
+<script src="app.js?v=3" defer></script>
 </head>
 <body>
 <div class="app">
@@ -140,7 +140,7 @@
         <div class="form flat">
           <div class="field wide"><label for="bbUrl">BillBuddy API link</label><input id="bbUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://your-billbuddy.vercel.app/api/bills"></div>
           <div class="field wide"><label for="bbKey">API key</label><input id="bbKey" type="password" autocomplete="off" spellcheck="false" placeholder="BILLS_API_KEY"></div>
-          <div class="acts"><button class="danger" id="bbClear">Disconnect</button><button class="btn" id="bbSave">Save and sync</button></div>
+          <div class="acts"><button class="danger" id="bbClear">Disconnect</button></div>
         </div>
         <span class="sync" id="bbState">Not connected</span>
         <p class="muted small">The link and key stay on this device only. They are never saved to your account, so enter them once on each device you use.</p>
