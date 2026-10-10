@@ -14,7 +14,7 @@ Plain static files, no build step. Open `index.html` or serve the folder (e.g. `
 
 ## Saving
 
-Everything is stored in Supabase: you sign in first, and the planner loads from and saves to your account. Nothing is kept in the browser except Supabase's sign-in session (needed to stay signed in). Without `config.js` filled in, the planner shows a setup message instead.
+Everything is stored in Supabase: you sign in first, and the planner loads from and saves to your account. Nothing is kept in the browser except the sign-in (so the device opens straight in) and your email address. Without `config.js` filled in, the planner shows a setup message instead.
 
 ### Set up Supabase
 
@@ -29,5 +29,6 @@ How it syncs:
 - Every change saves to your account about a second later; a failed save retries every 5 seconds.
 - Coming back to the app picks up changes made on another device.
 - BillBuddy's link and key are saved in your account too, so every signed-in device syncs with it.
-- Signing out clears the planner from the screen.
+- A device stays signed in: Supabase keeps the sign-in on the device and renews it automatically, so the planner opens straight away. The email address is also remembered to fill in the sign-in form.
+- Signing out clears the planner from the screen and forgets the sign-in on that device.
 - Data an earlier version kept in this browser moves to the account on its first sign-in (if the account is empty) and is then deleted from the browser.

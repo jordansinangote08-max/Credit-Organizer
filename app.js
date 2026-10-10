@@ -585,6 +585,7 @@ setInterval(()=>{if(rollover())save();if(editingId==null&&!document.activeElemen
 // One row per user in public.planner_state (see supabase/schema.sql); Row Level Security keeps it private.
 // Connection details come from config.js. Without them the planner stays on this device only.
 const CFG=window.PLANNER_CONFIG||{};
+const EMAIL_KEY=KEY+'.email'; // only the email address, to fill in the sign-in form
 async function pushCloud(){
   cloudTimer=null;
   const {data,error}=await sb.from('planner_state').upsert({user_id:cloudUser.id,state:JSON.parse(snapshot())}).select('updated_at').single();
@@ -623,10 +624,11 @@ document.addEventListener('visibilitychange',async()=>{
   }catch(e){}
 });
 // the planner stays hidden until your account's data has loaded
+let authKnown=false; // false until Supabase has checked this device for a saved sign-in
 function renderAuth(){
   document.body.classList.toggle('locked',!cloudReady);
   $('#authBtn').hidden=!cloudUser;
-  $('#authForm').hidden=!sb||!!cloudUser;
+  $('#authForm').hidden=!sb||!authKnown||!!cloudUser;
   $('#authWho').textContent=cloudUser?.email||'';
 }
 function signedOut(){
@@ -636,9 +638,12 @@ function signedOut(){
 }
 function initCloud(){
   if(!CFG.supabaseUrl||!CFG.supabaseAnonKey||!window.supabase){setSync('off','Cloud saving is not set up. Add your Supabase details to config.js.');renderAuth();return}
-  sb=window.supabase.createClient(CFG.supabaseUrl,CFG.supabaseAnonKey);
+  // the sign-in is remembered on this device and renewed automatically, so a known device opens straight in
+  sb=window.supabase.createClient(CFG.supabaseUrl,CFG.supabaseAnonKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+  setSync('busy','Signing you in…');
+  try{$('#authEmail').value=localStorage.getItem(EMAIL_KEY)||''}catch(e){}
   sb.auth.onAuthStateChange((ev,session)=>{
-    const u=session?.user||null;
+    const u=session?.user||null;authKnown=true;
     // claim the user now so a second auth event can't start a second load; load outside the callback
     if(u&&cloudUser?.id!==u.id){cloudUser=u;setTimeout(()=>startCloud(u),0)}
     else if(!u)setTimeout(signedOut,0);
@@ -650,6 +655,7 @@ $('#authForm').addEventListener('submit',async e=>{
   e.preventDefault();
   const email=$('#authEmail').value.trim(),msg=$('#authMsg'),b=$('#authSend');if(!email)return;
   b.disabled=true;msg.textContent='Sending…';
+  try{localStorage.setItem(EMAIL_KEY,email)}catch(e){}
   const {error}=await sb.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+location.pathname}});
   b.disabled=false;
   msg.textContent=error?'Could not send the link: '+error.message:'Check your email and open the sign-in link on this device.';
