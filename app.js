@@ -531,8 +531,16 @@ function fillBB(){const c=bbConf();$('#bbUrl').value=c.url||'';$('#bbKey').value
 const squash=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
 const bbState=(cls,txt)=>{const el=$('#bbState');el.className='sync '+cls;el.textContent=txt};
 let bbBusy=false,bbAgain=false;
-// BillBuddy's bill type -> the planner's; feeds without a type are treated as credit cards
+// BillBuddy's bill type -> the planner's. Newer feeds send `type` (credit_card, loan, utility, insurance,
+// other) next to a finer `category` (personal_loan, electricity…); feeds with neither are credit cards.
 const BB_KIND={credit_card:'card',loan:'loan',utility:'bill',insurance:'bill'};
+const bbTyped=b=>!!(b.type||b.product_type||b.category);
+function bbKind(b){
+  if(!bbTyped(b))return 'card';
+  const t=BB_KIND[b.type]||BB_KIND[b.product_type]||BB_KIND[b.category];if(t)return t;
+  const c=String(b.category||b.product_type||'').toLowerCase();
+  return /credit_?card/.test(c)?'card':/loan|credit_line|bnpl/.test(c)?'loan':'bill';
+}
 const BB_SUFFIX={card:' CC',loan:' Loan',bill:''};
 const near=(a,b)=>Math.abs(num(a)-num(b))<0.01;
 const last4Of=i=>(i.kind==='card'&&acctOf(i)?.last4)||i.bbLast4||'';
@@ -560,7 +568,7 @@ async function syncBillBuddy(){
   bills.forEach(b=>{
     const bank=squash(b.bank),due=parseD(b.due_date),amt=num(b.amount);
     if(!bank||!due||!(amt>0))return;
-    const kind=BB_KIND[b.product_type]||'card',l4=String(b.last4||'').replace(/\D/g,'').slice(-4),key=b.account_key||null;
+    const kind=bbKind(b),l4=String(b.last4||'').replace(/\D/g,'').slice(-4),key=b.account_key||null;
     const ofBank=i=>squash(i.name).includes(bank),free=i=>!claimed.has(i)&&(!i.bbKey||i.bbKey===key);
     // same account as last time, then same last 4 digits, then same bank and type
     // (several loans at one bank: the one with this amount, then this due day)
@@ -590,8 +598,8 @@ async function syncBillBuddy(){
   // copies an older sync made before bill types were sent (e.g. a loan saved as "UnionBank CC"), even from an
   // earlier statement: filled in by BillBuddy, not matched this time, and the same amount as a bill of
   // another type from that bank
-  if(bills.some(b=>b.product_type))S.items.filter(i=>!claimed.has(i)&&i.bbDue&&!i.bbKey).forEach(i=>{
-    if(bills.some(b=>b.product_type&&(BB_KIND[b.product_type]||'card')!==i.kind&&squash(i.name).includes(squash(b.bank))&&near(i.amount,b.amount))){removeItem(i);changed=true}
+  if(bills.some(bbTyped))S.items.filter(i=>!claimed.has(i)&&i.bbDue&&!i.bbKey).forEach(i=>{
+    if(bills.some(b=>bbTyped(b)&&bbKind(b)!==i.kind&&squash(i.name).includes(squash(b.bank))&&near(i.amount,b.amount))){removeItem(i);changed=true}
   });
   if(changed){ensureLinks();save();if(editingId==null)renderItems();render()}
   const t=new Date();
