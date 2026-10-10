@@ -130,7 +130,7 @@ button:not(:disabled):active{transform:scale(.97)}
 .ev .a{font-family:var(--mono);font-variant-numeric:tabular-nums}
 .ev.in .a{color:var(--ok)}
 .ev.paid .nm,.ev.paid .a{color:var(--muted);text-decoration:line-through}
-.bal{display:flex;justify-content:space-between;gap:8px;font-size:.78rem;color:var(--muted);margin-top:4px}
+.bal{display:flex;justify-content:space-between;gap:8px;font-size:.78rem;color:var(--bad);margin-top:4px}
 .bal.neg{color:var(--bad);font-weight:600}
 
 /* ---------- recommendation box ---------- */
