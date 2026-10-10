@@ -55,8 +55,20 @@ function dueDate(day,start){
 }
 const dayOf=i=>Math.min(31,Math.max(1,num(i.day)||1));
 // a BillBuddy bill has an exact due date, so it only counts in the pay cycle that date falls in
-const dueOf=(i,start)=>parseD(i.bbDue)||dueDate(dayOf(i),start);
-const inCycle=(i,start)=>{const d=parseD(i.bbDue);return !d||(d>=start&&d<shiftCycle(start,1))};
+// A bill repeats every month on its due day, until the month in `until` (empty: forever).
+// A one-time bill (`once`) is due on its exact `date`, like a BillBuddy bill.
+const ym=d=>d.getFullYear()*100+d.getMonth()+1;
+const untilYm=s=>{const m=/^(\d{4})-(\d{2})$/.exec(s||'');return m?+m[1]*100+ +m[2]:null};
+const repeats=i=>i.kind!=='loan'&&i.kind!=='card';
+const exactDue=i=>parseD(i.bbDue)||(i.once&&repeats(i)?parseD(i.date):null);
+const dueOf=(i,start)=>exactDue(i)||dueDate(dayOf(i),start);
+const inCycle=(i,start)=>{
+  const d=exactDue(i);if(d)return d>=start&&d<shiftCycle(start,1);
+  if(i.once&&repeats(i))return false;
+  const u=repeats(i)&&untilYm(i.until);return !u||ym(dueDate(dayOf(i),start))<=u;
+};
+// one-time bills whose date has passed and repeating bills past their last month (kept, listed as ended)
+const ended=(i,start)=>repeats(i)&&!i.bbDue&&(i.once?(exactDue(i)||start)<start:(untilYm(i.until)||Infinity)<ym(dueDate(dayOf(i),start)));
 
 // ---------- data upgrades ----------
 const PATCHES=[
@@ -193,8 +205,8 @@ function renderAdvice(C){
     if(after>0)recs.push({i,amt:num(i.amount),date:dueDate(dayOf(i),C.next),why:`next installment${i.rate!=null?` · ${num(i.rate)}%${i.addon?' add-on':''}/mo`:''}`,rank:realRate(i)});
   });
   recs.sort((a,b)=>b.rank-a.rank);
-  S.items.filter(i=>(i.kind==='essential'||i.kind==='bill')&&num(i.amount)>0).sort((a,b)=>dueDate(dayOf(a),C.next)-dueDate(dayOf(b),C.next))
-    .forEach(i=>recs.push({i,amt:num(i.amount),date:dueDate(dayOf(i),C.next),why:'next month',rank:0}));
+  S.items.filter(i=>(i.kind==='essential'||i.kind==='bill')&&num(i.amount)>0&&inCycle(i,C.next)).sort((a,b)=>dueOf(a,C.next)-dueOf(b,C.next))
+    .forEach(i=>recs.push({i,amt:num(i.amount),date:dueOf(i,C.next),why:'next month',rank:0}));
   let pool=extra;const picks=[];
   recs.forEach(r=>{if(pool<=0.004)return;const p=Math.min(pool,r.amt);pool-=p;picks.push({...r,p})});
   box.innerHTML=`<div class="reco ok"><h3>You have ${peso(extra)} extra</h3>
@@ -230,8 +242,11 @@ function itemForm(i){
   return `<div class="form" data-id="${i.id}">
     <div class="field wide"><label for="n${i.id}">Name</label><input id="n${i.id}" data-k="name" placeholder="e.g. Meralco" value="${esc(i.name)}"></div>
     <div class="field wide"><label for="k${i.id}">Category</label><select id="k${i.id}" data-k="cat">${catOptions(catOf(i)?.key)}</select></div>
-    <div class="field"><label for="a${i.id}">${i.kind==='card'?'Statement amount':'Monthly amount'}</label><input id="a${i.id}" data-k="amount" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" value="${i.amount??''}"></div>
-    <div class="field"><label for="d${i.id}">Due day</label><input id="d${i.id}" data-k="day" type="number" inputmode="numeric" min="1" max="31" value="${i.day??''}"></div>
+    <div class="field"><label for="a${i.id}">${i.kind==='card'?'Statement amount':repeats(i)&&i.once?'Amount':'Monthly amount'}</label><input id="a${i.id}" data-k="amount" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" value="${i.amount??''}"></div>
+    ${repeats(i)&&i.once?`<div class="field"><label for="dt${i.id}">Due date</label><input id="dt${i.id}" data-k="date" type="date" value="${esc(i.date||'')}"></div>`
+      :`<div class="field"><label for="d${i.id}">Due day</label><input id="d${i.id}" data-k="day" type="number" inputmode="numeric" min="1" max="31" value="${i.day??''}"></div>`}
+    ${repeats(i)?`<label class="check wide"><input type="checkbox" id="rp${i.id}" data-k="repeat" ${i.once?'':'checked'}><span>Repeats every month</span></label>
+    ${i.once?'':`<div class="field wide"><label for="u${i.id}">Stops after</label><input id="u${i.id}" data-k="until" type="month" placeholder="YYYY-MM" pattern="[0-9]{4}-[0-9]{2}" value="${esc(i.until||'')}" aria-describedby="uh${i.id}"><span class="hint" id="uh${i.id}">The last month it's due. Leave empty if it never stops.</span></div>`}`:''}
     ${i.kind==='loan'?`<div class="field"><label for="l${i.id}">Payments left</label><input id="l${i.id}" data-k="left" type="number" inputmode="numeric" min="0" value="${i.left??''}"></div><div class="field"><label for="t${i.id}">Total payments</label><input id="t${i.id}" data-k="total" type="number" inputmode="numeric" min="0" value="${i.total??''}"></div>`:''}
     ${i.kind==='card'||i.kind==='loan'?`<div class="field"><label for="r${i.id}">Interest %/month</label><input id="r${i.id}" data-k="rate" type="number" inputmode="decimal" step="0.01" min="0" value="${i.rate??''}"></div>`:''}
     <div class="acts"><button class="danger" data-del="${i.id}">Remove bill</button><button class="btn" data-done="1">Done</button></div>
@@ -239,6 +254,8 @@ function itemForm(i){
 }
 function itemRow(i,start){
   const amt=num(i.amount),paid=isPaid(i),meta=[`<span>Due ${fmtD(dueOf(i,start))}</span>`];
+  if(repeats(i)&&i.once&&!i.bbDue)meta.push('<span>One-time</span>');
+  else if(repeats(i)&&untilYm(i.until)){const u=untilYm(i.until);meta.push(`<span>Until ${MON[u%100-1]} ${Math.floor(u/100)}</span>`)}
   if(i.kind==='loan'&&num(i.left))meta.push(`<span>${num(i.left)} left</span>`);
   if(i.kind!=='card'&&i.bbLast4)meta.push(`<span>•••• ${esc(i.bbLast4)}</span>`);
   if(i.kind==='card'){const a=acctOf(i);if(a){if(a.last4)meta.push(`<span>•••• ${esc(a.last4)}</span>`);if(a.stmt)meta.push(`<span>Statement ${ord(num(a.stmt))}</span>`);const L=num(a.limit);if(L>0&&amt>0){const p=amt/L*100;meta.push(`<span class="${p>50?'t-bad':p>30?'t-warn':'t-ok'}">${p.toFixed(0)}% of ${peso(L)} limit</span>`)}}}
@@ -251,6 +268,8 @@ function renderItems(){
   ensureCats();
   const start=cycleStart();
   const hidden=S.items.filter(isHiddenPaid),vis=S.items.filter(i=>!isHiddenPaid(i)&&inCycle(i,start));
+  const done=S.items.filter(i=>ended(i,start));
+  const later=S.items.filter(i=>repeats(i)&&i.once&&!i.bbDue&&exactDue(i)>=shiftCycle(start,1)).sort((a,b)=>exactDue(a)-exactDue(b));
   const html=S.cats.map(c=>{
     const its=vis.filter(i=>i.cat===c.key);if(!its.length)return '';
     its.sort((a,b)=>(isPaid(a)-isPaid(b))||dueOf(a,start)-dueOf(b,start));
@@ -260,7 +279,11 @@ function renderItems(){
   const left=vis.filter(i=>!isPaid(i)).reduce((s,i)=>s+num(i.amount),0);
   $('#itemList').innerHTML=(html||'<p class="empty">Nothing left to pay this cycle.</p>')+
     `<div class="tot"><span>Still to pay</span><span>${peso(left)}</span></div>`+
-    (hidden.length?`<details class="paidlist"><summary>Paid this cycle (${hidden.length})</summary><ul>${hidden.map(i=>`<li><span>${esc(i.name)}</span><span class="num">${peso(num(i.amount))}</span></li>`).join('')}</ul></details>`:'');
+    (hidden.length?`<details class="paidlist"><summary>Paid this cycle (${hidden.length})</summary><ul>${hidden.map(i=>`<li><span>${esc(i.name)}</span><span class="num">${peso(num(i.amount))}</span></li>`).join('')}</ul></details>`:'')+
+    (later.length?`<details class="paidlist"${later.some(i=>i.id===editingId)?' open':''}><summary>Coming in a later cycle (${later.length})</summary><div class="later">${later.map(i=>i.id===editingId?itemForm(i):
+      `<div class="laterrow"><span>${esc(i.name||'Untitled bill')} <span class="muted">· ${fmtD(exactDue(i))}, ${exactDue(i).getFullYear()}</span></span><span class="num">${peso(num(i.amount))}</span><button class="ghost" data-edit="${i.id}">Edit</button></div>`).join('')}</div></details>`:'')+
+    (done.length?`<details class="paidlist"${done.some(i=>i.id===editingId)?' open':''}><summary>Ended (${done.length})</summary><div class="later">${done.map(i=>i.id===editingId?itemForm(i):
+      `<div class="laterrow"><span>${esc(i.name||'Untitled bill')} <span class="muted">· ${i.once?'was due '+fmtD(exactDue(i)):'stopped after '+MON[untilYm(i.until)%100-1]+' '+Math.floor(untilYm(i.until)/100)}</span></span><span class="num">${peso(num(i.amount))}</span><button class="ghost" data-edit="${i.id}">Edit</button></div>`).join('')}</div></details>`:'');
 }
 
 // ---------- categories window ----------
@@ -348,8 +371,9 @@ function effRate(s,nOver){
 }
 const altTerms=s=>String(s.terms||'').split(/[^0-9]+/).map(x=>parseInt(x,10)).filter(x=>x>0);
 const known=s=>!(s.rate===null||s.rate===''||s.rate===undefined);
+const fixedIn=start=>S.items.filter(i=>(i.kind==='essential'||i.kind==='bill')&&inCycle(i,start)).reduce((s,i)=>s+num(i.amount),0);
 function nextFree(){
-  const fixed=S.items.filter(i=>i.kind==='essential'||i.kind==='bill').reduce((s,i)=>s+num(i.amount),0);
+  const fixed=fixedIn(shiftCycle(cycleStart(),1));
   const ln=S.items.filter(i=>i.kind==='loan'&&(isPaid(i)?num(i.left):num(i.left)-1)>0).reduce((s,i)=>s+num(i.amount),0);
   return num(S.salary)-fixed-ln;
 }
@@ -408,13 +432,12 @@ function renderSrcList(){
 // ---------- plan ahead ----------
 function renderAhead(C){
   const salary=num(S.salary);
-  const fixed=S.items.filter(i=>i.kind==='essential'||i.kind==='bill').reduce((s,i)=>s+num(i.amount),0);
   const loans=S.items.filter(i=>i.kind==='loan'&&num(i.amount)>0);
   const n=Math.min(24,Math.max(1,...loans.map(l=>num(l.left)||1))+1);
-  const scale=Math.max(salary,fixed+loans.reduce((s,l)=>s+num(l.amount),0))||1;
+  const scale=Math.max(salary,fixedIn(C.start)+loans.reduce((s,l)=>s+num(l.amount),0))||1;
   let rows='';
   for(let m=0;m<n;m++){
-    const d=shiftCycle(C.start,m);
+    const d=shiftCycle(C.start,m),fixed=fixedIn(d);
     const ln=loans.filter(l=>(num(l.left)+(isPaid(l)?1:0))>m).reduce((s,l)=>s+num(l.amount),0);
     const free=Math.max(0,salary-ln-fixed),w=v=>(v/scale*100).toFixed(2)+'%';
     rows+=`<div class="mrow"><span>${MON[d.getMonth()]} ${String(d.getFullYear()).slice(2)}</span><div class="track" role="img" aria-label="Installments ${peso(ln)}, rent and bills ${peso(fixed)}, free ${peso(free)}"><div class="seg loan" style="width:${w(ln)}"></div><div class="seg fixed" style="width:${w(fixed)}"></div><div class="seg free" style="width:${w(free)}"></div></div><span class="num" style="text-align:right">${peso(free)}</span></div>`;
@@ -484,6 +507,11 @@ document.addEventListener('click',e=>{const g=e.target.closest('[data-goto]');if
 $('#itemList').addEventListener('input',e=>{
   const row=e.target.closest('.form');if(!row)return;const it=S.items.find(i=>i.id==row.dataset.id),k=e.target.dataset.k;if(!it||!k)return;
   if(k==='cat'){const c=S.cats.find(x=>x.key===e.target.value);if(!c)return;it.cat=c.key;setKind(it,c.kind);ensureLinks();commit();renderItems();const f=$('#k'+it.id);f&&f.focus();return}
+  if(k==='repeat'){
+    if(e.target.checked){delete it.once;const d=parseD(it.date);if(d){it.day=d.getDate();delete it.date}}
+    else{it.once=true;it.date=it.date||iso(dueOf(it,cycleStart()));delete it.until}
+    commit();renderItems();const f=$('#rp'+it.id);f&&f.focus();return}
+  if(k==='until'||k==='date'){if(e.target.value)it[k]=e.target.value;else delete it[k];commit();return}
   it[k]=k==='name'?e.target.value:(e.target.value===''?null:num(e.target.value));
   if(k==='name'){const a=acctOf(it);if(a)a.name=it.name}
   if(k==='day')delete it.bbDue;
@@ -492,6 +520,7 @@ $('#itemList').addEventListener('input',e=>{
 // moving a bill into a category of another kind makes it that kind of bill
 function setKind(it,kind){
   if(it.kind===kind)return;
+  if(kind==='loan'||kind==='card'){if(it.once){const d=parseD(it.date);if(d)it.day=d.getDate()}delete it.once;delete it.date;delete it.until}
   if(it.kind==='card'&&kind!=='card'){delete it.acct;it.noAcct=true}
   if(kind==='card')delete it.noAcct;
   if(kind==='loan'){if(it.left===undefined)it.left=null;if(it.total===undefined)it.total=null}
