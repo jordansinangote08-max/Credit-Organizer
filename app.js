@@ -224,6 +224,7 @@ function itemForm(i){
 function itemRow(i,start){
   const amt=num(i.amount),paid=isPaid(i),meta=[`<span>Due ${fmtD(dueOf(i,start))}</span>`];
   if(i.kind==='loan'&&num(i.left))meta.push(`<span>${num(i.left)} left</span>`);
+  if(i.kind!=='card'&&i.bbLast4)meta.push(`<span>•••• ${esc(i.bbLast4)}</span>`);
   if(i.kind==='card'){const a=acctOf(i);if(a){if(a.last4)meta.push(`<span>•••• ${esc(a.last4)}</span>`);if(a.stmt)meta.push(`<span>Statement ${ord(num(a.stmt))}</span>`);const L=num(a.limit);if(L>0&&amt>0){const p=amt/L*100;meta.push(`<span style="color:${p>50?'var(--bad)':p>30?'var(--warn)':'var(--ok)'}">${p.toFixed(0)}% of ${peso(L)} limit</span>`)}}}
   if(paid)meta.unshift(`<span style="color:var(--ok);font-weight:600">Paid · clears in ${Math.max(1,Math.ceil((DAY-(Date.now()-num(i.paidAt)))/3600000))}h</span>`);
   return `<div class="bill${paid?' done':''}"><div><div class="nm">${esc(i.name)}</div><div class="mt">${meta.join('')}</div></div>
@@ -530,6 +531,19 @@ function fillBB(){const c=bbConf();$('#bbUrl').value=c.url||'';$('#bbKey').value
 const squash=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
 const bbState=(cls,txt)=>{const el=$('#bbState');el.className='sync '+cls;el.textContent=txt};
 let bbBusy=false,bbAgain=false;
+// BillBuddy's bill type -> the planner's; feeds without a type are treated as credit cards
+const BB_KIND={credit_card:'card',loan:'loan',utility:'bill',insurance:'bill'};
+const BB_SUFFIX={card:' CC',loan:' Loan',bill:''};
+const near=(a,b)=>Math.abs(num(a)-num(b))<0.01;
+const last4Of=i=>(i.kind==='card'&&acctOf(i)?.last4)||i.bbLast4||'';
+// drop a bill's card account unless you filled something in on it
+function unlinkAcct(it){const a=acctOf(it);delete it.acct;if(a&&!num(a.limit)&&!num(a.stmt)&&!a.last4&&!S.items.some(x=>x.acct===a.key))S.accounts=S.accounts.filter(x=>x!==a)}
+function removeItem(it){S.items=S.items.filter(x=>x!==it);unlinkAcct(it)}
+function refile(it,kind,bank){
+  if(it.kind==='card'&&kind!=='card')unlinkAcct(it);
+  it.kind=kind;it.name=bank+BB_SUFFIX[kind];it.rate=kind==='card'?3:null;
+  if(kind==='loan'){if(it.left===undefined)it.left=null;if(it.total===undefined)it.total=null}
+}
 async function syncBillBuddy(){
   if(!cloudReady)return;
   const {url,key}=bbConf();
@@ -542,19 +556,38 @@ async function syncBillBuddy(){
     const j=await r.json();if(!j.ok)throw new Error(j.error||'BillBuddy returned an error');bills=j.bills||[];
   }catch(e){console.warn('BillBuddy sync failed',e);bbState('off','Could not reach BillBuddy. Check the link.');return}
   finally{bbBusy=false;if(bbAgain){bbAgain=false;setTimeout(syncBillBuddy,0)}}
-  let changed=false;
+  let changed=false;const claimed=new Set();
   bills.forEach(b=>{
     const bank=squash(b.bank),due=parseD(b.due_date),amt=num(b.amount);
     if(!bank||!due||!(amt>0))return;
-    let it=S.items.find(i=>i.kind==='card'&&squash(i.name).includes(bank));
+    const kind=BB_KIND[b.product_type]||'card',l4=String(b.last4||'').replace(/\D/g,'').slice(-4),key=b.account_key||null;
+    const ofBank=i=>squash(i.name).includes(bank),free=i=>!claimed.has(i)&&(!i.bbKey||i.bbKey===key);
+    // same account as last time, then same last 4 digits, then same bank and type
+    // (several loans at one bank: the one with this amount, then this due day)
+    let it=(key&&S.items.find(i=>i.bbKey===key&&!claimed.has(i)))
+      ||(l4&&S.items.find(i=>i.kind===kind&&free(i)&&last4Of(i)===l4))
+      ||(()=>{const c=S.items.filter(i=>i.kind===kind&&free(i)&&ofBank(i)&&!(l4&&last4Of(i)));
+        return c.find(i=>near(i.amount,amt))||c.find(i=>num(i.day)===due.getDate())||(c.length===1?c[0]:null)})();
+    // an earlier sync filed this statement under the wrong type (a loan as "UnionBank CC"): fix or drop that copy
+    const wrong=S.items.filter(i=>i!==it&&i.kind!==kind&&!claimed.has(i)&&i.bbDue===b.due_date&&near(i.amount,amt)&&ofBank(i));
+    if(wrong.length){changed=true;if(!it){it=wrong.shift();refile(it,kind,b.bank)}wrong.forEach(removeItem)}
+    if(!it){
+      it={id:uid++,name:b.bank+BB_SUFFIX[kind],kind,amount:null,day:null,rate:kind==='card'?3:null};
+      if(kind==='loan')Object.assign(it,{left:null,total:null});
+      S.items.push(it);ensureLinks();changed=true;
+    }
+    claimed.add(it);
+    if(key&&it.bbKey!==key){it.bbKey=key;changed=true}
+    // the card's last 4 digits go on its account; other bills keep them on the bill
+    if(l4){const a=it.kind==='card'&&acctOf(it);
+      if(a){if(a.last4!==l4){a.last4=l4;changed=true}}else if(it.bbLast4!==l4){it.bbLast4=l4;changed=true}}
     // remember the statement you marked paid, so it is not brought back after payday
-    if(it&&isPaid(it)){if(it.bbDue&&it.bbPaidDue!==it.bbDue){it.bbPaidDue=it.bbDue;changed=true}return}
-    if(it&&it.bbPaidDue===b.due_date)return;
-    if(!it){it={id:uid++,name:b.bank+' CC',kind:'card',amount:null,day:null,rate:3};S.items.push(it);ensureLinks()}
+    if(isPaid(it)){if(it.bbDue&&it.bbPaidDue!==it.bbDue){it.bbPaidDue=it.bbDue;changed=true}return}
+    if(it.bbPaidDue===b.due_date)return;
     if(num(it.amount)===amt&&num(it.day)===due.getDate()&&it.bbDue===b.due_date)return;
     it.amount=amt;it.day=due.getDate();it.bbDue=b.due_date;changed=true;
   });
-  if(changed){save();if(editingId==null)renderItems();render()}
+  if(changed){ensureLinks();save();if(editingId==null)renderItems();render()}
   const t=new Date();
   bbState('ok',`Synced ${bills.length} bill${bills.length===1?'':'s'} at ${t.getHours()%12||12}:${String(t.getMinutes()).padStart(2,'0')} ${t.getHours()<12?'AM':'PM'}`);
 }
