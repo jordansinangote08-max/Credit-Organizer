@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Paycheck and Debt Planner</title>
+<meta name="description" content="Plan each pay cycle: salary, bills, installments, credit cards and other money.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f6f7f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1513" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Planner">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="styles.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <header>
+      <h1>Paycheck and Debt Planner</h1>
+      <p id="syncState" class="sync">Loading your data…</p>
+    </header>
+
+    <section class="hero" aria-label="This pay cycle">
+      <div class="salrow">
+        <div>
+          <label class="label" for="salary">Salary this cycle</label>
+          <div class="money"><span>₱</span><input id="salary" type="number" inputmode="decimal" step="0.01" min="0"></div>
+        </div>
+        <div class="payday"><label for="payday">Payday every</label><input id="payday" type="number" inputmode="numeric" min="1" max="31"><span>of the month</span></div>
+      </div>
+      <div id="status" class="status" aria-live="polite"></div>
+    </section>
+  </aside>
+
+  <main class="main">
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button class="tab" role="tab" id="tab-cycle" aria-controls="panel-cycle" data-tab="cycle" aria-selected="true">This cycle</button>
+      <button class="tab" role="tab" id="tab-bills" aria-controls="panel-bills" data-tab="bills" aria-selected="false" tabindex="-1">Bills</button>
+      <button class="tab" role="tab" id="tab-inst" aria-controls="panel-inst" data-tab="inst" aria-selected="false" tabindex="-1">Installments</button>
+      <button class="tab" role="tab" id="tab-acct" aria-controls="panel-acct" data-tab="acct" aria-selected="false" tabindex="-1">Accounts</button>
+      <button class="tab" role="tab" id="tab-money" aria-controls="panel-money" data-tab="money" aria-selected="false" tabindex="-1">Other money</button>
+      <button class="tab" role="tab" id="tab-borrow" aria-controls="panel-borrow" data-tab="borrow" aria-selected="false" tabindex="-1">If short</button>
+      <button class="tab" role="tab" id="tab-ahead" aria-controls="panel-ahead" data-tab="ahead" aria-selected="false" tabindex="-1">Plan ahead</button>
+      <button class="tab" role="tab" id="tab-bbsync" aria-controls="panel-bbsync" data-tab="bbsync" aria-selected="false" tabindex="-1">BillBuddy</button>
+    </nav>
+
+    <section class="panel" role="tabpanel" id="panel-cycle" aria-labelledby="tab-cycle" data-panel="cycle">
+      <div id="advice"></div>
+      <div class="sec">
+        <div class="sec-h"><h2>Money in and out</h2><span class="muted small" id="cycleLabel"></span></div>
+        <div id="timeline"></div>
+      </div>
+    </section>
+
+    <section class="panel" role="tabpanel" id="panel-bills" aria-labelledby="tab-bills" data-panel="bills" hidden>
+      <div class="sec">
+        <div class="sec-h"><h2>Bills</h2><button class="ghost" id="resetBtn">Reset</button></div>
+        <p class="muted small">All paid in full, on time.</p>
+        <div id="resetConfirm" class="reco bad" hidden><p class="small">This erases all your changes and restores the starting bills.</p><div class="row"><button class="btn" id="resetYes">Yes, reset</button><button class="ghost" id="resetNo">Cancel</button></div></div>
+        <div id="itemList"></div>
+        <button class="add" id="addBtn">+ Add bill</button>
+      </div>
+    </section>
+
+    <section class="panel" role="tabpanel" id="panel-inst" aria-labelledby="tab-inst" data-panel="inst" hidden>
+      <div class="sec">
+        <div class="sumrow" id="instSum"></div>
+      </div>
+      <div class="sec">
+        <div class="loans" id="instList"></div>
+        <button class="add" id="instAdd">+ Add installment</button>
+      </div>
+    </section>
+
+    <section class="panel" role="tabpanel" id="panel-acct" aria-labelledby="tab-acct" data-panel="acct" hidden>
+      <div class="sec">
+        <div><h2>Credit cards</h2><p class="muted small lead">Your cards, limits and statement dates. Keep each card's usage under 30% of its limit to protect your credit score.</p></div>
+        <div class="sumrow" id="acctSum"></div>
+      </div>
+      <div class="sec">
+        <div id="acctList"></div>
+        <button class="add" id="acctAdd">+ Add card</button>
+        <p class="muted small">Only ever save the last 4 digits. Never type your full card number, CVV or PIN here.</p>
+      </div>
+    </section>
+
+    <section class="panel" role="tabpanel" id="panel-money" aria-labelledby="tab-money" data-panel="money" hidden>
+      <div class="sec">
+        <div><h2>Other money</h2><p class="muted small lead">Side income, refunds, bonuses, money someone owes you. Set the date it arrives; it only counts in the pay cycle that date falls in.</p></div>
+        <div class="sumrow" id="incSum"></div>
+      </div>
+      <div class="sec">
+        <div id="incList"></div>
+        <button class="add" id="incAdd">+ Add money</button>
+      </div>
+    </section>
+
+    <section class="panel" role="tabpanel" id="panel-borrow" aria-labelledby="tab-borrow" data-panel="borrow" hidden>
+      <div class="sec">
+        <div id="shortHead"></div>
+        <div id="srcPick"></div>
+        <div id="credList"></div>
+      </div>
+      <details class="sec">
+        <summary>Edit creditors</summary>
+        <div id="srcList"></div>
+        <button class="add" id="srcAdd">+ Add creditor</button>
+      </details>
+      <details class="sec">
+        <summary>Ways to avoid borrowing</summary>
+        <ul class="tips">
+          <li><b>Never pay late.</b> A late payment hurts your credit score more than anything else.</li>
+          <li><b>Call the bank before the due date</b> if a bill won't fit. Ask about a payment arrangement while you're still on time.</li>
+          <li><b>Cut food delivery, coffee and subscriptions</b> until the gap is gone. ₱500–1,000 saved is ₱500–1,000 you don't borrow.</li>
+          <li><b>No card swipes or "pay later"</b> until your installments are done.</li>
+        </ul>
+      </details>
+    </section>
+
+    <section class="panel" role="tabpanel" id="panel-ahead" aria-labelledby="tab-ahead" data-panel="ahead" hidden>
+      <div class="sec">
+        <div><h2>When your salary frees up</h2><p class="muted small lead">Installments and fixed bills only, based on payments left.</p></div>
+        <div class="legend"><span><i class="k-loan"></i>Installments</span><span><i class="k-fixed"></i>Rent and bills</span><span><i class="k-free"></i>Free for cards and savings</span></div>
+        <div id="monthList"></div>
+      </div>
+    </section>
+
+    <section class="panel" role="tabpanel" id="panel-bbsync" aria-labelledby="tab-bbsync" data-panel="bbsync" hidden>
+      <div class="sec">
+        <div><h2>BillBuddy</h2><p class="muted small lead">Fills your credit card amounts and due dates from BillBuddy, every minute. Cards are matched by bank name.</p></div>
+        <div class="form flat">
+          <div class="field wide"><label for="bbUrl">BillBuddy API link</label><input id="bbUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://your-billbuddy.vercel.app/api/bills"></div>
+          <div class="field wide"><label for="bbKey">API key</label><input id="bbKey" type="password" autocomplete="off" spellcheck="false" placeholder="BILLS_API_KEY"></div>
+          <div class="acts"><button class="danger" id="bbClear">Disconnect</button><button class="btn" id="bbSave">Save and sync</button></div>
+        </div>
+        <span class="sync" id="bbState">Not connected</span>
+        <p class="muted small">The link and key stay on this device only. They are never saved to your account, so enter them once on each device you use.</p>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>
