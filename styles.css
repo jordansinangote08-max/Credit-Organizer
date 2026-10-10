@@ -300,3 +300,7 @@ details.sec:not([open]){gap:0}
 .authform input:focus{border-color:var(--accent);outline:none}
 .btn:disabled{opacity:.6;cursor:default}
 @media (pointer:coarse){.authform input{font-size:16px}.ghost.sm{min-height:36px}}
+
+/* signed out or loading: only the header and sign-in show */
+.locked .hero,.locked .main{display:none}
+@media (min-width:1024px){.locked .app{grid-template-columns:minmax(0,420px);justify-content:center}}

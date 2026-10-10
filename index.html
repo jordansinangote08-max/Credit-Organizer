@@ -18,22 +18,22 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="styles.css?v=4">
-<script src="config.js?v=4" defer></script>
+<link rel="stylesheet" href="styles.css?v=5">
+<script src="config.js?v=5" defer></script>
 <script src="vendor/supabase-2.116.0.js" defer></script>
-<script src="app.js?v=4" defer></script>
+<script src="app.js?v=5" defer></script>
 </head>
-<body>
+<body class="locked">
 <div class="app">
   <aside class="side">
     <header>
       <h1>Paycheck and Debt Planner</h1>
-      <div class="acctbar"><p id="syncState" class="sync">Loading your data…</p><span id="authWho" class="muted small"></span><button class="ghost sm" id="authBtn" aria-controls="authForm" hidden>Sign in</button></div>
+      <div class="acctbar"><p id="syncState" class="sync">Loading…</p><span id="authWho" class="muted small"></span><button class="ghost sm" id="authBtn" hidden>Sign out</button></div>
     </header>
     <form id="authForm" class="authform" hidden>
-      <label class="label" for="authEmail">Sign in to save to the cloud</label>
+      <label class="label" for="authEmail">Sign in to open your planner</label>
       <div class="row"><input id="authEmail" type="email" autocomplete="email" inputmode="email" required placeholder="you@example.com"><button class="btn" id="authSend">Send link</button></div>
-      <p class="muted small" id="authMsg">We'll email you a sign-in link. Your planner then saves to your account and follows you to every device.</p>
+      <p class="muted small" id="authMsg">We'll email you a sign-in link. Your planner is saved in your account and opens on any device.</p>
     </form>
 
     <section class="hero" aria-label="This pay cycle">
@@ -150,7 +150,7 @@
           <div class="acts"><button class="danger" id="bbClear">Disconnect</button></div>
         </div>
         <span class="sync" id="bbState">Not connected</span>
-        <p class="muted small">The link and key stay on this device only. They are never saved to your account, so enter them once on each device you use.</p>
+        <p class="muted small">The link and key are saved privately in your account, so every device you sign in on syncs with BillBuddy.</p>
       </div>
     </section>
   </main>

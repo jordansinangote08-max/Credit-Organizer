@@ -26,10 +26,16 @@ const fmtD=d=>MON[d.getMonth()]+' '+d.getDate();
 const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 const parseD=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s||'');return m?new Date(+m[1],+m[2]-1,+m[3]):null};
 
-let uid=1,S;
-try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){S=null}
-// data saved before ver 2 held the old sample bills and cards; start those over from the installments
-if(!S||!Array.isArray(S.items)||S.ver!==DEFAULTS.ver)S=clone(DEFAULTS);
+let uid=1,S=clone(DEFAULTS);
+// Everything lives in Supabase. Earlier versions kept data in this browser: it moves to the
+// account on its first sign-in (if the account is still empty) and is then deleted here.
+const LEGACY_KEYS=[KEY,KEY+'.tab',KEY+'.billbuddy'];
+let legacy=null;
+try{
+  const old=JSON.parse(localStorage.getItem(KEY)),bb=JSON.parse(localStorage.getItem(KEY+'.billbuddy'));
+  if(old&&Array.isArray(old.items)&&old.ver===DEFAULTS.ver)legacy=old;
+  if(bb&&bb.url&&bb.key){legacy=legacy||clone(DEFAULTS);legacy.bb=bb}
+}catch(e){}
 
 // ---------- dates ----------
 const clampPd=()=>Math.min(31,Math.max(1,Math.round(num(S.payday))||24));
@@ -95,13 +101,11 @@ const billOf=a=>S.items.find(i=>i.acct===a.key);
 const acctOf=i=>i.acct?S.accounts.find(a=>a.key===i.acct):null;
 
 // ---------- saving ----------
-// Always kept on this device; also saved to Supabase while signed in (see the cloud section at the end).
+// Saved to Supabase only (see the cloud section at the end); nothing is kept in the browser.
 let sb=null,cloudUser=null,cloudAt=null,cloudTimer=null,cloudReady=false;
 function setSync(cls,txt){const el=$('#syncState');el.className='sync '+cls;el.textContent=txt}
 const snapshot=()=>JSON.stringify(S,(k,v)=>k==='id'?undefined:v);
-const saveLocal=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
 function save(){
-  saveLocal();
   if(!cloudReady)return;
   clearTimeout(cloudTimer);setSync('busy','Saving…');
   cloudTimer=setTimeout(pushCloud,700);
@@ -481,7 +485,7 @@ $('#srcAdd').addEventListener('click',()=>{const s={id:uid++,name:'New creditor'
 
 $('#resetBtn').addEventListener('click',()=>{$('#resetConfirm').hidden=false});
 $('#resetNo').addEventListener('click',()=>{$('#resetConfirm').hidden=true});
-$('#resetYes').addEventListener('click',()=>{S=clone(DEFAULTS);prepare();editingId=null;save();syncInputs();$('#resetConfirm').hidden=true;renderAll()});
+$('#resetYes').addEventListener('click',()=>{const bb=S.bb;S=clone(DEFAULTS);if(bb)S.bb=bb;prepare();editingId=null;save();syncInputs();$('#resetConfirm').hidden=true;renderAll()});
 $('#acctList').addEventListener('input',e=>{
   const row=e.target.closest('.form');if(!row)return;const a=S.accounts.find(x=>x.id==row.dataset.aid),k=e.target.dataset.k;if(!a||!k)return;
   if(k==='last4'){const v=e.target.value.replace(/\D/g,'').slice(0,4);if(v!==e.target.value)e.target.value=v;a.last4=v}
@@ -503,7 +507,6 @@ function selectTab(name){
   // when the tab bar is stuck to the top, bring the new panel's start into view
   const bar=$('.tabs'),top=bar.getBoundingClientRect().top;
   if(top<=parseFloat(getComputedStyle(bar).top)+1)bar.parentElement.scrollIntoView({block:'start'});
-  try{localStorage.setItem(KEY+'.tab',name)}catch(e){}
 }
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>selectTab(t.dataset.tab)));
 $('.tabs').addEventListener('keydown',e=>{
@@ -511,24 +514,24 @@ $('.tabs').addEventListener('keydown',e=>{
   const j={ArrowRight:i+1,ArrowLeft:i-1,Home:0,End:tabs.length-1}[e.key];if(j==null)return;
   e.preventDefault();const t=tabs[(j+tabs.length)%tabs.length];t.focus();selectTab(t.dataset.tab);
 });
-try{const tb=localStorage.getItem(KEY+'.tab');if(tb&&document.querySelector(`[data-panel="${tb}"]`))selectTab(tb)}catch(e){}
 
 // ---------- boot ----------
 function adopt(next){
   if(!next||!Array.isArray(next.items)||next.ver!==DEFAULTS.ver)return;
-  S=next;prepare();rollover();editingId=null;syncInputs();renderAll();
+  S=next;prepare();rollover();editingId=null;syncInputs();renderAll();fillBB();
 }
-prepare();rollover();save();syncInputs();renderAll();
+prepare();rollover();syncInputs();renderAll();
 // ---------- BillBuddy ----------
 // Card bills come from BillBuddy: each one fills the matching credit card's
 // statement amount and due day here. Matched by bank name ("RCBC" -> "RCBC CC").
-// The link and key live in this device's storage only, never in the cloud snapshot.
-const BB_KEY=KEY+'.billbuddy';
-const bbConf=()=>{try{return JSON.parse(localStorage.getItem(BB_KEY))||{}}catch(e){return {}}};
+// The link and key are saved with the planner in your Supabase account.
+const bbConf=()=>S.bb||{};
+function fillBB(){const c=bbConf();$('#bbUrl').value=c.url||'';$('#bbKey').value=c.key||'';if(!c.url)bbState('off','Not connected')}
 const squash=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
 const bbState=(cls,txt)=>{const el=$('#bbState');el.className='sync '+cls;el.textContent=txt};
 let bbBusy=false,bbAgain=false;
 async function syncBillBuddy(){
+  if(!cloudReady)return;
   const {url,key}=bbConf();
   if(!url||!key){bbState('off','Not connected');return}
   if(bbBusy){bbAgain=true;return}bbBusy=true;
@@ -555,16 +558,15 @@ async function syncBillBuddy(){
   const t=new Date();
   bbState('ok',`Synced ${bills.length} bill${bills.length===1?'':'s'} at ${t.getHours()%12||12}:${String(t.getMinutes()).padStart(2,'0')} ${t.getHours()<12?'AM':'PM'}`);
 }
-{const c=bbConf();$('#bbUrl').value=c.url||'';$('#bbKey').value=c.key||''}
 // connects on its own once both the link and the key are filled in
 let bbTimer=null;
 function bbConnect(){
   const url=$('#bbUrl').value.trim(),key=$('#bbKey').value.trim(),c=bbConf();
-  if(!url&&!key){try{localStorage.removeItem(BB_KEY)}catch(e){}bbState('off','Not connected');return}
+  if(!url&&!key){if(S.bb){delete S.bb;save()}bbState('off','Not connected');return}
   if(!/^https:\/\//i.test(url)){bbState('off','The link must start with https://');return}
   if(!key){bbState('off','Enter the API key');return}
   if(url===c.url&&key===c.key)return;
-  try{localStorage.setItem(BB_KEY,JSON.stringify({url,key}))}catch(e){bbState('off','Could not save on this device');return}
+  S.bb={url,key};save();
   bbState('busy','Syncing…');syncBillBuddy();
 }
 ['bbUrl','bbKey'].forEach(id=>{const el=$('#'+id);
@@ -573,7 +575,7 @@ function bbConnect(){
 });
 $('#bbClear').addEventListener('click',()=>{
   clearTimeout(bbTimer);
-  try{localStorage.removeItem(BB_KEY)}catch(e){}
+  if(S.bb){delete S.bb;save()}
   $('#bbUrl').value='';$('#bbKey').value='';bbState('off','Not connected');
 });
 setInterval(syncBillBuddy,60000);
@@ -586,8 +588,8 @@ const CFG=window.PLANNER_CONFIG||{};
 async function pushCloud(){
   cloudTimer=null;
   const {data,error}=await sb.from('planner_state').upsert({user_id:cloudUser.id,state:JSON.parse(snapshot())}).select('updated_at').single();
-  if(cloudTimer)return; // a newer save is already queued
-  if(error){console.warn('Supabase save failed',error);setSync('off','Not saved to cloud. Kept on this device.');return}
+  if(cloudTimer||!cloudReady)return; // a newer save is queued, or signed out meanwhile
+  if(error){console.warn('Supabase save failed',error);setSync('off','Not saved yet. Retrying…');cloudTimer=setTimeout(pushCloud,5000);return}
   cloudAt=data.updated_at;setSync('ok','Saved to your account');
 }
 async function pullCloud(){
@@ -596,15 +598,19 @@ async function pullCloud(){
   return data;
 }
 async function startCloud(user){
-  cloudUser=user;cloudReady=false;setSync('busy','Loading your account…');
+  cloudUser=user;cloudReady=false;renderAuth();setSync('busy','Loading your planner…');
   try{
     const row=await pullCloud();
     if(cloudUser?.id!==user.id)return;
     cloudReady=true;
-    // the account's copy wins; a new account starts from what is on this device
-    if(row&&row.state&&row.state.ver===DEFAULTS.ver){adopt(row.state);saveLocal();cloudAt=row.updated_at;setSync('ok','Saved to your account')}
-    else save();
-  }catch(e){console.warn('Supabase load failed',e);setSync('off','Could not reach your account. Saved on this device.')}
+    if(row&&row.state&&row.state.ver===DEFAULTS.ver){adopt(row.state);cloudAt=row.updated_at;setSync('ok','Saved to your account')}
+    else{adopt(legacy||clone(DEFAULTS));save()} // a new account starts from this browser's old data, or the installments
+    legacy=null;LEGACY_KEYS.forEach(k=>{try{localStorage.removeItem(k)}catch(e){}});
+    renderAuth();syncBillBuddy();
+  }catch(e){
+    console.warn('Supabase load failed',e);setSync('off','Could not reach your account. Trying again…');
+    setTimeout(()=>{if(cloudUser?.id===user.id&&!cloudReady)startCloud(user)},5000);
+  }
 }
 // pick up changes made on another device when you come back to this one
 document.addEventListener('visibilitychange',async()=>{
@@ -613,31 +619,33 @@ document.addEventListener('visibilitychange',async()=>{
     const row=await pullCloud();
     if(!row||row.updated_at===cloudAt||cloudTimer||row.state?.ver!==DEFAULTS.ver)return;
     if(document.activeElement?.matches?.('input,select'))return;
-    adopt(row.state);saveLocal();cloudAt=row.updated_at;
+    adopt(row.state);cloudAt=row.updated_at;
   }catch(e){}
 });
+// the planner stays hidden until your account's data has loaded
 function renderAuth(){
-  const btn=$('#authBtn');btn.hidden=!sb;
-  btn.textContent=cloudUser?'Sign out':'Sign in';
-  btn.setAttribute('aria-expanded',String(!cloudUser&&!$('#authForm').hidden));
-  if(cloudUser)$('#authForm').hidden=true;
-  $('#authWho').textContent=cloudUser?cloudUser.email||'':'';
+  document.body.classList.toggle('locked',!cloudReady);
+  $('#authBtn').hidden=!cloudUser;
+  $('#authForm').hidden=!sb||!!cloudUser;
+  $('#authWho').textContent=cloudUser?.email||'';
+}
+function signedOut(){
+  cloudUser=null;cloudReady=false;clearTimeout(cloudTimer);cloudTimer=null;
+  S=clone(DEFAULTS);prepare();editingId=null;syncInputs();renderAll();fillBB();
+  setSync('off','Sign in to open your planner');renderAuth();
 }
 function initCloud(){
-  if(!CFG.supabaseUrl||!CFG.supabaseAnonKey||!window.supabase){setSync('off','Saved on this device only');return}
+  if(!CFG.supabaseUrl||!CFG.supabaseAnonKey||!window.supabase){setSync('off','Cloud saving is not set up. Add your Supabase details to config.js.');renderAuth();return}
   sb=window.supabase.createClient(CFG.supabaseUrl,CFG.supabaseAnonKey);
   sb.auth.onAuthStateChange((ev,session)=>{
     const u=session?.user||null;
-    if(u&&cloudUser?.id!==u.id)setTimeout(()=>startCloud(u),0); // not inside the auth callback
-    else if(!u){cloudUser=null;cloudReady=false;clearTimeout(cloudTimer);cloudTimer=null;setSync('off','Sign in to save to the cloud')}
-    setTimeout(renderAuth,0);
+    // claim the user now so a second auth event can't start a second load; load outside the callback
+    if(u&&cloudUser?.id!==u.id){cloudUser=u;setTimeout(()=>startCloud(u),0)}
+    else if(!u)setTimeout(signedOut,0);
   });
   renderAuth();
 }
-$('#authBtn').addEventListener('click',async()=>{
-  if(cloudUser){await sb.auth.signOut();return}
-  const f=$('#authForm');f.hidden=!f.hidden;renderAuth();if(!f.hidden)$('#authEmail').focus();
-});
+$('#authBtn').addEventListener('click',()=>{if(cloudUser)sb.auth.signOut()});
 $('#authForm').addEventListener('submit',async e=>{
   e.preventDefault();
   const email=$('#authEmail').value.trim(),msg=$('#authMsg'),b=$('#authSend');if(!email)return;
@@ -647,4 +655,4 @@ $('#authForm').addEventListener('submit',async e=>{
   msg.textContent=error?'Could not send the link: '+error.message:'Check your email and open the sign-in link on this device.';
 });
 
-initCloud();syncBillBuddy();
+initCloud();

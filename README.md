@@ -14,7 +14,7 @@ Plain static files, no build step. Open `index.html` or serve the folder (e.g. `
 
 ## Saving
 
-Data is always kept in the browser. With Supabase set up, signing in also saves it to your account so it follows you to every device.
+Everything is stored in Supabase: you sign in first, and the planner loads from and saves to your account. Nothing is kept in the browser except Supabase's sign-in session (needed to stay signed in). Without `config.js` filled in, the planner shows a setup message instead.
 
 ### Set up Supabase
 
@@ -22,11 +22,12 @@ Data is always kept in the browser. With Supabase set up, signing in also saves 
 2. **SQL Editor → New query**: paste `supabase/schema.sql` and run it. This creates `planner_state` (one row per user) with Row Level Security, so each person can only read and change their own row.
 3. **Authentication → URL Configuration**: set **Site URL** to where the planner is hosted (e.g. `https://your-planner.vercel.app`) and add it under **Redirect URLs**. Sign-in links send you back there.
 4. **Project Settings → API**: copy the **Project URL** and the **anon / publishable** key into `config.js`. The anon key is meant to be public; Row Level Security protects the data. Never put the `service_role` key here.
-5. Open the planner, tap **Sign in**, enter your email and open the link from the same device.
+5. Open the planner, enter your email and open the sign-in link from the same device.
 
 How it syncs:
 
-- Every change saves to your account about a second later.
-- The first time you sign in, the account gets whatever is on that device. After that, the account's copy wins when you sign in on another device.
+- Every change saves to your account about a second later; a failed save retries every 5 seconds.
 - Coming back to the app picks up changes made on another device.
-- BillBuddy's link and key are never sent to Supabase; they stay on each device.
+- BillBuddy's link and key are saved in your account too, so every signed-in device syncs with it.
+- Signing out clears the planner from the screen.
+- Data an earlier version kept in this browser moves to the account on its first sign-in (if the account is empty) and is then deleted from the browser.
