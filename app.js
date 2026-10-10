@@ -652,15 +652,27 @@ async function syncBillBuddy(){
     if(!bank||!due||!(amt>0))return;
     const kind=bbKind(b),l4=String(b.last4||'').replace(/\D/g,'').slice(-4),key=b.account_key||null;
     const ofBank=i=>squash(i.name).includes(bank),free=i=>!claimed.has(i)&&(!i.bbKey||i.bbKey===key);
-    // same account as last time, then same last 4 digits, then same bank and type
+    // same account as last time, then same last 4 digits (same type first, then any), then same bank and type
     // (several loans at one bank: the one with this amount, then this due day)
     let it=(key&&S.items.find(i=>i.bbKey===key&&!claimed.has(i)))
       ||(l4&&S.items.find(i=>i.kind===kind&&free(i)&&last4Of(i)===l4))
+      ||(l4&&S.items.find(i=>free(i)&&last4Of(i)===l4))
       ||(()=>{const c=S.items.filter(i=>i.kind===kind&&free(i)&&ofBank(i)&&!(l4&&last4Of(i)));
         return c.find(i=>near(i.amount,amt))||c.find(i=>num(i.day)===due.getDate())||(c.length===1?c[0]:null)})();
     // an earlier sync filed this statement under the wrong type (a loan as "UnionBank CC"): fix or drop that copy
     const wrong=S.items.filter(i=>i!==it&&i.kind!==kind&&!claimed.has(i)&&i.bbDue===b.due_date&&near(i.amount,amt)&&ofBank(i));
     if(wrong.length){changed=true;if(!it){it=wrong.shift();refile(it,kind,b.bank)}wrong.forEach(removeItem)}
+    // the last 4 digits decide which card it is: a card in Accounts with these digits and no bill
+    // (its bill was removed, or an older sync gave the card a second account) gets this bill back,
+    // under the name you gave the card
+    const mine=kind==='card'&&l4?S.accounts.find(a=>a.last4===l4&&!S.items.some(i=>i.acct===a.key)):null;
+    if(mine&&it&&it.kind==='card'){
+      const dup=acctOf(it);it.acct=mine.key;it.name=mine.name;delete it.noAcct;changed=true;
+      if(dup&&!num(dup.limit)&&!num(dup.stmt)&&!S.items.some(i=>i.acct===dup.key))S.accounts=S.accounts.filter(x=>x!==dup);
+    }else if(mine&&!it){
+      it={id:uid++,name:mine.name,kind,amount:null,day:null,rate:3,acct:mine.key};
+      S.items.push(it);ensureLinks();changed=true;
+    }
     if(!it){
       it={id:uid++,name:b.bank+BB_SUFFIX[kind],kind,amount:null,day:null,rate:kind==='card'?3:null};
       if(kind==='loan')Object.assign(it,{left:null,total:null});
