@@ -14,6 +14,14 @@ const SRC_TPL=[
  {name:'Family or friend',avail:null,rate:0,fee:0,term:1},
  {name:'Credit card cash advance',avail:null,rate:3,fee:3,term:3}
 ];
+// iOS-style icons for the edit and remove buttons; each button carries its own label for screen readers
+const IC={
+  edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2 5.2l3.6 3.6M4 20l1-4.6L15.6 4.8a2 2 0 012.8 0l.8.8a2 2 0 010 2.8L8.6 19 4 20z"/></svg>',
+  trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 002 2h6a2 2 0 002-2l1-12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>',
+  chev:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 6l6 6-6 6"/></svg>'
+};
+const editBtn=(attr,name)=>`<button class="ghost ib" ${attr} aria-label="Edit ${esc(name)}" title="Edit">${IC.edit}</button>`;
+const delBtn=(attr,label)=>`<button class="danger ib" ${attr} aria-label="${esc(label)}" title="${esc(label)}">${IC.trash}</button>`;
 const clone=o=>JSON.parse(JSON.stringify(o));
 const $=s=>document.querySelector(s);
 const num=v=>{const n=parseFloat(v);return isFinite(n)?n:0};
@@ -252,7 +260,7 @@ function itemForm(i){
     ${i.kind==='loan'?`<div class="field"><label for="l${i.id}">Payments left</label><input id="l${i.id}" data-k="left" type="number" inputmode="numeric" min="0" value="${i.left??''}"></div><div class="field"><label for="t${i.id}">Total payments</label><input id="t${i.id}" data-k="total" type="number" inputmode="numeric" min="0" value="${i.total??''}"></div>`:''}
     ${i.kind==='card'||i.kind==='loan'?`<div class="field"><label for="f4${i.id}">Last 4 digits</label><input id="f4${i.id}" data-k="last4" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="1234" autocomplete="off" value="${esc(last4Of(i))}"><span class="hint">So BillBuddy bills land on this one.</span></div>`:''}
     ${i.kind==='card'||i.kind==='loan'?`<div class="field"><label for="r${i.id}">Interest %/month</label><input id="r${i.id}" data-k="rate" type="number" inputmode="decimal" step="0.01" min="0" value="${i.rate??''}"></div>`:''}
-    <div class="acts"><button class="danger" data-del="${i.id}">Remove bill</button><button class="btn" data-done="1">Done</button></div>
+    <div class="acts">${delBtn(`data-del="${i.id}"`,"Remove "+(i.name||"this bill"))}<button class="btn" data-done="1">Done</button></div>
   </div>`;
 }
 function itemRow(i,start){
@@ -265,7 +273,7 @@ function itemRow(i,start){
   if(paid)meta.unshift(`<span class="t-ok">Paid · clears in ${Math.max(1,Math.ceil((DAY-(Date.now()-num(i.paidAt)))/3600000))}h</span>`);
   return `<div class="bill${paid?' done':''}"><div><div class="nm">${esc(i.name||'Untitled bill')}</div><div class="mt">${meta.join('')}</div></div>
     <div class="rt">${amt>0?`<span class="amt">${peso(amt)}</span>`:'<span class="pill warn">Add amount</span>'}
-    <div class="bt">${paid?`<button class="ghost" data-unpaid="${i.id}">Undo</button>`:`<button class="ghost" data-edit="${i.id}">Edit</button>${amt>0?`<button class="paidbtn" data-paid="${i.id}">Paid</button>`:''}`}</div></div></div>`;
+    <div class="bt">${paid?`<button class="ghost" data-unpaid="${i.id}">Undo</button>`:`${editBtn(`data-edit="${i.id}"`,i.name||"bill")}${amt>0?`<button class="paidbtn" data-paid="${i.id}">Paid</button>`:''}`}</div></div></div>`;
 }
 function renderItems(){
   ensureCats();
@@ -284,9 +292,9 @@ function renderItems(){
     `<div class="tot"><span>Still to pay</span><span>${peso(left)}</span></div>`+
     (hidden.length?`<details class="paidlist"><summary>Paid this cycle (${hidden.length})</summary><ul>${hidden.map(i=>`<li><span>${esc(i.name)}</span><span class="num">${peso(num(i.amount))}</span></li>`).join('')}</ul></details>`:'')+
     (later.length?`<details class="paidlist"${later.some(i=>i.id===editingId)?' open':''}><summary>Coming in a later cycle (${later.length})</summary><div class="later">${later.map(i=>i.id===editingId?itemForm(i):
-      `<div class="laterrow"><span>${esc(i.name||'Untitled bill')} <span class="muted">· ${fmtD(exactDue(i))}, ${exactDue(i).getFullYear()}</span></span><span class="num">${peso(num(i.amount))}</span><button class="ghost" data-edit="${i.id}">Edit</button></div>`).join('')}</div></details>`:'')+
+      `<div class="laterrow"><span>${esc(i.name||'Untitled bill')} <span class="muted">· ${fmtD(exactDue(i))}, ${exactDue(i).getFullYear()}</span></span><span class="num">${peso(num(i.amount))}</span>${editBtn(`data-edit="${i.id}"`,i.name||"bill")}</div>`).join('')}</div></details>`:'')+
     (done.length?`<details class="paidlist"${done.some(i=>i.id===editingId)?' open':''}><summary>Ended (${done.length})</summary><div class="later">${done.map(i=>i.id===editingId?itemForm(i):
-      `<div class="laterrow"><span>${esc(i.name||'Untitled bill')} <span class="muted">· ${i.once?'was due '+fmtD(exactDue(i)):'stopped after '+MON[untilYm(i.until)%100-1]+' '+Math.floor(untilYm(i.until)/100)}</span></span><span class="num">${peso(num(i.amount))}</span><button class="ghost" data-edit="${i.id}">Edit</button></div>`).join('')}</div></details>`:'');
+      `<div class="laterrow"><span>${esc(i.name||'Untitled bill')} <span class="muted">· ${i.once?'was due '+fmtD(exactDue(i)):'stopped after '+MON[untilYm(i.until)%100-1]+' '+Math.floor(untilYm(i.until)/100)}</span></span><span class="num">${peso(num(i.amount))}</span>${editBtn(`data-edit="${i.id}"`,i.name||"bill")}</div>`).join('')}</div></details>`:'');
 }
 
 // ---------- categories window ----------
@@ -297,7 +305,7 @@ function renderCats(){
   if(!c){
     $('#catTitle').textContent='Categories';
     box.innerHTML=`<ul class="catlist">${S.cats.map(x=>{const n=S.items.filter(i=>i.cat===x.key).length;
-      return `<li data-c="${esc(x.color)}"><button class="catrow" data-catedit="${esc(x.key)}"><span class="dot"></span><span class="nm">${esc(x.name)}</span><span class="muted small">${n} bill${n===1?'':'s'}</span><span class="go" aria-hidden="true">Edit</span></button></li>`}).join('')}</ul>
+      return `<li data-c="${esc(x.color)}"><button class="catrow" data-catedit="${esc(x.key)}" aria-label="Edit ${esc(x.name)}, ${n} bill${n===1?'':'s'}"><span class="dot"></span><span class="nm">${esc(x.name)}</span><span class="muted small">${n} bill${n===1?'':'s'}</span><span class="go">${IC.chev}</span></button></li>`}).join('')}</ul>
       <div class="dlg-acts"><button class="ghost" data-catnew="1">+ New category</button><button class="btn" data-catclose="1">Done</button></div>`;
     return;
   }
@@ -308,7 +316,7 @@ function renderCats(){
     <div class="field"><span id="ccl">Color</span><div class="swatches" role="group" aria-labelledby="ccl">${COLORS.map(k=>`<button class="sw" data-c="${k}" data-sw="${k}" aria-pressed="${k===c.color}" aria-label="${k[0].toUpperCase()+k.slice(1)}"></button>`).join('')}</div></div>
     <div class="field"><label for="ck">Counts as</label><select id="ck" data-ck="kind">${KIND_OPTS.map(([k,v])=>`<option value="${k}" ${k===c.kind?'selected':''}>${v}</option>`).join('')}</select></div>
     ${catDeleting?`<div class="confirm"><label for="cm">Move its ${n} bill${n===1?'':'s'} to</label><select id="cm">${others.map(x=>`<option value="${esc(x.key)}">${esc(x.name)}</option>`).join('')}</select><div class="row"><button class="btn danger-btn" data-catdelyes="1">Move and delete</button><button class="ghost" data-catdelno="1">Cancel</button></div></div>`
-      :`<div class="dlg-acts">${others.length?`<button class="danger" data-catdel="1">Delete</button>`:'<span></span>'}<button class="btn" data-catdone="1">Done</button></div>`}
+      :`<div class="dlg-acts">${others.length?`${delBtn('data-catdel="1"',"Delete category "+c.name)}`:'<span></span>'}<button class="btn" data-catdone="1">Done</button></div>`}
   </div>`;
 }
 function openCats(){catEditing=null;catDeleting=false;renderCats();$('#catDlg').showModal()}
@@ -330,7 +338,7 @@ function renderInst(){
       <div class="loan-h"><div><h3>${esc(i.name)}${last4Of(i)?`<span class="l4">•••• ${esc(last4Of(i))}</span>`:''}</h3><span class="muted small">${i.rate!=null&&i.rate!==''?num(i.rate)+'%'+(i.addon?' add-on':'')+'/mo · ':''}due every ${ord(num(i.day))}</span></div><span class="pay">${peso(pay)}<span class="muted small">/mo</span></span></div>
       ${total?`<div class="bar" role="img" aria-label="${done} of ${total} paid"><i style="width:${Math.round(done/total*100)}%"></i></div>`:''}
       <div class="facts">${total?`<span><b>${done}/${total}</b> paid</span>`:''}<span><b>${left}</b> left</span><span><b>${peso(pay*left)}</b> to go</span><span>Ends <b>${end?MON[end.getMonth()]+' '+end.getFullYear():'—'}</b></span></div>
-      <div class="acts">${isPaid(i)?`<span class="pill ok">Paid this month</span>${!isHiddenPaid(i)?`<button class="ghost" data-iundo="${i.id}">Undo</button>`:''}`:''}${last4Of(i)?'':`<button class="pill warn ask4" data-iedit4="${i.id}">Add last 4</button>`}<button class="ghost" data-iedit="${i.id}">Edit</button>${left>0&&!isPaid(i)?`<button class="paidbtn" data-ipaid="${i.id}">Paid</button>`:''}</div>
+      <div class="acts">${isPaid(i)?`<span class="pill ok">Paid this month</span>${!isHiddenPaid(i)?`<button class="ghost" data-iundo="${i.id}">Undo</button>`:''}`:''}${last4Of(i)?'':`<button class="pill warn ask4" data-iedit4="${i.id}">Add last 4</button>`}${editBtn(`data-iedit="${i.id}"`,i.name)}${left>0&&!isPaid(i)?`<button class="paidbtn" data-ipaid="${i.id}">Paid</button>`:''}</div>
     </div>`;
   }).join('');
   $('#instSum').innerHTML=`<div><span class="label">Per month</span><span class="v">${peso(monthly)}</span></div><div><span class="label">Still to pay</span><span class="v">${peso(remaining)}</span></div><div><span class="label">All done by</span><span class="v">${last?MON[last.getMonth()]+' '+last.getFullYear():'—'}</span></div>`;
@@ -429,7 +437,7 @@ function renderSrcList(){
     <div class="field"><label for="sf${s.id}">Upfront fee %</label><input id="sf${s.id}" data-k="fee" type="number" min="0" step="0.01" value="${s.fee??''}"></div>
     <div class="field"><label for="st${s.id}">Term (months)</label><input id="st${s.id}" data-k="term" type="number" min="1" value="${s.term??''}"></div>
     <div class="field"><label for="sx${s.id}">Other terms</label><input id="sx${s.id}" data-k="terms" placeholder="3,6,12" value="${esc(s.terms||'')}"></div>
-    <div class="acts"><button class="danger" data-sdel="${s.id}">Remove</button></div></div>`).join('');
+    <div class="acts">${delBtn(`data-sdel="${s.id}"`,"Remove "+(s.name||"creditor"))}</div></div>`).join('');
 }
 
 // ---------- plan ahead ----------
@@ -464,7 +472,7 @@ function acctForm(a){
     <div class="field"><label for="al${a.id}">Credit limit (₱)</label><input id="al${a.id}" data-k="limit" type="number" min="0" step="0.01" value="${a.limit??''}"></div>
     <div class="field"><label for="as${a.id}">Statement day</label><input id="as${a.id}" data-k="stmt" type="number" min="1" max="31" value="${a.stmt??''}"></div>
     <div class="field"><label for="ad${a.id}">Payment due day</label><input id="ad${a.id}" data-k="due" type="number" min="1" max="31" value="${billOf(a)?.day??''}"></div>
-    <div class="acts"><button class="danger" data-adel="${a.id}">Remove</button><button class="btn" data-adone="1">Done</button></div>
+    <div class="acts">${delBtn(`data-adel="${a.id}"`,"Remove "+(a.name||"card"))}<button class="btn" data-adone="1">Done</button></div>
   </div>`;
 }
 function renderAccounts(){
@@ -484,7 +492,7 @@ function renderAccounts(){
         <span class="lim">${L>0?peso(L):'—'}<small>credit limit</small></span></div>
       ${p!==null?`<div class="ubar" role="img" aria-label="${p.toFixed(0)}% of limit used"><i class="${ucls(p)}" style="width:${Math.min(100,p).toFixed(1)}%"></i></div>`:''}
       <div class="facts">${p!==null?`<span><b>${p.toFixed(0)}%</b> used</span>`:''}${facts.join('')}</div>
-      <div class="acts"><button class="ghost" data-aedit="${a.id}">Edit</button></div>
+      <div class="acts">${editBtn(`data-aedit="${a.id}"`,a.name)}</div>
     </div>`;
   }).join('');
   $('#acctList').innerHTML=html||'<p class="empty">No cards yet.</p>';
