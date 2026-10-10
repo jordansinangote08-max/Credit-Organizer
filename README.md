@@ -30,5 +30,6 @@ How it syncs:
 - Coming back to the app picks up changes made on another device.
 - BillBuddy's link and key are saved in your account too, so every signed-in device syncs with it.
 - A device stays signed in: Supabase keeps the sign-in on the device and renews it automatically, so the planner opens straight away. The email address is also remembered to fill in the sign-in form.
+- An open planner reloads itself when a newer version is published (checked when you come back to it and every 5 minutes). The database also rejects saves from an older copy, so it can't put back outdated data. If you set up Supabase before this rule existed, run `supabase/schema.sql` again.
 - Signing out clears the planner from the screen and forgets the sign-in on that device.
 - Data an earlier version kept in this browser moves to the account on its first sign-in (if the account is empty) and is then deleted from the browser.

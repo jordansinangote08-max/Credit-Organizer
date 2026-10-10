@@ -30,3 +30,21 @@ end $$;
 drop trigger if exists planner_state_touch on public.planner_state;
 create trigger planner_state_touch before update on public.planner_state
   for each row execute function public.planner_state_touch();
+
+-- Reject saves from copies of the planner loaded before this rule. Current copies send a new random
+-- `writer` with every save; older ones don't, and would otherwise put back bills filed with outdated
+-- rules (e.g. a loan as "UnionBank CC"). An old copy sees "Not saved" until it is reloaded.
+alter table public.planner_state add column if not exists writer text;
+
+create or replace function public.planner_state_guard() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  if new.writer is null or (tg_op = 'UPDATE' and new.writer is not distinct from old.writer) then
+    raise exception 'This copy of the planner is out of date. Reload the page.' using errcode = 'P0001';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists planner_state_guard on public.planner_state;
+create trigger planner_state_guard before insert or update on public.planner_state
+  for each row execute function public.planner_state_guard();

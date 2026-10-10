@@ -102,7 +102,7 @@ const acctOf=i=>i.acct?S.accounts.find(a=>a.key===i.acct):null;
 
 // ---------- saving ----------
 // Saved to Supabase only (see the cloud section at the end); nothing is kept in the browser.
-let sb=null,cloudUser=null,cloudAt=null,cloudTimer=null,cloudReady=false;
+let sb=null,cloudUser=null,cloudAt=null,cloudTimer=null,cloudReady=false,pushing=false,noWriter=false;
 function setSync(cls,txt){const el=$('#syncState');el.className='sync '+cls;el.textContent=txt}
 const snapshot=()=>JSON.stringify(S,(k,v)=>k==='id'?undefined:v);
 function save(){
@@ -633,9 +633,16 @@ setInterval(()=>{if(rollover())save();if(editingId==null&&!document.activeElemen
 // Connection details come from config.js. Without them the planner stays on this device only.
 const CFG=window.PLANNER_CONFIG||{};
 const EMAIL_KEY=KEY+'.email'; // only the email address, to fill in the sign-in form
+// Every save carries a new random `writer`. The database rejects saves that don't (see supabase/schema.sql):
+// those come from a copy of the planner loaded before this rule, which would file bills with outdated rules.
+const newWriter=()=>Math.random().toString(36).slice(2)+Date.now().toString(36);
 async function pushCloud(){
-  cloudTimer=null;
-  const {data,error}=await sb.from('planner_state').upsert({user_id:cloudUser.id,state:JSON.parse(snapshot())}).select('updated_at').single();
+  cloudTimer=null;pushing=true;
+  const row={user_id:cloudUser.id,state:JSON.parse(snapshot())};if(!noWriter)row.writer=newWriter();
+  let {data,error}=await sb.from('planner_state').upsert(row).select('updated_at').single();
+  // the `writer` column isn't there until schema.sql is run again; save without it meanwhile
+  if(error&&!noWriter&&/writer/i.test(error.message||'')){noWriter=true;delete row.writer;({data,error}=await sb.from('planner_state').upsert(row).select('updated_at').single())}
+  pushing=false;
   if(cloudTimer||!cloudReady)return; // a newer save is queued, or signed out meanwhile
   if(error){console.warn('Supabase save failed',error);setSync('off','Not saved yet. Retrying…');cloudTimer=setTimeout(pushCloud,5000);return}
   cloudAt=data.updated_at;setSync('ok','Saved to your account');
@@ -662,10 +669,14 @@ async function startCloud(user){
 }
 // pick up changes made on another device when you come back to this one
 document.addEventListener('visibilitychange',async()=>{
-  if(document.hidden||!cloudReady||cloudTimer)return;
+  if(document.hidden)return;
+  checkUpdate();
+  if(!cloudReady||cloudTimer||pushing)return;
   try{
     const row=await pullCloud();
-    if(!row||row.updated_at===cloudAt||cloudTimer||row.state?.ver!==DEFAULTS.ver)return;
+    // only a copy saved after ours, and only when no save of ours is waiting or on its way
+    if(!row||cloudTimer||pushing||row.state?.ver!==DEFAULTS.ver)return;
+    if(cloudAt&&!(Date.parse(row.updated_at)>Date.parse(cloudAt)))return;
     if(document.activeElement?.matches?.('input,select'))return;
     adopt(row.state);cloudAt=row.updated_at;
   }catch(e){}
@@ -709,3 +720,18 @@ $('#authForm').addEventListener('submit',async e=>{
 });
 
 initCloud();
+
+// ---------- updates ----------
+// A tab left open keeps running the code it loaded with. When a newer version is published, reload, so an
+// old copy never syncs BillBuddy with outdated rules and saves that to the account.
+const APP_V=(/[?&]v=(\w+)/.exec(document.currentScript?.getAttribute('src')||'')||[])[1];
+async function checkUpdate(){
+  if(!APP_V)return;
+  try{
+    const html=await (await fetch(location.pathname,{cache:'no-store'})).text();
+    const v=(/app\.js\?v=(\w+)/.exec(html)||[])[1];
+    if(!v||v===APP_V||cloudTimer||pushing||document.activeElement?.matches?.('input,select'))return;
+    location.reload();
+  }catch(e){}
+}
+setInterval(checkUpdate,5*60000);
