@@ -230,7 +230,7 @@ function itemRow(i,start){
 function renderItems(){
   const start=cycleStart();
   const hidden=S.items.filter(isHiddenPaid),open=S.items.filter(i=>!isHiddenPaid(i));
-  const vis=open.filter(i=>inCycle(i,start)),later=open.filter(i=>!inCycle(i,start));
+  const vis=open.filter(i=>inCycle(i,start));
   const html=GROUPS.map(([k,label])=>{
     const its=vis.filter(i=>i.kind===k);if(!its.length)return '';
     its.sort((a,b)=>(isPaid(a)-isPaid(b))||dueOf(a,start)-dueOf(b,start));
@@ -240,8 +240,7 @@ function renderItems(){
   const left=vis.filter(i=>!isPaid(i)).reduce((s,i)=>s+num(i.amount),0);
   $('#itemList').innerHTML=(html||'<p class="empty">Nothing left to pay this cycle.</p>')+
     `<div class="tot"><span>Still to pay</span><span>${peso(left)}</span></div>`+
-    (hidden.length?`<details class="paidlist"><summary>Paid this cycle (${hidden.length})</summary><ul>${hidden.map(i=>`<li><span>${esc(i.name)}</span><span class="num">${peso(num(i.amount))}</span></li>`).join('')}</ul></details>`:'')+
-    (later.length?`<details class="paidlist"><summary>Due in another cycle (${later.length})</summary><ul>${later.map(i=>`<li><span>${esc(i.name)} · due ${fmtD(dueOf(i,start))}</span><span class="num">${peso(num(i.amount))}</span></li>`).join('')}</ul></details>`:'');
+    (hidden.length?`<details class="paidlist"><summary>Paid this cycle (${hidden.length})</summary><ul>${hidden.map(i=>`<li><span>${esc(i.name)}</span><span class="num">${peso(num(i.amount))}</span></li>`).join('')}</ul></details>`:'');
 }
 
 // ---------- installments ----------
