@@ -47,13 +47,30 @@ try{
 // ---------- dates ----------
 const clampPd=()=>Math.min(31,Math.max(1,Math.round(num(S.payday))||24));
 const dim=(y,m)=>new Date(y,m+1,0).getDate();
-function shiftCycle(start,k){const f=new Date(start.getFullYear(),start.getMonth()+k,1);return new Date(f.getFullYear(),f.getMonth(),Math.min(clampPd(),dim(f.getFullYear(),f.getMonth())))}
-// The cycle you're living in, switching to the upcoming one in the last 16 days before payday so you can plan it.
+// Pay schedule: once a month on `payday`, twice a month on `payday` and `payday2`, or every week on
+// `payweekday` (0 = Sunday). A pay cycle runs from one payday to the day before the next.
+const payFreq=()=>S.payfreq==='twice'||S.payfreq==='week'?S.payfreq:'month';
+const dayNum=(v,d)=>Math.min(31,Math.max(1,Math.round(num(v))||d));
+function paysIn(y,m){
+  const ds=payFreq()==='twice'?[dayNum(S.payday,15),dayNum(S.payday2,30)]:[clampPd()];
+  return [...new Set(ds.map(d=>Math.min(d,dim(y,m))))].sort((a,b)=>a-b).map(d=>new Date(y,m,d));
+}
+function nextPay(d){
+  if(payFreq()==='week'){const r=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1);while(r.getDay()!==num(S.payweekday)%7)r.setDate(r.getDate()+1);return r}
+  for(let k=0;k<3;k++){const f=new Date(d.getFullYear(),d.getMonth()+k,1),p=paysIn(f.getFullYear(),f.getMonth()).find(x=>x>d);if(p)return p}
+}
+function prevPay(d){
+  if(payFreq()==='week'){const r=new Date(d.getFullYear(),d.getMonth(),d.getDate()-1);while(r.getDay()!==num(S.payweekday)%7)r.setDate(r.getDate()-1);return r}
+  for(let k=0;k<3;k++){const f=new Date(d.getFullYear(),d.getMonth()-k,1),p=paysIn(f.getFullYear(),f.getMonth()).filter(x=>x<d).pop();if(p)return p}
+}
+function shiftCycle(start,k){let d=start;for(;k>0;k--)d=nextPay(d);for(;k<0;k++)d=prevPay(d);return d}
+// The cycle you're living in. Paid once a month, it switches to the upcoming cycle in the last 16 days
+// before payday so you can plan it; paid more often, it's the current one.
 function cycleStart(){
   const t=new Date();t.setHours(0,0,0,0);
-  let p0=shiftCycle(new Date(t.getFullYear(),t.getMonth(),1),0);
-  if(p0>t)p0=shiftCycle(p0,-1);
-  const p1=shiftCycle(p0,1);
+  const p0=prevPay(new Date(t.getFullYear(),t.getMonth(),t.getDate()+1));
+  if(payFreq()!=='month')return p0;
+  const p1=nextPay(p0);
   return (p1-t)<=16*86400000?p1:p0;
 }
 function dueDate(day,start){
@@ -73,7 +90,8 @@ const dueOf=(i,start)=>exactDue(i)||dueDate(dayOf(i),start);
 const inCycle=(i,start)=>{
   const d=exactDue(i);if(d)return d>=start&&d<shiftCycle(start,1);
   if(i.once&&repeats(i))return false;
-  const u=repeats(i)&&untilYm(i.until);return !u||ym(dueDate(dayOf(i),start))<=u;
+  const d2=dueDate(dayOf(i),start);if(d2>=shiftCycle(start,1))return false;
+  const u=repeats(i)&&untilYm(i.until);return !u||ym(d2)<=u;
 };
 // one-time bills whose date has passed and repeating bills past their last month (kept, listed as ended)
 const ended=(i,start)=>repeats(i)&&!i.bbDue&&(i.once?(exactDue(i)||start)<start:(untilYm(i.until)||Infinity)<ym(dueDate(dayOf(i),start)));
@@ -216,7 +234,7 @@ function renderAdvice(C){
   });
   recs.sort((a,b)=>b.rank-a.rank);
   S.items.filter(i=>(i.kind==='essential'||i.kind==='bill')&&num(i.amount)>0&&inCycle(i,C.next)).sort((a,b)=>dueOf(a,C.next)-dueOf(b,C.next))
-    .forEach(i=>recs.push({i,amt:num(i.amount),date:dueOf(i,C.next),why:'next month',rank:0}));
+    .forEach(i=>recs.push({i,amt:num(i.amount),date:dueOf(i,C.next),why:payFreq()==='month'?'next month':'next cycle',rank:0}));
   let pool=extra;const picks=[];
   recs.forEach(r=>{if(pool<=0.004)return;const p=Math.min(pool,r.amt);pool-=p;picks.push({...r,p})});
   box.innerHTML=`<div class="reco ok"><h3>You have ${peso(extra)} extra</h3>
@@ -382,11 +400,17 @@ function effRate(s,nOver){
 }
 const altTerms=s=>String(s.terms||'').split(/[^0-9]+/).map(x=>parseInt(x,10)).filter(x=>x>0);
 const known=s=>!(s.rate===null||s.rate===''||s.rate===undefined);
+// an installment's remaining monthly payment dates (the one already paid this cycle included)
+function loanDates(l){
+  const d0=dueDate(dayOf(l),cycleStart()),n=Math.max(0,Math.round(num(l.left)))+(isPaid(l)?1:0),out=[];
+  for(let k=0;k<Math.min(n,60);k++){const f=new Date(d0.getFullYear(),d0.getMonth()+k,1);out.push(new Date(f.getFullYear(),f.getMonth(),Math.min(dayOf(l),dim(f.getFullYear(),f.getMonth()))))}
+  return out;
+}
+const loansIn=(start,skipPaid)=>{const end=shiftCycle(start,1);return S.items.filter(l=>l.kind==='loan'&&num(l.amount)>0&&!(skipPaid&&isPaid(l)&&inCycle(l,start))).reduce((s,l)=>s+num(l.amount)*loanDates(l).filter(d=>d>=start&&d<end).length,0)};
 const fixedIn=start=>S.items.filter(i=>(i.kind==='essential'||i.kind==='bill')&&inCycle(i,start)).reduce((s,i)=>s+num(i.amount),0);
 function nextFree(){
-  const fixed=fixedIn(shiftCycle(cycleStart(),1));
-  const ln=S.items.filter(i=>i.kind==='loan'&&(isPaid(i)?num(i.left):num(i.left)-1)>0).reduce((s,i)=>s+num(i.amount),0);
-  return num(S.salary)-fixed-ln;
+  const next=shiftCycle(cycleStart(),1);
+  return num(S.salary)-fixedIn(next)-loansIn(next);
 }
 let needOverride=null;
 function quote(s,need){
@@ -444,14 +468,17 @@ function renderSrcList(){
 function renderAhead(C){
   const salary=num(S.salary);
   const loans=S.items.filter(i=>i.kind==='loan'&&num(i.amount)>0);
-  const n=Math.min(24,Math.max(1,...loans.map(l=>num(l.left)||1))+1);
+  // one row per pay cycle, until a cycle after the last installment
+  const last=Math.max(0,...loans.flatMap(l=>loanDates(l)).map(Number));let n=1;
+  while(n<36&&shiftCycle(C.start,n-1)<=last)n++;
+  const monthly=payFreq()==='month';
   const scale=Math.max(salary,fixedIn(C.start)+loans.reduce((s,l)=>s+num(l.amount),0))||1;
   let rows='';
   for(let m=0;m<n;m++){
     const d=shiftCycle(C.start,m),fixed=fixedIn(d);
-    const ln=loans.filter(l=>(num(l.left)+(isPaid(l)?1:0))>m).reduce((s,l)=>s+num(l.amount),0);
+    const ln=loansIn(d);
     const free=Math.max(0,salary-ln-fixed),w=v=>(v/scale*100).toFixed(2)+'%';
-    rows+=`<div class="mrow"><span>${MON[d.getMonth()]} ${String(d.getFullYear()).slice(2)}</span><div class="track" role="img" aria-label="Installments ${peso(ln)}, rent and bills ${peso(fixed)}, free ${peso(free)}"><div class="seg loan" style="width:${w(ln)}"></div><div class="seg fixed" style="width:${w(fixed)}"></div><div class="seg free" style="width:${w(free)}"></div></div><span class="num" style="text-align:right">${peso(free)}</span></div>`;
+    rows+=`<div class="mrow"><span>${monthly?MON[d.getMonth()]+' '+String(d.getFullYear()).slice(2):fmtD(d)}</span><div class="track" role="img" aria-label="Installments ${peso(ln)}, rent and bills ${peso(fixed)}, free ${peso(free)}"><div class="seg loan" style="width:${w(ln)}"></div><div class="seg fixed" style="width:${w(fixed)}"></div><div class="seg free" style="width:${w(free)}"></div></div><span class="num" style="text-align:right">${peso(free)}</span></div>`;
   }
   $('#monthList').innerHTML=loans.length?rows:'<p class="empty">No installments listed.</p>';
 }
@@ -509,8 +536,19 @@ function renderAll(){renderItems();renderIncome();renderSrcList();render()}
 const commit=()=>{save();render()};
 
 // ---------- events ----------
-['salary','payday'].forEach(k=>{$('#'+k).addEventListener('input',e=>{S[k]=e.target.value===''?0:num(e.target.value);save();if(k==='payday')renderAll();else render()})});
-function syncInputs(){['salary','payday'].forEach(k=>{const el=$('#'+k);if(document.activeElement!==el)el.value=S[k]??''})}
+['salary','payday','payday2','payweekday'].forEach(k=>{$('#'+k).addEventListener('input',e=>{S[k]=e.target.value===''?(k==='salary'?0:null):num(e.target.value);save();if(k==='salary')render();else renderAll()})});
+$('#payfreq').addEventListener('change',e=>{
+  S.payfreq=e.target.value;
+  if(S.payfreq==='twice'&&!num(S.payday2)){S.payday=15;S.payday2=30} // the usual cutoffs, to change as needed
+  if(S.payfreq==='week'&&S.payweekday==null)S.payweekday=5;
+  save();syncInputs();renderAll();
+});
+function syncInputs(){
+  ['salary','payday','payday2','payweekday'].forEach(k=>{const el=$('#'+k);if(document.activeElement!==el)el.value=S[k]??''});
+  const f=payFreq();$('#payfreq').value=f;
+  $('#pdDays').hidden=f==='week';$('#pd2').hidden=f!=='twice';$('#pdWeek').hidden=f!=='week';
+  $('#salLabel').textContent=f==='month'?'Salary this cycle':'Salary each payday';
+}
 document.addEventListener('input',e=>{if(e.target.id==='buffer'){S.buffer=num(e.target.value);save();const C=compute();renderStatus(C);
   const pos=e.target.selectionStart;renderAdvice(C);const b=$('#buffer');if(b){b.focus();try{b.setSelectionRange(pos,pos)}catch(_){}}}});
 document.addEventListener('click',e=>{const g=e.target.closest('[data-goto]');if(g)selectTab(g.dataset.goto)});
