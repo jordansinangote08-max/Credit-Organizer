@@ -2,17 +2,22 @@
    Phone: one calm column with a sticky, scrollable tab bar.
    Desktop (≥1024px): salary and result pinned on the left, one panel at a time on the right. */
 :root{
-  --bg:#f6f7f5; --surface:#ffffff; --sunk:#eef1ee; --ink:#16201c; --muted:#5d6a64; --line:#e2e7e3; --field:#8a9590;
+  --bg:#eef2f0; --surface:#ffffff; --sunk:rgb(118 118 128 / .12); --ink:#16201c; --muted:#5d6a64; --line:rgb(22 32 28 / .1); --field:#8a9590;
   --accent:#0f6b53; --accent-ink:#ffffff; --accent-soft:#e3f1ea;
   --ok:#1b7a50; --ok-soft:#e2f3ea; --warn:#93600f; --warn-soft:#f8eed9; --bad:#b4372f; --bad-soft:#fae6e3;
   --c-loan:#c2410c; --c-card:#2f5fb3; --c-essential:#0f7a5c; --c-bill:#9a6206; --c-flex:#7a4bb8;
   --c-orange:#c2410c; --c-blue:#2f5fb3; --c-green:#0f7a5c; --c-amber:#9a6206; --c-purple:#7a4bb8; --c-pink:#b8326e; --c-teal:#0e6f86; --c-slate:#526170;
   --tint:8%;
-  --display:"Sora",ui-sans-serif,system-ui,sans-serif;
-  --body:"Public Sans",ui-sans-serif,system-ui,sans-serif;
-  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
-  --r:16px; --gutter:16px; --tap:44px;
-  --shadow:0 1px 2px rgb(22 32 28 / .05),0 2px 8px rgb(22 32 28 / .04);
+  /* the device's own font (SF Pro on iPhone and Mac): nothing to download */
+  --display:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --body:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:var(--body);
+  /* glass: translucent surfaces that blur what's behind them */
+  --glass:rgb(255 255 255 / .64); --glass-strong:rgb(255 255 255 / .8); --glass-edge:rgb(255 255 255 / .75);
+  --blur:saturate(180%) blur(20px);
+  --blob1:#bfe6d4; --blob2:#cddcfb; --blob3:#fbdccb; --blob4:#e3d8f6;
+  --r:20px; --gutter:16px; --tap:44px;
+  --shadow:0 1px 1px rgb(22 32 28 / .03),0 8px 28px rgb(22 32 28 / .08);
   --ring:0 0 0 3px var(--accent-soft);
   --fast:150ms; --ease:cubic-bezier(.2,.7,.3,1);
   --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
@@ -20,23 +25,28 @@
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#0f1513; --surface:#161e1b; --sunk:#1d2723; --ink:#e5ece8; --muted:#94a49c; --line:#26322d; --field:#66766e;
+  --bg:#0b0f0e; --surface:#1b2220; --sunk:rgb(118 118 128 / .24); --ink:#e9efec; --muted:#9aaaa2; --line:rgb(255 255 255 / .1); --field:#66766e;
+  --glass:rgb(30 37 35 / .58); --glass-strong:rgb(30 37 35 / .82); --glass-edge:rgb(255 255 255 / .09);
+  --blob1:#123a2e; --blob2:#1b2850; --blob3:#3a2418; --blob4:#2a1f45;
   --accent:#4cc79a; --accent-ink:#06120d; --accent-soft:#17352b;
   --c-loan:#f59a6b; --c-card:#86abf2; --c-essential:#55d3a5; --c-bill:#e6b94c; --c-flex:#bc9af2;
   --c-orange:#f59a6b; --c-blue:#86abf2; --c-green:#55d3a5; --c-amber:#e6b94c; --c-purple:#bc9af2; --c-pink:#f08cb8; --c-teal:#5ccfe6; --c-slate:#a9b6c2; --tint:11%;
-  --ok:#55d092; --ok-soft:#163126; --warn:#e2a945; --warn-soft:#382b13; --bad:#f17a70; --bad-soft:#3b1d1a; --shadow:0 0 #0000; color-scheme:dark}}
+  --ok:#55d092; --ok-soft:#163126; --warn:#e2a945; --warn-soft:#382b13; --bad:#f17a70; --bad-soft:#3b1d1a; --shadow:0 1px 1px rgb(0 0 0 / .2),0 8px 28px rgb(0 0 0 / .35); color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#0f1513; --surface:#161e1b; --sunk:#1d2723; --ink:#e5ece8; --muted:#94a49c; --line:#26322d; --field:#66766e;
+  --bg:#0b0f0e; --surface:#1b2220; --sunk:rgb(118 118 128 / .24); --ink:#e9efec; --muted:#9aaaa2; --line:rgb(255 255 255 / .1); --field:#66766e;
+  --glass:rgb(30 37 35 / .58); --glass-strong:rgb(30 37 35 / .82); --glass-edge:rgb(255 255 255 / .09);
+  --blob1:#123a2e; --blob2:#1b2850; --blob3:#3a2418; --blob4:#2a1f45;
   --accent:#4cc79a; --accent-ink:#06120d; --accent-soft:#17352b;
   --c-loan:#f59a6b; --c-card:#86abf2; --c-essential:#55d3a5; --c-bill:#e6b94c; --c-flex:#bc9af2;
   --c-orange:#f59a6b; --c-blue:#86abf2; --c-green:#55d3a5; --c-amber:#e6b94c; --c-purple:#bc9af2; --c-pink:#f08cb8; --c-teal:#5ccfe6; --c-slate:#a9b6c2; --tint:11%;
-  --ok:#55d092; --ok-soft:#163126; --warn:#e2a945; --warn-soft:#382b13; --bad:#f17a70; --bad-soft:#3b1d1a; --shadow:0 0 #0000; color-scheme:dark}
+  --ok:#55d092; --ok-soft:#163126; --warn:#e2a945; --warn-soft:#382b13; --bad:#f17a70; --bad-soft:#3b1d1a; --shadow:0 1px 1px rgb(0 0 0 / .2),0 8px 28px rgb(0 0 0 / .35); color-scheme:dark}
 
 *,*::before,*::after{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%;scroll-padding-top:calc(var(--safe-t) + 64px)}
-body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 var(--body);-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;overflow-x:hidden}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 var(--body);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;overflow-x:hidden}
 [hidden]{display:none!important}
-h1,h2,h3{font-family:var(--display);margin:0;text-wrap:balance;letter-spacing:-.01em;font-weight:600}
+h1,h2,h3{font-family:var(--display);margin:0;text-wrap:balance;letter-spacing:-.02em;font-weight:650}
+h1{font-weight:700}
 h1{font-size:1.15rem} h2{font-size:1.1rem} h3{font-size:1rem}
 p{margin:0}
 .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
@@ -368,3 +378,41 @@ header .acctbar{width:100%;flex-wrap:nowrap}
 @media (hover:hover){.catrow:hover{border-color:var(--c)} .dlg .x:hover{color:var(--ink);background:var(--sunk)}}
 @media (pointer:coarse){.catform .field input,.catform .field select,.confirm select{font-size:16px;min-height:var(--tap)}.sw{width:var(--tap);height:var(--tap)}.dlg .x{width:var(--tap);height:var(--tap)}}
 @media (prefers-reduced-motion:no-preference){.dlg[open]{animation:dlg-in 180ms var(--ease)}@keyframes dlg-in{from{opacity:0;transform:translateY(8px) scale(.98)}}}
+
+/* ---------- glass (iOS style) ----------
+   A soft color field sits behind the page; cards, the tab bar and the window are frosted glass over it.
+   Only these few large surfaces blur, so scrolling stays smooth on phones. */
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:radial-gradient(60vmax 45vmax at 0% 0%,var(--blob1),transparent 60%),
+             radial-gradient(55vmax 45vmax at 100% 10%,var(--blob2),transparent 60%),
+             radial-gradient(60vmax 50vmax at 100% 100%,var(--blob3),transparent 60%),
+             radial-gradient(55vmax 45vmax at 0% 95%,var(--blob4),transparent 60%),var(--bg)}
+.hero,.sec,.authform{background:var(--glass);border:1px solid var(--glass-edge);box-shadow:var(--shadow),inset 0 1px 0 var(--glass-edge);
+  -webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur)}
+.status,.reco{border-radius:16px}
+.grp{border-radius:16px}
+.form{border-radius:16px}
+/* tab bar: a frosted strip on phones, a frosted capsule on desktop; the open tab is a raised pill */
+.tabs{background:var(--glass-strong);-webkit-mask-image:none;mask-image:none;border-bottom:1px solid var(--line);
+  -webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur)}
+.tab[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgb(0 0 0 / .08),0 3px 8px rgb(0 0 0 / .08)}
+.tab{color:var(--muted)}
+@media (min-width:1024px){.tabs{background:var(--glass);border:1px solid var(--glass-edge);box-shadow:var(--shadow),0 0 0 0 transparent}}
+/* controls: iOS fills instead of outlines */
+.btn{border-radius:12px;padding:9px 18px}
+.ghost{border:0;background:var(--sunk);border-radius:12px;font-weight:600}
+.paidbtn{border-radius:12px}
+.add{border-radius:14px;background:transparent}
+.field input,.field select,.payday input,.reco .bufrow input,.authform input,.catform .field input,.catform .field select,.confirm select{border-radius:10px;background:var(--surface)}
+@media (hover:hover){.ghost:hover{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)}}
+/* the categories window */
+.dlg{background:var(--glass-strong);border:1px solid var(--glass-edge);border-radius:24px;-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur)}
+.dlg::backdrop{background:rgb(0 0 0 / .28);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.catrow{border-radius:14px}
+/* no glass where it can't blur, or when the device asks for less transparency */
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  :root{--glass:var(--surface);--glass-strong:var(--surface)}}
+@media (prefers-reduced-transparency:reduce){
+  :root{--glass:var(--surface);--glass-strong:var(--surface)}
+  .hero,.sec,.authform,.tabs,.dlg{-webkit-backdrop-filter:none;backdrop-filter:none}}
+@media print{body::before{display:none} .hero,.sec{-webkit-backdrop-filter:none;backdrop-filter:none;background:#fff;box-shadow:none}}

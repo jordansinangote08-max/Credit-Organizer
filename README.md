@@ -5,7 +5,7 @@ A minimalist, mobile-first planner for each pay cycle: salary, bills, installmen
 Plain static files, no build step. Open `index.html` or serve the folder (e.g. `python3 -m http.server`) and deploy to any static host.
 
 - `index.html` – markup
-- `styles.css` – layout for phones, tablets and desktop (two columns from 1024px), light/dark
+- `styles.css` – layout for phones, tablets and desktop (two columns from 1024px), light/dark, iOS-style frosted glass (solid cards when the device asks for less transparency); uses the device's own font, so nothing is downloaded
 - `app.js` – planner logic
 - `config.js` – Supabase connection (optional)
 - `supabase/schema.sql` – the table and access rules for cloud saving
