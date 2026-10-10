@@ -14,7 +14,7 @@ Plain static files, no build step. Open `index.html` or serve the folder (e.g. `
 
 ## Bills and categories
 
-Bills are grouped into categories, each shown as its own colored card. Tap the pencil on a category to rename it, pick its color, choose what it counts as (bills you must pay, essentials, installments, credit cards, or can be cut) or delete it; a category that still has bills asks where to move them. **New category** adds one. When adding or editing a bill, pick its category; moving a bill into another category saves it there. Tap the circle on a bill to mark it paid and tap the bill itself to edit it.
+Each category's bills sit together on a background of that category's color. **Categories** (on the Bills tab) opens a small window: add a category, or pick one to rename it, change its color, choose what it counts as (bills you must pay, essentials, installments, credit cards, or can be cut) or delete it. A category that still has bills asks where to move them. To move a bill, tap Edit on it and pick its category.
 
 ## Saving
 

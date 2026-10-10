@@ -224,12 +224,7 @@ function renderTimeline(C){
 }
 
 // ---------- bills ----------
-let editingId=null,catEditing=null,catDeleting=false;
-const ICON={
-  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
-  edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>',
-  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>'
-};
+let editingId=null;
 const catOptions=sel=>S.cats.map(c=>`<option value="${esc(c.key)}" ${c.key===sel?'selected':''}>${esc(c.name)}</option>`).join('');
 function itemForm(i){
   return `<div class="form" data-id="${i.id}">
@@ -246,47 +241,53 @@ function itemRow(i,start){
   const amt=num(i.amount),paid=isPaid(i),meta=[`<span>Due ${fmtD(dueOf(i,start))}</span>`];
   if(i.kind==='loan'&&num(i.left))meta.push(`<span>${num(i.left)} left</span>`);
   if(i.kind!=='card'&&i.bbLast4)meta.push(`<span>•••• ${esc(i.bbLast4)}</span>`);
-  if(i.kind==='card'){const a=acctOf(i);if(a){if(a.last4)meta.push(`<span>•••• ${esc(a.last4)}</span>`);const L=num(a.limit);if(L>0&&amt>0){const p=amt/L*100;meta.push(`<span class="${p>50?'t-bad':p>30?'t-warn':''}">${p.toFixed(0)}% of limit</span>`)}}}
+  if(i.kind==='card'){const a=acctOf(i);if(a){if(a.last4)meta.push(`<span>•••• ${esc(a.last4)}</span>`);if(a.stmt)meta.push(`<span>Statement ${ord(num(a.stmt))}</span>`);const L=num(a.limit);if(L>0&&amt>0){const p=amt/L*100;meta.push(`<span class="${p>50?'t-bad':p>30?'t-warn':'t-ok'}">${p.toFixed(0)}% of ${peso(L)} limit</span>`)}}}
   if(paid)meta.unshift(`<span class="t-ok">Paid · clears in ${Math.max(1,Math.ceil((DAY-(Date.now()-num(i.paidAt)))/3600000))}h</span>`);
-  const chk=paid?`<button class="chk on" data-unpaid="${i.id}" aria-pressed="true" aria-label="${esc(i.name)} is paid. Undo">${ICON.check}</button>`
-    :amt>0?`<button class="chk" data-paid="${i.id}" aria-pressed="false" aria-label="Mark ${esc(i.name)} paid">${ICON.check}</button>`:'<span class="chk off" aria-hidden="true"></span>';
-  return `<div class="bill${paid?' done':''}">${chk}
-    <button class="bmain" data-edit="${i.id}" aria-label="Edit ${esc(i.name)}"><span class="nm">${esc(i.name||'Untitled bill')}</span><span class="mt">${meta.join('')}</span>
-    ${amt>0?`<span class="amt">${peso(amt)}</span>`:'<span class="pill warn">Add amount</span>'}</button></div>`;
-}
-function catForm(c){
-  const n=S.items.filter(i=>i.cat===c.key).length,others=S.cats.filter(x=>x!==c);
-  return `<div class="catform" data-cat="${esc(c.key)}">
-    <div class="field"><label for="cn${c.key}">Category name</label><input id="cn${c.key}" data-ck="name" value="${esc(c.name)}"></div>
-    <div class="field"><span id="cc${c.key}">Color</span><div class="swatches" role="group" aria-labelledby="cc${c.key}">${COLORS.map(k=>`<button class="sw" data-c="${k}" data-sw="${k}" aria-pressed="${k===c.color}" aria-label="${k[0].toUpperCase()+k.slice(1)}"></button>`).join('')}</div></div>
-    <div class="field"><label for="ck${c.key}">Counts as</label><select id="ck${c.key}" data-ck="kind">${KIND_OPTS.map(([k,v])=>`<option value="${k}" ${k===c.kind?'selected':''}>${v}</option>`).join('')}</select></div>
-    ${catDeleting&&n?`<div class="confirm"><label for="cm${c.key}">Move its ${n} bill${n===1?'':'s'} to</label><div class="row"><select id="cm${c.key}">${others.map(x=>`<option value="${esc(x.key)}">${esc(x.name)}</option>`).join('')}</select><button class="btn danger-btn" data-catdelyes="1">Move and delete</button><button class="ghost" data-catdelno="1">Cancel</button></div></div>`
-      :`<div class="acts">${others.length?`<button class="danger" data-catdel="1">Delete category</button>`:'<span></span>'}<button class="btn" data-catdone="1">Done</button></div>`}
-  </div>`;
+  return `<div class="bill${paid?' done':''}"><div><div class="nm">${esc(i.name||'Untitled bill')}</div><div class="mt">${meta.join('')}</div></div>
+    <div class="rt">${amt>0?`<span class="amt">${peso(amt)}</span>`:'<span class="pill warn">Add amount</span>'}
+    <div class="bt">${paid?`<button class="ghost" data-unpaid="${i.id}">Undo</button>`:`<button class="ghost" data-edit="${i.id}">Edit</button>${amt>0?`<button class="paidbtn" data-paid="${i.id}">Paid</button>`:''}`}</div></div></div>`;
 }
 function renderItems(){
   ensureCats();
   const start=cycleStart();
   const hidden=S.items.filter(isHiddenPaid),vis=S.items.filter(i=>!isHiddenPaid(i)&&inCycle(i,start));
   const html=S.cats.map(c=>{
-    const its=vis.filter(i=>i.cat===c.key);
+    const its=vis.filter(i=>i.cat===c.key);if(!its.length)return '';
     its.sort((a,b)=>(isPaid(a)-isPaid(b))||dueOf(a,start)-dueOf(b,start));
     const due=its.filter(i=>!isPaid(i)).reduce((s,i)=>s+num(i.amount),0);
-    const head=c.key===catEditing?catForm(c):`<div class="grp-h"><h3>${esc(c.name)}<span class="cnt">${its.length||''}</span></h3><span class="sub">${due>0?peso(due):''}</span><button class="icon" data-catedit="${esc(c.key)}" aria-label="Edit category ${esc(c.name)}">${ICON.edit}</button></div>`;
-    return `<div class="grp" data-c="${esc(c.color)}">${head}${its.map(i=>i.id===editingId?itemForm(i):itemRow(i,start)).join('')||'<p class="empty">No bills here this cycle.</p>'}<button class="grp-add" data-addin="${esc(c.key)}">${ICON.plus}Add bill</button></div>`;
+    return `<div class="grp" data-c="${esc(c.color)}"><div class="grp-h"><h3>${esc(c.name)}<span>${its.length}</span></h3><span class="sub">${peso(due)}</span></div>${its.map(i=>i.id===editingId?itemForm(i):itemRow(i,start)).join('')}</div>`;
   }).join('');
-  const left=vis.filter(i=>!isPaid(i)).reduce((s,i)=>s+num(i.amount),0),open=vis.filter(i=>!isPaid(i)).length;
-  $('#billSum').innerHTML=`<span class="label">Still to pay</span><span class="v">${peso(left)}</span><span class="muted small">${open} bill${open===1?'':'s'} left this cycle</span>`;
-  $('#itemList').innerHTML=html+
+  const left=vis.filter(i=>!isPaid(i)).reduce((s,i)=>s+num(i.amount),0);
+  $('#itemList').innerHTML=(html||'<p class="empty">Nothing left to pay this cycle.</p>')+
+    `<div class="tot"><span>Still to pay</span><span>${peso(left)}</span></div>`+
     (hidden.length?`<details class="paidlist"><summary>Paid this cycle (${hidden.length})</summary><ul>${hidden.map(i=>`<li><span>${esc(i.name)}</span><span class="num">${peso(num(i.amount))}</span></li>`).join('')}</ul></details>`:'');
+  if($('#catDlg').open)renderCats();
 }
-function addBill(catKey){
-  const c=S.cats.find(x=>x.key===catKey)||S.cats.find(x=>x.kind==='bill')||S.cats[0];
-  const it={id:uid++,name:'',kind:c.kind,cat:c.key,amount:null,day:clampPd()};
-  if(c.kind==='loan')Object.assign(it,{left:null,total:null,rate:null});
-  S.items.push(it);if(c.kind==='card')ensureLinks();
-  editingId=it.id;catEditing=null;save();renderItems();render();const f=$('#n'+it.id);f&&f.focus();
+
+// ---------- categories window ----------
+// One button opens a small window listing the categories; pick one to edit it, or add a new one.
+let catEditing=null,catDeleting=false;
+function renderCats(){
+  const box=$('#catBody'),c=S.cats.find(x=>x.key===catEditing);
+  if(!c){
+    $('#catTitle').textContent='Categories';
+    box.innerHTML=`<ul class="catlist">${S.cats.map(x=>{const n=S.items.filter(i=>i.cat===x.key).length;
+      return `<li data-c="${esc(x.color)}"><button class="catrow" data-catedit="${esc(x.key)}"><span class="dot"></span><span class="nm">${esc(x.name)}</span><span class="muted small">${n} bill${n===1?'':'s'}</span><span class="go" aria-hidden="true">Edit</span></button></li>`}).join('')}</ul>
+      <div class="dlg-acts"><button class="ghost" data-catnew="1">+ New category</button><button class="btn" data-catclose="1">Done</button></div>`;
+    return;
+  }
+  const n=S.items.filter(i=>i.cat===c.key).length,others=S.cats.filter(x=>x!==c);
+  $('#catTitle').textContent=c.name.trim()?'Edit category':'New category';
+  box.innerHTML=`<div class="catform" data-cat="${esc(c.key)}">
+    <div class="field"><label for="cn">Name</label><input id="cn" data-ck="name" value="${esc(c.name)}" placeholder="e.g. Subscriptions"></div>
+    <div class="field"><span id="ccl">Color</span><div class="swatches" role="group" aria-labelledby="ccl">${COLORS.map(k=>`<button class="sw" data-c="${k}" data-sw="${k}" aria-pressed="${k===c.color}" aria-label="${k[0].toUpperCase()+k.slice(1)}"></button>`).join('')}</div></div>
+    <div class="field"><label for="ck">Counts as</label><select id="ck" data-ck="kind">${KIND_OPTS.map(([k,v])=>`<option value="${k}" ${k===c.kind?'selected':''}>${v}</option>`).join('')}</select></div>
+    ${catDeleting?`<div class="confirm"><label for="cm">Move its ${n} bill${n===1?'':'s'} to</label><select id="cm">${others.map(x=>`<option value="${esc(x.key)}">${esc(x.name)}</option>`).join('')}</select><div class="row"><button class="btn danger-btn" data-catdelyes="1">Move and delete</button><button class="ghost" data-catdelno="1">Cancel</button></div></div>`
+      :`<div class="dlg-acts">${others.length?`<button class="danger" data-catdel="1">Delete</button>`:'<span></span>'}<button class="btn" data-catdone="1">Done</button></div>`}
+  </div>`;
 }
+function openCats(){catEditing=null;catDeleting=false;renderCats();$('#catDlg').showModal()}
+function closeCatEdit(){const c=S.cats.find(x=>x.key===catEditing);if(c&&!c.name.trim()){c.name='Untitled';save()}catEditing=null;catDeleting=false;renderItems();render();renderCats()}
 
 // ---------- installments ----------
 const ord=n=>{if(!n)return '?';const v=n%100;return n+((v>=11&&v<=13)?'th':({1:'st',2:'nd',3:'rd'}[n%10]||'th'))};
@@ -482,11 +483,6 @@ document.addEventListener('input',e=>{if(e.target.id==='buffer'){S.buffer=num(e.
 document.addEventListener('click',e=>{const g=e.target.closest('[data-goto]');if(g)selectTab(g.dataset.goto)});
 
 $('#itemList').addEventListener('input',e=>{
-  const cf=e.target.closest('.catform');
-  if(cf){const c=S.cats.find(x=>x.key===cf.dataset.cat),k=e.target.dataset.ck;if(!c||!k)return;
-    if(k==='name'){c.name=e.target.value;save();return}
-    if(k==='kind'){c.kind=e.target.value;S.items.forEach(i=>{if(i.cat===c.key)setKind(i,c.kind)});ensureLinks();commit();renderItems();const f=$('#ck'+c.key);f&&f.focus()}
-    return}
   const row=e.target.closest('.form');if(!row)return;const it=S.items.find(i=>i.id==row.dataset.id),k=e.target.dataset.k;if(!it||!k)return;
   if(k==='cat'){const c=S.cats.find(x=>x.key===e.target.value);if(!c)return;it.cat=c.key;setKind(it,c.kind);ensureLinks();commit();renderItems();const f=$('#k'+it.id);f&&f.focus();return}
   it[k]=k==='name'?e.target.value:(e.target.value===''?null:num(e.target.value));
@@ -504,30 +500,45 @@ function setKind(it,kind){
 }
 $('#itemList').addEventListener('click',e=>{
   const t=e.target.closest('button');if(!t)return;
-  const cf=t.closest('.catform'),c=cf&&S.cats.find(x=>x.key===cf.dataset.cat);
-  if(t.dataset.catedit){catEditing=t.dataset.catedit;catDeleting=false;editingId=null;renderItems();const f=$('#cn'+catEditing);f&&f.focus();return}
-  if(t.dataset.sw&&c){c.color=t.dataset.sw;save();renderItems();render();const b=document.querySelector(`.catform [data-sw="${c.color}"]`);b&&b.focus();return}
-  if(t.dataset.catdone){if(c&&!c.name.trim())c.name='Untitled';catEditing=null;save();renderItems();render();return}
-  if(t.dataset.catdel&&c){if(S.items.some(i=>i.cat===c.key)){catDeleting=true;renderItems();const f=$('#cm'+c.key);f&&f.focus()}else deleteCat(c,null);return}
-  if(t.dataset.catdelno){catDeleting=false;renderItems();return}
-  if(t.dataset.catdelyes&&c){deleteCat(c,S.cats.find(x=>x.key===$('#cm'+c.key).value));return}
-  if(t.dataset.addin){addBill(t.dataset.addin);return}
   if(t.dataset.del){S.items=S.items.filter(i=>i.id!=t.dataset.del);editingId=null;save();renderAll();return}
-  if(t.dataset.edit){editingId=+t.dataset.edit;catEditing=null;renderItems();const f=$('#a'+editingId);f&&f.focus();return}
-  if(t.dataset.done){const it=S.items.find(i=>i.id===editingId);if(it&&!it.name.trim()){it.name='Untitled bill';save()}editingId=null;renderItems();render();return}
+  if(t.dataset.edit){editingId=+t.dataset.edit;renderItems();const f=$('#a'+editingId);f&&f.focus();return}
+  if(t.dataset.done){const it=S.items.find(i=>i.id===editingId);if(it&&!it.name.trim()){it.name='New bill';save()}editingId=null;renderItems();render();return}
   const id=t.dataset.paid||t.dataset.unpaid;if(!id)return;const it=S.items.find(i=>i.id==id);if(!it)return;
   t.dataset.paid?markPaid(it):undoPaid(it);save();renderItems();render();
-  const b=document.querySelector(`[data-paid="${it.id}"],[data-unpaid="${it.id}"]`);b&&b.focus();
 });
 function deleteCat(c,to){
   if(to){S.items.forEach(i=>{if(i.cat===c.key){i.cat=to.key;setKind(i,to.kind)}})}
-  S.cats=S.cats.filter(x=>x!==c);catEditing=null;catDeleting=false;ensureLinks();save();renderAll();
+  S.cats=S.cats.filter(x=>x!==c);catEditing=null;catDeleting=false;ensureLinks();save();renderAll();renderCats();
 }
-$('#addBtn').addEventListener('click',()=>addBill(null));
-$('#catAdd').addEventListener('click',()=>{
-  const used=new Set(S.cats.map(c=>c.color)),c={key:genKey(),name:'New category',color:COLORS.find(k=>!used.has(k))||'slate',kind:'bill'};
-  S.cats.push(c);catEditing=c.key;catDeleting=false;editingId=null;save();renderItems();const f=$('#cn'+c.key);f&&(f.focus(),f.select());
+$('#addBtn').addEventListener('click',()=>{
+  const c=S.cats.find(x=>x.kind==='bill')||S.cats[0];
+  const it={id:uid++,name:'New bill',kind:c.kind,cat:c.key,amount:null,day:clampPd()};
+  if(c.kind==='loan')Object.assign(it,{left:null,total:null,rate:null});
+  S.items.push(it);ensureLinks();editingId=it.id;save();renderItems();render();const f=$('#n'+it.id);f&&(f.focus(),f.select());
 });
+$('#catBtn').addEventListener('click',openCats);
+$('#catDlg').addEventListener('close',()=>{closeCatEdit()});
+$('#catDlg').addEventListener('click',e=>{
+  if(e.target===e.currentTarget){e.currentTarget.close();return} // tap outside the window
+  const t=e.target.closest('button');if(!t)return;
+  const c=S.cats.find(x=>x.key===catEditing);
+  if(t.dataset.catclose){$('#catDlg').close();return}
+  if(t.dataset.catedit){catEditing=t.dataset.catedit;catDeleting=false;renderCats();$('#cn').focus();return}
+  if(t.dataset.catnew){const used=new Set(S.cats.map(x=>x.color)),n={key:genKey(),name:'',color:COLORS.find(k=>!used.has(k))||'slate',kind:'bill'};
+    S.cats.push(n);catEditing=n.key;catDeleting=false;save();renderCats();$('#cn').focus();return}
+  if(!c)return;
+  if(t.dataset.sw){c.color=t.dataset.sw;save();renderItems();render();renderCats();const b=$(`#catBody [data-sw="${c.color}"]`);b&&b.focus();return}
+  if(t.dataset.catdone){closeCatEdit();return}
+  if(t.dataset.catdel){if(S.items.some(i=>i.cat===c.key)){catDeleting=true;renderCats();$('#cm').focus()}else deleteCat(c,null);return}
+  if(t.dataset.catdelno){catDeleting=false;renderCats();return}
+  if(t.dataset.catdelyes){deleteCat(c,S.cats.find(x=>x.key===$('#cm').value));return}
+});
+$('#catDlg').addEventListener('input',e=>{
+  const c=S.cats.find(x=>x.key===catEditing),k=e.target.dataset.ck;if(!c||!k)return;
+  if(k==='name'){c.name=e.target.value;save();renderItems();return}
+  if(k==='kind'){c.kind=e.target.value;S.items.forEach(i=>{if(i.cat===c.key)setKind(i,c.kind)});ensureLinks();commit();renderItems()}
+});
+
 
 function openEdit(id){editingId=id;selectTab('bills');renderItems();const f=$('#n'+id);f&&f.focus()}
 $('#instList').addEventListener('click',e=>{
