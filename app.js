@@ -2,7 +2,7 @@ const KEY='sahodplan.v1';
 const KINDS={essential:'Rent / food / allowance',bill:'Utilities & bills',loan:'Installment loan',card:'Credit card',flex:'Can be cut'};
 // Starting data: only the installments. Everything else starts empty.
 // rev marks the data upgrades below as already applied, so they don't add creditors or cards back.
-const DEFAULTS={salary:0,payday:24,thirteenth:0,efund:5000,buffer:2000,income:[],sources:[],accounts:[],rev:7,items:[
+const DEFAULTS={ver:2,salary:0,payday:24,thirteenth:0,efund:5000,buffer:2000,income:[],sources:[],accounts:[],rev:7,items:[
  {name:'UnionBank Loan A',kind:'loan',amount:4384.71,day:24,left:6,total:12,rate:2.49},
  {name:'UnionBank Loan B',kind:'loan',amount:3897.52,day:26,left:9,total:12,rate:2.49},
  {name:'Mari Loan',kind:'loan',amount:7256.67,day:26,left:3,rate:2.95,addon:true}
@@ -28,7 +28,8 @@ const parseD=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s||'');return m?new Da
 
 let uid=1,S;
 try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){S=null}
-if(!S||!Array.isArray(S.items))S=clone(DEFAULTS);
+// data saved before ver 2 held the old sample bills and cards; start those over from the installments
+if(!S||!Array.isArray(S.items)||S.ver!==DEFAULTS.ver)S=clone(DEFAULTS);
 
 // ---------- dates ----------
 const clampPd=()=>Math.min(31,Math.max(1,Math.round(num(S.payday))||24));
@@ -510,7 +511,7 @@ try{const tb=localStorage.getItem(KEY+'.tab');if(tb&&document.querySelector(`[da
 
 // ---------- boot ----------
 function adopt(next){
-  if(!next||!Array.isArray(next.items))return;
+  if(!next||!Array.isArray(next.items)||next.ver!==DEFAULTS.ver)return;
   S=next;prepare();rollover();editingId=null;syncInputs();renderAll();
 }
 async function connectCloud(){
