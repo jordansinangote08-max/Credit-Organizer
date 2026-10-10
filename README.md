@@ -12,6 +12,10 @@ Plain static files, no build step. Open `index.html` or serve the folder (e.g. `
 - `vendor/` – the Supabase client library (v2.116.0), served locally
 - `manifest.webmanifest`, `icon*.{svg,png}` – install to home screen
 
+## Bills and categories
+
+Bills are grouped into categories, each shown as its own colored card. Tap the pencil on a category to rename it, pick its color, choose what it counts as (bills you must pay, essentials, installments, credit cards, or can be cut) or delete it; a category that still has bills asks where to move them. **New category** adds one. When adding or editing a bill, pick its category; moving a bill into another category saves it there. Tap the circle on a bill to mark it paid and tap the bill itself to edit it.
+
 ## Saving
 
 Everything is stored in Supabase: you sign in first, and the planner loads from and saves to your account. Nothing is kept in the browser except the sign-in (so the device opens straight in) and your email address. Without `config.js` filled in, the planner shows a setup message instead.

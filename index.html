@@ -18,10 +18,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="styles.css?v=11">
-<script src="config.js?v=11" defer></script>
+<link rel="stylesheet" href="styles.css?v=12">
+<script src="config.js?v=12" defer></script>
 <script src="vendor/supabase-2.116.0.js" defer></script>
-<script src="app.js?v=11" defer></script>
+<script src="app.js?v=12" defer></script>
 </head>
 <body class="locked">
 <div class="app">
@@ -69,12 +69,14 @@
     </section>
 
     <section class="panel" role="tabpanel" id="panel-bills" aria-labelledby="tab-bills" data-panel="bills" hidden>
-      <div class="sec">
-        <div class="sec-h"><h2>Bills</h2><button class="ghost" id="resetBtn">Reset</button></div>
-        <p class="muted small">All paid in full, on time.</p>
-        <div id="resetConfirm" class="reco bad" hidden><p class="small">This erases all your changes and restores the starting bills.</p><div class="row"><button class="btn" id="resetYes">Yes, reset</button><button class="ghost" id="resetNo">Cancel</button></div></div>
-        <div id="itemList"></div>
-        <button class="add" id="addBtn">+ Add bill</button>
+      <div class="sec billhead">
+        <div class="sumv" id="billSum"></div>
+        <div class="row"><button class="btn" id="addBtn">Add bill</button><button class="ghost" id="catAdd">New category</button></div>
+      </div>
+      <div class="grps" id="itemList"></div>
+      <div class="resetbar">
+        <button class="linkbtn" id="resetBtn">Reset to starting bills</button>
+        <div id="resetConfirm" class="reco bad" hidden><p class="small">This erases all your changes and restores the starting bills and categories.</p><div class="row"><button class="btn danger-btn" id="resetYes">Yes, reset</button><button class="ghost" id="resetNo">Cancel</button></div></div>
       </div>
     </section>
 
