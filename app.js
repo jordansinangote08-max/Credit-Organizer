@@ -1,20 +1,13 @@
 const KEY='sahodplan.v1';
 const KINDS={essential:'Rent / food / allowance',bill:'Utilities & bills',loan:'Installment loan',card:'Credit card',flex:'Can be cut'};
-const DEFAULTS={salary:39000,payday:24,thirteenth:0,efund:5000,buffer:2000,income:[],items:[
- {name:'House rent',kind:'essential',amount:4000,day:24},
- {name:'Work allowance',kind:'essential',amount:3000,day:24},
- {name:'Groceries / food at home',kind:'essential',amount:0,day:24},
- {name:'Electricity, water, load',kind:'bill',amount:0,day:24},
- {name:'UnionBank Loan A',kind:'loan',amount:4384.71,day:24,left:6,rate:2.49},
- {name:'UnionBank Loan B',kind:'loan',amount:3897.52,day:26,left:9,rate:2.49},
- {name:'Mari Loan',kind:'loan',amount:7256.67,day:26,left:3,rate:null},
- {name:'UnionBank CC',kind:'card',amount:2133.13,day:26,rate:3},
- {name:'RCBC CC',kind:'card',amount:8263.94,day:28,rate:3},
- {name:'Maya Credit',kind:'card',amount:5578.14,day:30,rate:3},
- {name:'Maribank CC',kind:'card',amount:2401.66,day:5,rate:3},
- {name:'EastWest CC',kind:'card',amount:4723.29,day:13,rate:3}
+// Starting data: only the installments. Everything else starts empty.
+// rev marks the data upgrades below as already applied, so they don't add creditors or cards back.
+const DEFAULTS={salary:0,payday:24,thirteenth:0,efund:5000,buffer:2000,income:[],sources:[],accounts:[],rev:7,items:[
+ {name:'UnionBank Loan A',kind:'loan',amount:4384.71,day:24,left:6,total:12,rate:2.49},
+ {name:'UnionBank Loan B',kind:'loan',amount:3897.52,day:26,left:9,total:12,rate:2.49},
+ {name:'Mari Loan',kind:'loan',amount:7256.67,day:26,left:3,rate:2.95,addon:true}
 ]};
-const SRC_DEFAULT=[{name:'Mari Loan credit line',avail:30000,rate:null,fee:null,term:12}];
+const SRC_DEFAULT=[];
 const SRC_TPL=[
  {name:'SSS Salary Loan',avail:null,rate:0.83,fee:1,term:24},
  {name:'Pag-IBIG Multi-Purpose Loan',avail:null,rate:0.88,fee:0,term:24},
@@ -483,7 +476,7 @@ $('#srcAdd').addEventListener('click',()=>{const s={id:uid++,name:'New creditor'
 
 $('#resetBtn').addEventListener('click',()=>{$('#resetConfirm').hidden=false});
 $('#resetNo').addEventListener('click',()=>{$('#resetConfirm').hidden=true});
-$('#resetYes').addEventListener('click',()=>{S=clone(DEFAULTS);S.rev=0;prepare();editingId=null;save();syncInputs();$('#resetConfirm').hidden=true;renderAll()});
+$('#resetYes').addEventListener('click',()=>{S=clone(DEFAULTS);prepare();editingId=null;save();syncInputs();$('#resetConfirm').hidden=true;renderAll()});
 $('#acctList').addEventListener('input',e=>{
   const row=e.target.closest('.form');if(!row)return;const a=S.accounts.find(x=>x.id==row.dataset.aid),k=e.target.dataset.k;if(!a||!k)return;
   if(k==='last4'){const v=e.target.value.replace(/\D/g,'').slice(0,4);if(v!==e.target.value)e.target.value=v;a.last4=v}
