@@ -587,6 +587,12 @@ async function syncBillBuddy(){
     if(num(it.amount)===amt&&num(it.day)===due.getDate()&&it.bbDue===b.due_date)return;
     it.amount=amt;it.day=due.getDate();it.bbDue=b.due_date;changed=true;
   });
+  // copies an older sync made before bill types were sent (e.g. a loan saved as "UnionBank CC"), even from an
+  // earlier statement: filled in by BillBuddy, not matched this time, and the same amount as a bill of
+  // another type from that bank
+  if(bills.some(b=>b.product_type))S.items.filter(i=>!claimed.has(i)&&i.bbDue&&!i.bbKey).forEach(i=>{
+    if(bills.some(b=>b.product_type&&(BB_KIND[b.product_type]||'card')!==i.kind&&squash(i.name).includes(squash(b.bank))&&near(i.amount,b.amount))){removeItem(i);changed=true}
+  });
   if(changed){ensureLinks();save();if(editingId==null)renderItems();render()}
   const t=new Date();
   bbState('ok',`Synced ${bills.length} bill${bills.length===1?'':'s'} at ${t.getHours()%12||12}:${String(t.getMinutes()).padStart(2,'0')} ${t.getHours()<12?'AM':'PM'}`);
