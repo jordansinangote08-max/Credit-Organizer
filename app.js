@@ -49,6 +49,9 @@ function dueDate(day,start){
   return new Date(y,m,Math.min(day,dim(y,m)));
 }
 const dayOf=i=>Math.min(31,Math.max(1,num(i.day)||1));
+// a BillBuddy bill has an exact due date, so it only counts in the pay cycle that date falls in
+const dueOf=(i,start)=>parseD(i.bbDue)||dueDate(dayOf(i),start);
+const inCycle=(i,start)=>{const d=parseD(i.bbDue);return !d||(d>=start&&d<shiftCycle(start,1))};
 
 // ---------- data upgrades ----------
 const PATCHES=[
@@ -130,9 +133,9 @@ function compute(){
   const inc=S.income.filter(x=>num(x.amount)>0).map(x=>({x,d:parseD(x.date)})).filter(o=>o.d&&o.d>=start&&o.d<next);
   const other=inc.reduce((s,o)=>s+num(o.x.amount),0);
   const avail=num(S.salary)+other;
-  const lines=S.items.filter(i=>num(i.amount)>0).map(i=>{
+  const lines=S.items.filter(i=>num(i.amount)>0&&inCycle(i,start)).map(i=>{
     const tier=i.kind==='essential'||i.kind==='bill'?1:i.kind==='loan'?2:i.kind==='card'?3:5;
-    return {i,tier,date:dueDate(dayOf(i),start),need:num(i.amount)};
+    return {i,tier,date:dueOf(i,start),need:num(i.amount)};
   }).sort((a,b)=>a.tier-b.tier||a.date-b.date);
   let left=avail;lines.forEach(l=>{l.got=Math.max(0,Math.min(l.need,left));left-=l.got});
   const required=lines.filter(l=>l.tier<=3).reduce((s,l)=>s+l.need,0);
@@ -216,7 +219,7 @@ function itemForm(i){
   </div>`;
 }
 function itemRow(i,start){
-  const amt=num(i.amount),paid=isPaid(i),meta=[`<span>Due ${fmtD(dueDate(dayOf(i),start))}</span>`];
+  const amt=num(i.amount),paid=isPaid(i),meta=[`<span>Due ${fmtD(dueOf(i,start))}</span>`];
   if(i.kind==='loan'&&num(i.left))meta.push(`<span>${num(i.left)} left</span>`);
   if(i.kind==='card'){const a=acctOf(i);if(a){if(a.last4)meta.push(`<span>•••• ${esc(a.last4)}</span>`);if(a.stmt)meta.push(`<span>Statement ${ord(num(a.stmt))}</span>`);const L=num(a.limit);if(L>0&&amt>0){const p=amt/L*100;meta.push(`<span style="color:${p>50?'var(--bad)':p>30?'var(--warn)':'var(--ok)'}">${p.toFixed(0)}% of ${peso(L)} limit</span>`)}}}
   if(paid)meta.unshift(`<span style="color:var(--ok);font-weight:600">Paid · clears in ${Math.max(1,Math.ceil((DAY-(Date.now()-num(i.paidAt)))/3600000))}h</span>`);
@@ -226,17 +229,19 @@ function itemRow(i,start){
 }
 function renderItems(){
   const start=cycleStart();
-  const vis=S.items.filter(i=>!isHiddenPaid(i)),hidden=S.items.filter(isHiddenPaid);
+  const hidden=S.items.filter(isHiddenPaid),open=S.items.filter(i=>!isHiddenPaid(i));
+  const vis=open.filter(i=>inCycle(i,start)),later=open.filter(i=>!inCycle(i,start));
   const html=GROUPS.map(([k,label])=>{
     const its=vis.filter(i=>i.kind===k);if(!its.length)return '';
-    its.sort((a,b)=>(isPaid(a)-isPaid(b))||dueDate(dayOf(a),start)-dueDate(dayOf(b),start));
+    its.sort((a,b)=>(isPaid(a)-isPaid(b))||dueOf(a,start)-dueOf(b,start));
     const due=its.filter(i=>!isPaid(i)).reduce((s,i)=>s+num(i.amount),0);
     return `<div class="grp" data-k="${k}"><div class="grp-h"><h3>${label}<span>${its.length}</span></h3><span class="sub">${peso(due)}</span></div>${its.map(i=>i.id===editingId?itemForm(i):itemRow(i,start)).join('')}</div>`;
   }).join('');
-  const left=S.items.filter(i=>!isPaid(i)).reduce((s,i)=>s+num(i.amount),0);
+  const left=vis.filter(i=>!isPaid(i)).reduce((s,i)=>s+num(i.amount),0);
   $('#itemList').innerHTML=(html||'<p class="empty">Nothing left to pay this cycle.</p>')+
     `<div class="tot"><span>Still to pay</span><span>${peso(left)}</span></div>`+
-    (hidden.length?`<details class="paidlist"><summary>Paid this cycle (${hidden.length})</summary><ul>${hidden.map(i=>`<li><span>${esc(i.name)}</span><span class="num">${peso(num(i.amount))}</span></li>`).join('')}</ul></details>`:'');
+    (hidden.length?`<details class="paidlist"><summary>Paid this cycle (${hidden.length})</summary><ul>${hidden.map(i=>`<li><span>${esc(i.name)}</span><span class="num">${peso(num(i.amount))}</span></li>`).join('')}</ul></details>`:'')+
+    (later.length?`<details class="paidlist"><summary>Due in another cycle (${later.length})</summary><ul>${later.map(i=>`<li><span>${esc(i.name)} · due ${fmtD(dueOf(i,start))}</span><span class="num">${peso(num(i.amount))}</span></li>`).join('')}</ul></details>`:'');
 }
 
 // ---------- installments ----------
@@ -401,7 +406,7 @@ function renderAccounts(){
     const bill=billOf(a);
     const facts=[];
     if(a.stmt)facts.push(`<span>Statement <b>${fmtD(nextOn(num(a.stmt)))}</b></span>`);
-    if(bill)facts.push(`<span>Due <b>${fmtD(dueDate(dayOf(bill),cycleStart()))}</b></span>`);
+    if(bill)facts.push(`<span>Due <b>${fmtD(dueOf(bill,cycleStart()))}</b></span>`);
     facts.push(`<span>Using <b>${peso(U)}</b>${L>0?` of ${peso(L)}`:''}</span>`);
     if(L>0)facts.push(`<span>Available <b>${peso(Math.max(0,L-U))}</b></span>`);
     return `<div class="acct" data-k="card">
@@ -436,6 +441,7 @@ $('#itemList').addEventListener('input',e=>{
   const row=e.target.closest('.form');if(!row)return;const it=S.items.find(i=>i.id==row.dataset.id),k=e.target.dataset.k;if(!it||!k)return;
   it[k]=k==='name'||k==='kind'?e.target.value:(e.target.value===''?null:num(e.target.value));
   if(k==='name'){const a=acctOf(it);if(a)a.name=it.name}
+  if(k==='day')delete it.bbDue;
   if(k==='kind'&&it.kind==='card'){delete it.noAcct;ensureLinks()}
   commit();if(k==='kind'){renderItems();const f=$('#k'+it.id);f&&f.focus()}
 });
@@ -481,7 +487,7 @@ $('#resetYes').addEventListener('click',()=>{S=clone(DEFAULTS);prepare();editing
 $('#acctList').addEventListener('input',e=>{
   const row=e.target.closest('.form');if(!row)return;const a=S.accounts.find(x=>x.id==row.dataset.aid),k=e.target.dataset.k;if(!a||!k)return;
   if(k==='last4'){const v=e.target.value.replace(/\D/g,'').slice(0,4);if(v!==e.target.value)e.target.value=v;a.last4=v}
-  else if(k==='due'){const b=billOf(a);if(b)b.day=e.target.value===''?null:num(e.target.value)}
+  else if(k==='due'){const b=billOf(a);if(b){b.day=e.target.value===''?null:num(e.target.value);delete b.bbDue}}
   else{a[k]=k==='name'?e.target.value:(e.target.value===''?null:num(e.target.value));if(k==='name'){const b=billOf(a);if(b)b.name=a.name}}
   commit();
 });
