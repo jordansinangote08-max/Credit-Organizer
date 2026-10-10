@@ -416,3 +416,12 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
   :root{--glass:var(--surface);--glass-strong:var(--surface)}
   .hero,.sec,.authform,.tabs,.dlg{-webkit-backdrop-filter:none;backdrop-filter:none}}
 @media print{body::before{display:none} .hero,.sec{-webkit-backdrop-filter:none;backdrop-filter:none;background:#fff;box-shadow:none}}
+
+/* icon buttons: edit (pencil) and remove (trash) */
+.ib{display:inline-grid;place-items:center;width:38px;height:36px;padding:0!important}
+.ib svg{width:19px;height:19px}
+.danger.ib{background:color-mix(in srgb,var(--bad) 10%,transparent)}
+@media (hover:hover){.danger.ib:hover{background:color-mix(in srgb,var(--bad) 18%,transparent)}}
+@media (pointer:coarse){.ib{width:var(--tap);height:var(--tap)}}
+.catrow .go{display:grid;place-items:center;color:var(--muted)}
+.catrow .go svg{width:18px;height:18px}
