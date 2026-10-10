@@ -18,7 +18,7 @@ const SRC_TPL=[
 const clone=o=>JSON.parse(JSON.stringify(o));
 const $=s=>document.querySelector(s);
 const num=v=>{const n=parseFloat(v);return isFinite(n)?n:0};
-const peso=n=>'₱'+(Math.round(n*100)/100).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
+const peso=n=>{const v=Math.round(n*100)/100;return (v<0?'−₱':'₱')+Math.abs(v).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -201,7 +201,7 @@ function renderTimeline(C){
       if(e.in){bal+=e.amt;return `<div class="ev in"><span class="nm">${esc(e.name)}</span><span class="r"><span class="a">+${peso(e.amt)}</span></span></div>`}
       bal-=e.l.need;const paid=isPaid(e.l.i);
       const pill=paid?'<span class="pill ok">Paid</span>':e.l.got>=e.l.need-0.004?'':e.l.got<0.005?'<span class="pill bad">No funds</span>':`<span class="pill warn">Short ${peso(e.l.need-e.l.got)}</span>`;
-      return `<div class="ev${paid?' paid':''}" data-k="${esc(e.l.i.kind)}"><span class="nm">${esc(e.l.i.name)}</span><span class="r">${pill}<span class="a">−${peso(e.l.need)}</span></span></div>`;
+      return `<div class="ev${paid?' paid':''}" data-k="${esc(e.l.i.kind)}"><span class="nm"><span class="vh">${KINDS[e.l.i.kind]||''}: </span>${esc(e.l.i.name)}</span><span class="r">${pill}<span class="a">−${peso(e.l.need)}</span></span></div>`;
     }).join('');
     return `<div class="day"><div class="d">${fmtD(d)}<small>${WD[d.getDay()]}</small></div><div>${rows}<div class="bal${bal<0?' neg':''}"><span>${bal<0?'Not enough on hand':'On hand after'}</span><span class="num">${peso(bal)}</span></div></div></div>`;
   }).join('')||'<p class="empty">Nothing scheduled.</p>';
@@ -290,7 +290,7 @@ function renderIncome(){
     <input data-k="label" aria-label="What is it" placeholder="What is it?" value="${esc(x.label||'')}">
     <input data-k="amount" aria-label="Amount" type="number" inputmode="decimal" step="0.01" min="0" placeholder="₱0.00" value="${x.amount??''}">
     <input data-k="date" aria-label="Date it arrives" type="date" value="${esc(x.date||'')}">
-    <button class="x" data-incdel="${x.id}" aria-label="Remove">×</button>
+    <button class="x" data-incdel="${x.id}" aria-label="Remove ${esc(x.label||'this money')}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     <span class="tag ${t.c}" id="tag${x.id}">${t.t}</span></div>`}).join('')||'<p class="empty">No other money yet. Add one below.</p>';
   renderIncSum();
 }
@@ -376,7 +376,7 @@ function renderAhead(C){
     const d=shiftCycle(C.start,m);
     const ln=loans.filter(l=>(num(l.left)+(isPaid(l)?1:0))>m).reduce((s,l)=>s+num(l.amount),0);
     const free=Math.max(0,salary-ln-fixed),w=v=>(v/scale*100).toFixed(2)+'%';
-    rows+=`<div class="mrow"><span>${MON[d.getMonth()]} ${String(d.getFullYear()).slice(2)}</span><div class="track"><div class="seg loan" style="width:${w(ln)}"></div><div class="seg fixed" style="width:${w(fixed)}"></div><div class="seg free" style="width:${w(free)}"></div></div><span class="num" style="text-align:right">${peso(free)}</span></div>`;
+    rows+=`<div class="mrow"><span>${MON[d.getMonth()]} ${String(d.getFullYear()).slice(2)}</span><div class="track" role="img" aria-label="Installments ${peso(ln)}, rent and bills ${peso(fixed)}, free ${peso(free)}"><div class="seg loan" style="width:${w(ln)}"></div><div class="seg fixed" style="width:${w(fixed)}"></div><div class="seg free" style="width:${w(free)}"></div></div><span class="num" style="text-align:right">${peso(free)}</span></div>`;
   }
   $('#monthList').innerHTML=loans.length?rows:'<p class="empty">No installments listed.</p>';
 }
@@ -687,12 +687,12 @@ function renderAuth(){
   document.body.classList.toggle('locked',!cloudReady);
   $('#authBtn').hidden=!cloudUser;
   $('#authForm').hidden=!sb||!authKnown||!!cloudUser;
-  $('#authWho').textContent=cloudUser?.email||'';
+  $('#authWho').textContent=cloudUser?.email||'';$('#authWho').title=cloudUser?.email||'';
 }
 function signedOut(){
   cloudUser=null;cloudReady=false;clearTimeout(cloudTimer);cloudTimer=null;
   S=clone(DEFAULTS);prepare();editingId=null;syncInputs();renderAll();fillBB();
-  setSync('off','Sign in to open your planner');renderAuth();
+  setSync('','Sign in to open your planner');renderAuth();
 }
 function initCloud(){
   if(!CFG.supabaseUrl||!CFG.supabaseAnonKey||!window.supabase){setSync('off','Cloud saving is not set up. Add your Supabase details to config.js.');renderAuth();return}
