@@ -15,10 +15,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=20">
-<script src="config.js?v=20" defer></script>
+<link rel="stylesheet" href="styles.css?v=22">
+<script src="config.js?v=22" defer></script>
 <script src="vendor/supabase-2.116.0.js" defer></script>
-<script src="app.js?v=20" defer></script>
+<script src="app.js?v=22" defer></script>
 </head>
 <body class="locked">
 <div class="app">
@@ -36,10 +36,15 @@
     <section class="hero" aria-label="This pay cycle">
       <div class="salrow">
         <div>
-          <label class="label" for="salary">Salary this cycle</label>
+          <label class="label" for="salary" id="salLabel">Salary this cycle</label>
           <div class="money"><span>₱</span><input id="salary" type="number" inputmode="decimal" step="0.01" min="0"></div>
         </div>
-        <div class="payday"><label for="payday">Payday every</label><input id="payday" type="number" inputmode="numeric" min="1" max="31"><span>of the month</span></div>
+        <div class="payday">
+          <label for="payfreq">Payday</label>
+          <select id="payfreq"><option value="month">Once a month</option><option value="twice">Twice a month</option><option value="week">Every week</option></select>
+          <span id="pdDays" class="pdpart">on the <input id="payday" type="number" inputmode="numeric" min="1" max="31" aria-label="Payday, day of the month"><span id="pd2" class="pdpart" hidden>and <input id="payday2" type="number" inputmode="numeric" min="1" max="31" aria-label="Second payday, day of the month"></span></span>
+          <span id="pdWeek" class="pdpart" hidden>on <select id="payweekday" aria-label="Payday, day of the week"><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option><option value="0">Sunday</option></select></span>
+        </div>
       </div>
       <div id="status" class="status" aria-live="polite"></div>
     </section>

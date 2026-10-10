@@ -425,3 +425,10 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 @media (pointer:coarse){.ib{width:var(--tap);height:var(--tap)}}
 .catrow .go{display:grid;place-items:center;color:var(--muted)}
 .catrow .go svg{width:18px;height:18px}
+
+/* payday schedule */
+.payday{flex-wrap:wrap;row-gap:8px}
+.pdpart{display:inline-flex;align-items:center;gap:6px}
+.payday select{font:inherit;font-size:.9rem;color:var(--ink);background:var(--surface);border:1px solid var(--field);border-radius:10px;padding:5px 8px}
+.payday select:focus{border-color:var(--accent);box-shadow:var(--ring);outline:none}
+@media (pointer:coarse){.payday select{font-size:16px;min-height:var(--tap)}}
