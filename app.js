@@ -171,11 +171,12 @@ const last4Of=i=>(i.kind==='card'&&acctOf(i)?.last4)||i.bbLast4||'';
 
 // ---------- saving ----------
 // Saved to Supabase only (see the cloud section at the end); nothing is kept in the browser.
-let sb=null,cloudUser=null,cloudAt=null,cloudTimer=null,cloudReady=false,pushing=false,noWriter=false;
+let sb=null,cloudUser=null,cloudAt=null,cloudTimer=null,cloudReady=false,pushing=false,noWriter=false,draft=null; // draft: see the end
 function setSync(cls,txt){const el=$('#syncState');el.className='sync '+cls;el.textContent=txt}
 const snapshot=()=>JSON.stringify(S,(k,v)=>k==='id'?undefined:v);
 function save(){
   if(!cloudReady)return;
+  if(draft){setSync('draft','Draft · nothing is saved');return}
   clearTimeout(cloudTimer);setSync('busy','Saving…');
   cloudTimer=setTimeout(pushCloud,700);
 }
@@ -1516,7 +1517,7 @@ async function startCloud(user){
 document.addEventListener('visibilitychange',async()=>{
   if(document.hidden)return;
   checkUpdate();
-  if(!cloudReady||cloudTimer||pushing)return;
+  if(!cloudReady||cloudTimer||pushing||draft)return;
   try{
     const row=await pullCloud();
     // only a copy saved after ours, and only when no save of ours is waiting or on its way
@@ -1530,12 +1531,13 @@ document.addEventListener('visibilitychange',async()=>{
 let authKnown=false; // false until Supabase has checked this device for a saved sign-in
 function renderAuth(){
   document.body.classList.toggle('locked',!cloudReady);
+  $('#draftBtn').hidden=!cloudReady||!!draft;
   $('#authBtn').hidden=!cloudUser;
   $('#authForm').hidden=!sb||!authKnown||!!cloudUser;
   $('#authWho').textContent=cloudUser?.email||'';$('#authWho').title=cloudUser?.email||'';
 }
 function signedOut(){
-  cloudUser=null;cloudReady=false;clearTimeout(cloudTimer);cloudTimer=null;
+  cloudUser=null;cloudReady=false;clearTimeout(cloudTimer);cloudTimer=null;draft=null;document.body.classList.remove('drafting');$('#draftBar').hidden=true;
   S=clone(DEFAULTS);prepare();editingId=null;syncInputs();renderAll();fillBB();fillAI();aiMemo.clear();$('#aiOut').innerHTML='';
   setSync('','Sign in to open your planner');renderAuth();
 }
@@ -1566,6 +1568,32 @@ $('#authForm').addEventListener('submit',async e=>{
 
 initCloud();
 
+// ---------- draft ----------
+// A testing room: Draft copies the whole planner (every tab, bill, setting and the AI) and you change the copy.
+// Nothing in it is saved, other devices' changes aren't pulled in, and closing it brings back the planner as it
+// was. BillBuddy keeps syncing into the draft, so new bills show up there too. AI used in a draft is real, so
+// its usage is carried back to the planner's daily count.
+async function openDraft(){
+  if(!cloudReady||draft)return;
+  if(cloudTimer){clearTimeout(cloudTimer);await pushCloud()}   // a change still waiting to save is saved first
+  closeDialogs();
+  draft={main:clone(S)};
+  document.body.classList.add('drafting');$('#draftBar').hidden=false;renderAuth();
+  setSync('draft','Draft · nothing is saved');
+}
+function closeDraft(){
+  if(!draft)return;
+  closeDialogs();
+  const used=S.aiUse,log=S.aiLog,main=draft.main;draft=null;
+  if(used)main.aiUse=used;if(log)main.aiLog=log;
+  document.body.classList.remove('drafting');$('#draftBar').hidden=true;
+  adopt(main);renderAuth();
+  save();syncBillBuddy();                                       // keeps the AI count, and picks up new bills
+}
+function closeDialogs(){document.querySelectorAll('dialog[open]').forEach(d=>d.close())}
+$('#draftBtn').addEventListener('click',openDraft);
+$('#draftClose').addEventListener('click',closeDraft);
+
 // ---------- updates ----------
 // A tab left open keeps running the code it loaded with. When a newer version is published, reload, so an
 // old copy never syncs BillBuddy with outdated rules and saves that to the account.
@@ -1575,7 +1603,7 @@ async function checkUpdate(){
   try{
     const html=await (await fetch(location.pathname,{cache:'no-store'})).text();
     const v=(/app\.js\?v=(\w+)/.exec(html)||[])[1];
-    if(!v||v===APP_V||cloudTimer||pushing||document.activeElement?.matches?.('input,select'))return;
+    if(!v||v===APP_V||cloudTimer||pushing||draft||document.activeElement?.matches?.('input,select'))return;
     location.reload();
   }catch(e){}
 }
