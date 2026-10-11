@@ -7,13 +7,6 @@ const DEFAULTS={ver:2,salary:0,payday:24,thirteenth:0,efund:5000,buffer:2000,inc
  {name:'Mari Loan',kind:'loan',amount:7256.67,day:26,left:3,rate:2.95,addon:true}
 ]};
 const SRC_DEFAULT=[];
-const SRC_TPL=[
- {name:'SSS Salary Loan',avail:null,rate:0.83,fee:1,term:24},
- {name:'Pag-IBIG Multi-Purpose Loan',avail:null,rate:0.88,fee:0,term:24},
- {name:'Company / coop loan',avail:null,rate:null,fee:0,term:12},
- {name:'Family or friend',avail:null,rate:0,fee:0,term:1},
- {name:'Credit card cash advance',avail:null,rate:3,fee:3,term:3}
-];
 // iOS-style icons for the edit and remove buttons; each button carries its own label for screen readers
 const IC={
   edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2 5.2l3.6 3.6M4 20l1-4.6L15.6 4.8a2 2 0 012.8 0l.8.8a2 2 0 010 2.8L8.6 19 4 20z"/></svg>',
@@ -371,7 +364,6 @@ function openCats(){catEditing=null;catDeleting=false;renderCats();$('#catDlg').
 function closeCatEdit(){const c=S.cats.find(x=>x.key===catEditing);if(c&&!c.name.trim()){c.name='Untitled';save()}catEditing=null;catDeleting=false;renderItems();render();renderCats()}
 
 // ---------- installments ----------
-const ord=n=>{if(!n)return '?';const v=n%100;return n+((v>=11&&v<=13)?'th':({1:'st',2:'nd',3:'rd'}[n%10]||'th'))};
 // Installments are grouped by lender: "UnionBank Loan A" and "UnionBank Loan B" sit under UnionBank Loan as
 // Installment 1 and 2. The lender is the Lender field if set (BillBuddy fills it with the bank), otherwise the
 // name without a trailing letter or number.
@@ -546,7 +538,6 @@ function renderAhead(C){
 }
 
 // ---------- accounts ----------
-let acctEditing=null;
 function nextOn(day){
   const t=new Date();t.setHours(0,0,0,0);let y=t.getFullYear(),m=t.getMonth();
   let d=new Date(y,m,Math.min(day,dim(y,m)));if(d<t){m++;d=new Date(new Date(y,m,1).getFullYear(),new Date(y,m,1).getMonth(),Math.min(day,dim(new Date(y,m,1).getFullYear(),new Date(y,m,1).getMonth())))}
@@ -1059,7 +1050,19 @@ const checkPlace=a=>a&&Array.isArray(a.placed)?a.placed.filter(x=>x&&typeof x.pl
 // The one place the AI helps with BillBuddy: a bill it couldn't type ("other") is sorted into the right kind.
 // Only new unclear bills are sent, all in one small request, each at most once; it keeps to the daily budget.
 const aiSortTried=new Set();
+// Billers whose kind is plain from the name are sorted here for free; only names this list doesn't know reach the AI.
+const KNOWN_KIND=[
+  ['bill',/\b(meralco|maynilad|manila ?water|prime ?water|veco|davao light|pldt|globe|smart|converge|dito|sky ?(cable|fiber)|cignal|sss|philhealth|pag-?ibig|gsis|bir|insurance|insular|maxicare|intellicare|medicard|sun ?life|axa|pru ?life|manulife|fwd|electric|water district)\b/],
+  ['flex',/\b(netflix|spotify|youtube|disney|hbo( max)?|viu|iwant|prime video|amazon prime|apple (music|one|tv)|icloud|google (one|play)|canva|chatgpt|openai|claude|adobe|microsoft 365|xbox|playstation|steam|patreon|gym|fitness|subscription|membership)\b/],
+  ['essential',/\b(rent|lease|condo|apartment|dorm|grocer(y|ies)|tuition|school|daycare)\b/],
+  ['loan',/\b(loan|home credit|billease|cashalo|atome|ggives|gloan|spaylater|tala|juanhand|digido|aeon|lending|financing)\b/]
+];
+const knownKind=name=>{const t=String(name||'').toLowerCase();const k=KNOWN_KIND.find(([,re])=>re.test(t));return k?k[0]:null};
 async function aiSortBills(){
+  let changed=false;
+  S.items.filter(i=>i.bbUnsure&&!i.bbAi).forEach(it=>{const kind=knownKind(it.name);if(!kind)return;
+    it.bbAi=kind;delete it.bbUnsure;if(it.kind!==kind){setKind(it,kind);delete it.cat}changed=true});
+  if(changed){ensureLinks();save();if(editingId==null)renderItems();render()}
   if(S.aiSortOff||!aiReady())return;
   const todo=S.items.filter(i=>i.bbUnsure&&!i.bbAi&&i.bbKey&&!aiSortTried.has(i.bbKey));
   if(!todo.length)return;
@@ -1067,7 +1070,7 @@ async function aiSortBills(){
   const user='Sort these bills:\n'+JSON.stringify(todo.map(i=>({key:i.bbKey,name:i.name,amount:Math.round(num(i.amount)*100)/100})));
   try{
     const r=await aiAsk({name:'bill_sort',purpose:'sort',light:true,system:SORT_SYSTEM,schema:SORT_SCHEMA,check:checkSort,priority:'low',out:200,user});
-    let changed=false;
+    changed=false;
     r.a.forEach(({key,kind})=>{const it=S.items.find(i=>i.bbKey===key);if(!it)return;it.bbAi=kind;delete it.bbUnsure;
       if(it.kind!==kind){setKind(it,kind);delete it.cat;changed=true}});
     ensureLinks();save();if(changed){if(editingId==null)renderItems();render()}
@@ -1113,7 +1116,7 @@ const AI_PRICE={'claude-opus-5-5':[4,20],'claude-sonnet-5-5':[2,10],'claude-haik
 // Pick an AI provider in the API tab: Claude (Anthropic), ChatGPT (OpenAI), or any other service that speaks
 // OpenAI's chat format at its own address. Each keeps its own key and model.
 const AI_PROV={
-  anthropic:{name:'Claude',key:'sk-ant-…',help:'Key from console.anthropic.com.',model:'claude-opus-5-5'},
+  anthropic:{name:'Claude',key:'sk-ant-…',help:'Key from console.anthropic.com.',model:'claude-haiku-5-5'},
   openai:{name:'ChatGPT',key:'sk-…',help:'Key from platform.openai.com.',model:'gpt-5-mini'},
   compat:{name:'AI',key:'Your key',help:'Any OpenAI-compatible API that allows browser requests.',model:''}
 };
