@@ -381,6 +381,13 @@ const ord=n=>{if(!n)return '?';const v=n%100;return n+((v>=11&&v<=13)?'th':({1:'
 const billed=i=>!!(i.inCard||i.inBill);
 const hasParts=i=>!!(i.bbRef&&S.items.some(y=>y.inBill===i.bbRef));
 const partOf=i=>i.inBill&&S.items.find(y=>y.bbRef===i.inBill&&!y.inBill);
+// An installment the way BillBuddy shows a statement: 3/12 is the payment this bill makes (the 3rd of 12), or the
+// one just paid; a plan whose months the statement cut off shows its payment number alone ("6/?").
+function planOf(i){
+  const total=Math.round(num(i.total)),left=Math.max(0,Math.round(num(i.left)));
+  if(total)return Math.min(total,Math.max(1,total-left+(isPaid(i)?0:1)))+'/'+total;
+  return i.bbTerm?i.bbTerm+'/?':'';
+}
 const lenderName=i=>partOf(i)?lenderName(partOf(i)):i.inCard?(S.accounts.find(a=>a.key===i.inCard)?.name||'Card')+' installments':String(i.lender||'').trim()||String(i.name||'').replace(/\s+(?:[A-Za-z]|#?\d+|\([^)]*\))$/,'').trim()||'Installment';
 const lenderKey=i=>lenderName(i).toLowerCase().replace(/[^a-z0-9]/g,'').replace(/loans?$/,'')||'x';
 function renderInst(){
@@ -396,10 +403,12 @@ function renderInst(){
       const left=Math.max(0,Math.round(num(i.left))),pay=num(i.amount),total=Math.round(num(i.total))||null,end=endOf(i);
       if(left>0){gm+=pay;gr+=pay*left;if(!gl||end>gl)gl=end}
       const pct=total?Math.round(Math.max(0,total-left)/total*100):null;
+      const of=planOf(i);
+      const nm=billed(i)||i.bbInst||(i.name&&i.name!==lenderName(i))?i.name:'Installment '+(n+1);
       return `<div class="sub">
-        <div class="sub-h"><span class="sub-n">${i.inCard?esc(i.name):'Installment '+(n+1)}${last4Of(i)?`<span class="l4">•••• ${esc(last4Of(i))}</span>`:''}</span><span class="pay">${peso(pay)}<span class="muted small">/mo</span></span></div>
+        <div class="sub-h"><span class="sub-n">${of?`<span class="plan-of" aria-label="payment ${of.replace('/',' of ')}">${of}</span>`:''}${esc(nm)}${last4Of(i)?`<span class="l4">•••• ${esc(last4Of(i))}</span>`:''}</span><span class="pay">${peso(pay)}<span class="muted small">/mo</span></span></div>
         ${pct!=null?`<div class="bar" role="img" aria-label="${total-left} of ${total} paid"><i style="width:${pct}%"></i></div>`:''}
-        <div class="sub-f"><div class="facts">${!total&&i.bbTerm?`<span>Payment <b>${i.bbTerm}</b></span><span class="muted">months not on the statement</span>`:`<span><b>${left}${total?'/'+total:''}</b> left</span><span><b>${peso(pay*left)}</b> to go</span><span>Ends <b>${ym(end)}</b></span>`}</div>
+        <div class="sub-f"><div class="facts">${total?`<span><b>${peso(pay*left)}</b> to go</span><span>Last payment <b>${ym(end)}</b></span>`:i.bbTerm?'<span>Months not on the statement</span>':`<span><b>${left}</b> left</span><span><b>${peso(pay*left)}</b> to go</span><span>Last payment <b>${ym(end)}</b></span>`}</div>
         <div class="acts">${billed(i)?'':`${isPaid(i)?`<span class="pill ok">Paid</span>${!isHiddenPaid(i)?undoBtn(`data-iundo="${i.id}"`,i.name):''}`:''}${last4Of(i)?'':`<button class="pill warn ask4" data-iedit4="${i.id}">Add last 4</button>`}${editBtn(`data-iedit="${i.id}"`,i.name)}${left>0&&!isPaid(i)?paidBtn(`data-ipaid="${i.id}"`,i.name):''}`}${billed(i)?editBtn(`data-iedit="${i.id}"`,i.name):''}</div></div>
       </div>`;
     }).join('');
@@ -554,6 +563,15 @@ function acctForm(a,isNew){
     <div class="acts">${isNew?'<span></span>':delBtn(`data-adel="${a.id}"`,"Remove "+(a.name||"card"))}<button class="btn" data-adone="1">${isNew?'Add':'Done'}</button></div>
   </div>`;
 }
+// The installments inside a card's statement, as BillBuddy lists them: each plan, what they come to, the total
+function cardPlans(a,bill){
+  const plans=S.items.filter(i=>i.inCard===a.key).sort((x,y)=>String(planOf(x)).localeCompare(planOf(y),undefined,{numeric:true}));
+  if(!plans.length)return '';
+  const sum=plans.reduce((t,i)=>t+num(i.amount),0),total=num(bill&&bill.amount);
+  return `<div class="cplans">${plans.map(i=>`<div class="cplan"><span class="plan-of">${planOf(i)||'—'}</span><span class="cplan-n">${esc(i.name)}</span><span class="num">${peso(num(i.amount))}</span></div>`).join('')}
+    <div class="cplan foot"><span>Installments this period</span><span class="num">${peso(sum)}</span></div>
+    ${total?`<div class="cplan foot"><span>Rest of the bill</span><span class="num">${peso(Math.max(0,total-sum))}</span></div><div class="cplan tot"><span>Statement total</span><span class="num">${peso(total)}</span></div>`:''}</div>`;
+}
 function renderAccounts(){
   let lim=0,used=0;
   const html=S.accounts.map(a=>{
@@ -570,6 +588,7 @@ function renderAccounts(){
         <span class="lim">${L>0?peso(L):'—'}<small>credit limit</small></span></div>
       ${p!==null?`<div class="ubar" role="img" aria-label="${p.toFixed(0)}% of limit used"><i class="${ucls(p)}" style="width:${Math.min(100,p).toFixed(1)}%"></i></div>`:''}
       <div class="facts">${p!==null?`<span><b>${p.toFixed(0)}%</b> used</span>`:''}${facts.join('')}</div>
+      ${cardPlans(a,bill)}
       <div class="acts">${editBtn(`data-aedit="${a.id}"`,a.name)}</div>
     </div>`;
   }).join('');
