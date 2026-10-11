@@ -212,7 +212,7 @@ function compute(){
   const inc=S.income.filter(x=>num(x.amount)>0).map(x=>({x,d:parseD(x.date)})).filter(o=>o.d&&o.d>=start&&o.d<next);
   const other=inc.reduce((s,o)=>s+num(o.x.amount),0);
   const avail=num(S.salary)+other;
-  const lines=S.items.filter(i=>num(i.amount)>0&&inCycle(i,start)).map(i=>{
+  const lines=S.items.filter(i=>!i.inCard&&num(i.amount)>0&&inCycle(i,start)).map(i=>{
     const tier=i.kind==='essential'||i.kind==='bill'?1:i.kind==='loan'?2:i.kind==='card'?3:5;
     return {i,tier,date:dueOf(i,start),need:num(i.amount)};
   }).sort((a,b)=>a.tier-b.tier||a.date-b.date);
@@ -248,7 +248,7 @@ function renderAdvice(C){
   }
   // pay-ahead candidates: next cycle's installments (costliest first), then next cycle's fixed bills
   const recs=[];
-  S.items.filter(i=>i.kind==='loan'&&num(i.amount)>0).forEach(i=>{
+  S.items.filter(i=>i.kind==='loan'&&!i.inCard&&num(i.amount)>0).forEach(i=>{
     const after=isPaid(i)?num(i.left):num(i.left)-1;
     if(after>0)recs.push({i,amt:num(i.amount),date:dueDate(dayOf(i),C.next),why:`next installment${i.rate!=null?` · ${num(i.rate)}%${i.addon?' add-on':''}/mo`:''}`,rank:realRate(i)});
   });
@@ -323,8 +323,9 @@ function itemRow(i,start){
 function renderItems(){
   ensureCats();
   const start=cycleStart();
-  const hidden=S.items.filter(isHiddenPaid),vis=S.items.filter(i=>!isHiddenPaid(i)&&inCycle(i,start));
-  const done=S.items.filter(i=>ended(i,start));
+  // installments billed with a card are part of its statement, so the Bills tab doesn't list them twice
+  const hidden=S.items.filter(i=>!i.inCard&&isHiddenPaid(i)),vis=S.items.filter(i=>!i.inCard&&!isHiddenPaid(i)&&inCycle(i,start));
+  const done=S.items.filter(i=>!i.inCard&&ended(i,start));
   const later=S.items.filter(i=>repeats(i)&&i.once&&!i.bbDue&&exactDue(i)>=shiftCycle(start,1)).sort((a,b)=>exactDue(a)-exactDue(b));
   const html=S.cats.map(c=>{
     const its=vis.filter(i=>i.cat===c.key);if(!its.length)return '';
@@ -372,7 +373,7 @@ const ord=n=>{if(!n)return '?';const v=n%100;return n+((v>=11&&v<=13)?'th':({1:'
 // Installments are grouped by lender: "UnionBank Loan A" and "UnionBank Loan B" sit under UnionBank Loan as
 // Installment 1 and 2. The lender is the Lender field if set (BillBuddy fills it with the bank), otherwise the
 // name without a trailing letter or number.
-const lenderName=i=>String(i.lender||'').trim()||String(i.name||'').replace(/\s+(?:[A-Za-z]|#?\d+|\([^)]*\))$/,'').trim()||'Installment';
+const lenderName=i=>i.inCard?(S.accounts.find(a=>a.key===i.inCard)?.name||'Card')+' installments':String(i.lender||'').trim()||String(i.name||'').replace(/\s+(?:[A-Za-z]|#?\d+|\([^)]*\))$/,'').trim()||'Installment';
 const lenderKey=i=>lenderName(i).toLowerCase().replace(/[^a-z0-9]/g,'').replace(/loans?$/,'')||'x';
 function renderInst(){
   const start=cycleStart(),endOf=i=>{const left=Math.max(0,Math.round(num(i.left)));if(!left)return null;
@@ -388,16 +389,16 @@ function renderInst(){
       if(left>0){gm+=pay;gr+=pay*left;if(!gl||end>gl)gl=end}
       const pct=total?Math.round(Math.max(0,total-left)/total*100):null;
       return `<div class="sub">
-        <div class="sub-h"><span class="sub-n">Installment ${n+1}${last4Of(i)?`<span class="l4">•••• ${esc(last4Of(i))}</span>`:''}</span><span class="pay">${peso(pay)}<span class="muted small">/mo</span></span></div>
+        <div class="sub-h"><span class="sub-n">${i.inCard?esc(i.name):'Installment '+(n+1)}${last4Of(i)?`<span class="l4">•••• ${esc(last4Of(i))}</span>`:''}</span><span class="pay">${peso(pay)}<span class="muted small">/mo</span></span></div>
         ${pct!=null?`<div class="bar" role="img" aria-label="${total-left} of ${total} paid"><i style="width:${pct}%"></i></div>`:''}
         <div class="sub-f"><div class="facts"><span><b>${left}${total?'/'+total:''}</b> left</span><span><b>${peso(pay*left)}</b> to go</span><span>Ends <b>${ym(end)}</b></span></div>
-        <div class="acts">${isPaid(i)?`<span class="pill ok">Paid</span>${!isHiddenPaid(i)?undoBtn(`data-iundo="${i.id}"`,i.name):''}`:''}${last4Of(i)?'':`<button class="pill warn ask4" data-iedit4="${i.id}">Add last 4</button>`}${editBtn(`data-iedit="${i.id}"`,i.name)}${left>0&&!isPaid(i)?paidBtn(`data-ipaid="${i.id}"`,i.name):''}</div></div>
+        <div class="acts">${i.inCard?'':`${isPaid(i)?`<span class="pill ok">Paid</span>${!isHiddenPaid(i)?undoBtn(`data-iundo="${i.id}"`,i.name):''}`:''}${last4Of(i)?'':`<button class="pill warn ask4" data-iedit4="${i.id}">Add last 4</button>`}${editBtn(`data-iedit="${i.id}"`,i.name)}${left>0&&!isPaid(i)?paidBtn(`data-ipaid="${i.id}"`,i.name):''}`}${i.inCard?editBtn(`data-iedit="${i.id}"`,i.name):''}</div></div>
       </div>`;
     }).join('');
     monthly+=gm;remaining+=gr;if(gl&&(!last||gl>last))last=gl;
     const r=list[0];
     return `<div class="lgrp"><div class="lgrp-h"><h3>${esc(lenderName(r))}</h3>
-      <span class="muted small"><b>${peso(gm)}</b>/mo · <b>${peso(gr)}</b> to go · until ${ym(gl)}${list.length>1?' · '+list.length+' installments':''}</span></div>${rows}</div>`;
+      <span class="muted small"><b>${peso(gm)}</b>/mo · <b>${peso(gr)}</b> to go · until ${ym(gl)}${list.length>1?' · '+list.length+' installments':''}${r.inCard?' · billed with the card':''}</span></div>${rows}</div>`;
   }).join('');
   $('#instSum').innerHTML=`<div><span class="label">Per month</span><span class="v">${peso(monthly)}</span></div><div><span class="label">Still to pay</span><span class="v">${peso(remaining)}</span></div><div><span class="label">All done by</span><span class="v">${ym(last)}</span></div>`;
   $('#instList').innerHTML=html||'<p class="empty">No installments yet.</p>';
@@ -446,7 +447,7 @@ function loanDates(l){
   for(let k=0;k<Math.min(n,60);k++){const f=new Date(d0.getFullYear(),d0.getMonth()+k,1);out.push(new Date(f.getFullYear(),f.getMonth(),Math.min(dayOf(l),dim(f.getFullYear(),f.getMonth()))))}
   return out;
 }
-const loansIn=(start,skipPaid)=>{const end=shiftCycle(start,1);return S.items.filter(l=>l.kind==='loan'&&num(l.amount)>0&&!(skipPaid&&isPaid(l)&&inCycle(l,start))).reduce((s,l)=>s+num(l.amount)*loanDates(l).filter(d=>d>=start&&d<end).length,0)};
+const loansIn=(start,skipPaid)=>{const end=shiftCycle(start,1);return S.items.filter(l=>l.kind==='loan'&&!l.inCard&&num(l.amount)>0&&!(skipPaid&&isPaid(l)&&inCycle(l,start))).reduce((s,l)=>s+num(l.amount)*loanDates(l).filter(d=>d>=start&&d<end).length,0)};
 const fixedIn=start=>S.items.filter(i=>(i.kind==='essential'||i.kind==='bill')&&inCycle(i,start)).reduce((s,i)=>s+num(i.amount),0);
 function nextFree(){
   const next=shiftCycle(cycleStart(),1);
@@ -509,7 +510,7 @@ function renderSrcList(){
 // ---------- plan ahead ----------
 function renderAhead(C){
   const salary=num(S.salary);
-  const loans=S.items.filter(i=>i.kind==='loan'&&num(i.amount)>0);
+  const loans=S.items.filter(i=>i.kind==='loan'&&!i.inCard&&num(i.amount)>0);
   // one row per pay cycle, until a cycle after the last installment
   const last=Math.max(0,...loans.flatMap(l=>loanDates(l)).map(Number));let n=1;
   while(n<36&&shiftCycle(C.start,n-1)<=last)n++;
@@ -852,7 +853,7 @@ async function syncBillBuddy(){
     const bank=squash(b.bank),due=parseD(b.due_date),amt=num(b.amount);
     if(!bank||!due||!(amt>0))return;
     const kind=bbKind(b),l4=String(b.last4||'').replace(/\D/g,'').slice(-4),key=b.account_key||null;
-    const ofBank=i=>squash(i.name).includes(bank),free=i=>!claimed.has(i)&&(!i.bbKey||i.bbKey===key);
+    const ofBank=i=>squash(i.name).includes(bank),free=i=>!i.inCard&&!claimed.has(i)&&(!i.bbKey||i.bbKey===key);
     // same account as last time, then same last 4 digits (same type first, then any), then same bank and type
     // (several loans at one bank: the one with this amount, then this due day)
     let it=(key&&S.items.find(i=>i.bbKey===key&&!claimed.has(i)))
@@ -861,7 +862,7 @@ async function syncBillBuddy(){
       ||(()=>{const c=S.items.filter(i=>i.kind===kind&&free(i)&&ofBank(i)&&!(l4&&last4Of(i)));
         return c.find(i=>near(i.amount,amt))||c.find(i=>num(i.day)===due.getDate())||(c.length===1?c[0]:null)})();
     // an earlier sync filed this statement under the wrong type (a loan as "UnionBank CC"): fix or drop that copy
-    const wrong=S.items.filter(i=>i!==it&&i.kind!==kind&&!claimed.has(i)&&i.bbDue===b.due_date&&near(i.amount,amt)&&ofBank(i));
+    const wrong=S.items.filter(i=>i!==it&&!i.inCard&&i.kind!==kind&&!claimed.has(i)&&i.bbDue===b.due_date&&near(i.amount,amt)&&ofBank(i));
     if(wrong.length){changed=true;if(!it){it=wrong.shift();refile(it,kind,b.bank)}wrong.forEach(removeItem)}
     // the last 4 digits decide which card it is: a card in Accounts with these digits and no bill
     // (its bill was removed, or an older sync gave the card a second account) gets this bill back,
@@ -885,6 +886,11 @@ async function syncBillBuddy(){
     // the card's last 4 digits go on its account; other bills keep them on the bill
     if(l4){const a=it.kind==='card'&&acctOf(it);
       if(a){if(a.last4!==l4){a.last4=l4;changed=true}}else if(it.bbLast4!==l4){it.bbLast4=l4;changed=true}}
+    // everything else the statement says: card limit and statement day, installment breakdown
+    if(adoptBB(it,b,due))changed=true;
+    // a bill BillBuddy couldn't type ("other") is sorted by the AI once, if one is set up
+    const unsure=bbTyped(b)&&!BB_KIND[b.type]&&!BB_KIND[b.product_type]&&!BB_KIND[b.category]&&!/credit_?card|loan|credit_line|bnpl/i.test(String(b.category||b.product_type||''));
+    if(unsure&&!it.bbAi&&!it.bbUnsure){it.bbUnsure=true;changed=true}
     // remember the statement you marked paid, so it is not brought back after payday
     if(isPaid(it)){if(it.bbDue&&it.bbPaidDue!==it.bbDue){it.bbPaidDue=it.bbDue;changed=true}return}
     if(it.bbPaidDue===b.due_date)return;
@@ -894,13 +900,70 @@ async function syncBillBuddy(){
   // copies an older sync made before bill types were sent (e.g. a loan saved as "UnionBank CC"), even from an
   // earlier statement: filled in by BillBuddy, not matched this time, and the same amount as a bill of
   // another type from that bank
-  if(bills.some(bbTyped))S.items.filter(i=>!claimed.has(i)&&i.bbDue&&!i.bbKey).forEach(i=>{
+  if(bills.some(bbTyped))S.items.filter(i=>!i.inCard&&!claimed.has(i)&&i.bbDue&&!i.bbKey).forEach(i=>{
     if(bills.some(b=>bbTyped(b)&&bbKind(b)!==i.kind&&squash(i.name).includes(squash(b.bank))&&near(i.amount,b.amount))){removeItem(i);changed=true}
   });
   if(changed){ensureLinks();save();if(editingId==null)renderItems();render()}
+  aiSortBills();
   const t=new Date();
   bbState('ok',`Synced ${bills.length} bill${bills.length===1?'':'s'} at ${t.getHours()%12||12}:${String(t.getMinutes()).padStart(2,'0')} ${t.getHours()<12?'AM':'PM'}`);
 }
+// What a BillBuddy bill brings besides its amount and due date. A card fills in its account's credit limit and
+// statement day when those are empty, and the installment plans its statement lists become installments
+// filed under the card (part of the card's bill, so they never count twice). A loan's breakdown sets its
+// payments left and total. Returns true when anything changed.
+function adoptBB(it,b,due){
+  let ch=false;const set=(o,k,v)=>{if(v!=null&&o[k]!==v){o[k]=v;ch=true}};
+  const plans=(Array.isArray(b.installments)?b.installments:[]).filter(x=>num(x.monthly_amount)>0&&num(x.term_count)>=2&&num(x.paid_count)>=1&&num(x.paid_count)<=num(x.term_count));
+  const paidNow=isPaid(it)||it.bbPaidDue===b.due_date; // this statement is already paid
+  if(it.kind==='card'){
+    const a=acctOf(it);if(!a)return ch;
+    if(!(num(a.limit)>0)&&num(b.credit_limit)>0)set(a,'limit',num(b.credit_limit));
+    const sd=parseD(b.statement_date);if(!a.stmt&&sd)set(a,'stmt',sd.getDate());
+    if(!Array.isArray(b.installments))return ch;    // an older feed: leave the card's installments alone
+    const seen=new Set();
+    plans.forEach(x=>{
+      const total=Math.round(num(x.term_count)),k=a.key+'|'+squash(x.description)+'|'+total,left=total-Math.round(num(x.paid_count))+(paidNow?0:1);
+      seen.add(k);
+      let i=S.items.find(y=>y.inCard===a.key&&y.bbInst===k);
+      if(!i){const nm=String(x.description||'Installment').toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());
+        i={id:uid++,name:nm,kind:'loan',inCard:a.key,bbInst:k,amount:null,day:due.getDate(),left:null,total:null,rate:null};S.items.push(i);ch=true}
+      set(i,'amount',Math.round(num(x.monthly_amount)*100)/100);set(i,'day',due.getDate());set(i,'total',total);set(i,'left',Math.max(0,left));
+    });
+    // a plan the newest statement no longer lists after its last payment is finished
+    const before=S.items.length;
+    S.items=S.items.filter(i=>!(i.inCard===a.key&&i.bbInst&&!seen.has(i.bbInst)&&num(i.left)<=1));
+    if(S.items.length!==before)ch=true;
+  }else if(it.kind==='loan'&&plans.length){
+    const x=plans.length===1?plans[0]:plans.find(y=>near(y.monthly_amount,b.amount)||near(y.monthly_amount,it.amount));
+    if(x){const total=Math.round(num(x.term_count));set(it,'total',total);set(it,'left',Math.max(0,total-Math.round(num(x.paid_count))+(paidNow?0:1)))}
+  }
+  return ch;
+}
+// The one place the AI helps with BillBuddy: a bill it couldn't type ("other") is sorted into the right kind.
+// Only new unclear bills are sent, all in one small request, each at most once; it keeps to the daily budget.
+const aiSortTried=new Set();
+async function aiSortBills(){
+  if(S.aiSortOff||!aiReady())return;
+  const todo=S.items.filter(i=>i.bbUnsure&&!i.bbAi&&i.bbKey&&!aiSortTried.has(i.bbKey));
+  if(!todo.length)return;
+  todo.forEach(i=>aiSortTried.add(i.bbKey));
+  const user='Sort these bills:\n'+JSON.stringify(todo.map(i=>({key:i.bbKey,name:i.name,amount:Math.round(num(i.amount)*100)/100})));
+  try{
+    const r=await aiAsk({name:'bill_sort',purpose:'sort',system:SORT_SYSTEM,schema:SORT_SCHEMA,check:checkSort,priority:'low',out:200,user});
+    let changed=false;
+    r.a.forEach(({key,kind})=>{const it=S.items.find(i=>i.bbKey===key);if(!it)return;it.bbAi=kind;delete it.bbUnsure;
+      if(it.kind!==kind){setKind(it,kind);delete it.cat;changed=true}});
+    ensureLinks();save();if(changed){if(editingId==null)renderItems();render()}
+  }catch(e){console.warn('AI sort skipped:',e.kind||e.message)}
+}
+const SORT_SYSTEM=`You sort bills from a budget app in the Philippines into one kind each, using the bill name and amount.
+bill: utilities, phone, internet, insurance, government contributions or any other must-pay bill. essential: rent, food, groceries, allowance, tuition.
+loan: an installment loan repaid monthly. card: a credit card statement. flex: something that could be cut, like a subscription, streaming or membership.
+Return every key you were given, once.`;
+const SORT_SCHEMA={type:'object',additionalProperties:false,required:['sorted'],properties:{sorted:{type:'array',items:{type:'object',additionalProperties:false,required:['key','kind'],
+  properties:{key:{type:'string'},kind:{type:'string',enum:['bill','essential','loan','card','flex']}}}}}};
+const checkSort=a=>a&&Array.isArray(a.sorted)?a.sorted.filter(x=>x&&typeof x.key==='string'&&['bill','essential','loan','card','flex'].includes(x.kind)):null;
 // connects on its own once both the link and the key are filled in
 let bbTimer=null;
 function bbConnect(){
@@ -951,7 +1014,7 @@ const aiName=()=>{const c=aiConf();return c.provider==='anthropic'?$('#aiModel')
 const aiState=(cls,txt)=>{const el=$('#aiState');el.className='sync '+cls;el.textContent=txt};
 function aiSet(patch){const a=aiAll(),p=aiProv();S.ai={...a,provider:p,[p]:{...(a[p]||{}),...patch}};save()}
 function fillAI(){
-  const c=aiConf(),P=AI_PROV[c.provider];$('#aiLimit').value=aiLimit()||'';paintUsage();
+  const c=aiConf(),P=AI_PROV[c.provider];$('#aiLimit').value=aiLimit()||'';$('#aiSort').checked=!S.aiSortOff;paintUsage();
   $('#aiProv').value=c.provider;$('#aiKey').value=c.key;$('#aiKey').placeholder=P.key;$('#aiHelp').textContent=P.help;
   $('#aiBaseF').hidden=c.provider!=='compat';$('#aiBase').value=c.base;
   $('#aiModelF').hidden=c.provider!=='anthropic';$('#aiModelTF').hidden=c.provider==='anthropic';
@@ -965,6 +1028,7 @@ $('#aiModel').addEventListener('change',()=>{aiSet({model:$('#aiModel').value});
 $('#aiModelT').addEventListener('change',()=>{aiSet({model:$('#aiModelT').value.trim()});fillAI()});
 $('#aiBase').addEventListener('change',()=>{aiSet({base:$('#aiBase').value.trim().replace(/\/+$/,'')});fillAI()});
 $('#aiClear').addEventListener('click',()=>{const a=aiAll();delete a[aiProv()];S.ai=a;save();fillAI()});
+$('#aiSort').addEventListener('change',()=>{if($('#aiSort').checked)delete S.aiSortOff;else S.aiSortOff=true;save();if(!S.aiSortOff)aiSortBills()});
 $('#aiLimit').addEventListener('change',()=>{const v=Math.round(num($('#aiLimit').value));if(v>0)S.aiLimit=v;else delete S.aiLimit;$('#aiLimit').value=v>0?v:'';save();paintUsage()});
 fillAI();
 
@@ -1070,7 +1134,7 @@ function monitor(tab){
   }else if(tab==='inst'){
     const loans=S.items.filter(i=>i.kind==='loan');
     loans.filter(i=>i.left==null||i.left==='').forEach(i=>add('warn',i.name+': add payments left'));
-    const no4=loans.filter(i=>!last4Of(i)).length;if(no4)add('warn',plural(no4,'installment')+' missing last 4 digits');
+    const no4=loans.filter(i=>!i.inCard&&!last4Of(i)).length;if(no4)add('warn',plural(no4,'installment')+' missing last 4 digits');
     loans.filter(i=>realRate(i)>3).forEach(i=>add('warn',i.name+' costs about '+realRate(i).toFixed(1)+'%/mo'));
     loans.filter(i=>num(i.left)===1&&!isPaid(i)).forEach(i=>add('ok',i.name+' ends with its next payment'));
     if(!out.length)add('ok',loans.length?'Installments on track':'No installments');
@@ -1107,7 +1171,7 @@ function aiSnapshot(){
   return {today:todayIso(),pay_schedule:sched,salary_per_payday:r2(num(S.salary)),buffer_per_cycle:r2(Math.max(0,num(S.buffer))),
     this_cycle:{start:d(C.start),end:d(C.end),money_in:r2(C.avail),bills:r2(C.total),paid_so_far:r2(C.paidAmt),short_by:C.gap>0?r2(C.gap):0,extra:C.surplus>0?r2(C.surplus):0},
     bills:C.lines.map(l=>({name:l.i.name,category:catOf(l.i)?.name,type:l.i.kind,amount:r2(l.need),due:d(l.date),paid:isPaid(l.i)||undefined})),
-    installments:S.items.filter(i=>i.kind==='loan').map(i=>({name:i.name,lender:lenderName(i),monthly:r2(num(i.amount)),payments_left:i.left??null,total_payments:i.total??undefined,rate_pct_month:i.rate??undefined,rate_type:i.addon?'add-on':undefined,due_day:dayOf(i),last4_set:!!last4Of(i)})),
+    installments:S.items.filter(i=>i.kind==='loan').map(i=>({name:i.name,lender:lenderName(i),billed_with_card:i.inCard?true:undefined,monthly:r2(num(i.amount)),payments_left:i.left??null,total_payments:i.total??undefined,rate_pct_month:i.rate??undefined,rate_type:i.addon?'add-on':undefined,due_day:dayOf(i),last4_set:!!last4Of(i)})),
     cards:S.accounts.map(a=>{const b=billOf(a),L=num(a.limit);return {name:a.name,statement:r2(num(b?.amount)),limit:L||undefined,usage_pct:L?r2(usedOf(a)/L*100):undefined,due:b&&(b.day||b.bbDue)?d(dueOf(b,C.start)):undefined,statement_day:a.stmt||undefined,last4_set:!!a.last4}}),
     income:S.income.map(x=>({label:x.label,amount:r2(num(x.amount)),date:x.date||undefined,counts:incTag(x).t})),
     creditors:S.sources.map(x=>({name:x.name,rate_pct_month:known(x)?num(x.rate):undefined,rate_type:x.addon?'add-on':'diminishing',fee_pct:num(x.fee)||undefined,term_months:num(x.term)||undefined,available:num(x.avail)||undefined})),
@@ -1144,7 +1208,7 @@ document.addEventListener('click',async e=>{
   const tab=b.dataset.review,list=monitor(tab),user=reviewPrompt(tab,list),box=$('#mon-'+tab+' .mon-ai');
   box.dataset.busy='1';box.innerHTML='<p class="muted small">Reviewing…</p>';b.disabled=true;
   try{
-    const r=await aiAsk({name:'tab_review',system:REVIEW_SYSTEM,schema:REVIEW_SCHEMA,check:checkReview,priority:'low',out:600,user});
+    const r=await aiAsk({name:'tab_review',purpose:'review',system:REVIEW_SYSTEM,schema:REVIEW_SCHEMA,check:checkReview,priority:'low',out:600,user});
     S.aiTab={...(S.aiTab||{}),[tab]:{day:todayIso(),h:hashStr(user),a:r.a,model:r.model,cost:r.cost}};save();
     delete box.dataset.busy;paintMon(tab);
   }catch(err){delete box.dataset.busy;paintMon(tab);$('#mon-'+tab+' .mon-ai').innerHTML=`<p class="t-bad small">${aiError(err)}</p>`}
@@ -1182,11 +1246,21 @@ function todayIso(){return iso(new Date())}
 function aiLimit(){return Math.max(0,Math.round(num(S.aiLimit)))} // 0 means no limit
 function aiUsed(){return S.aiUse&&S.aiUse.day===todayIso()?num(S.aiUse.tokens):0}
 var LOW_SHARE=0.7;
-function aiSpend(n){S.aiUse={day:todayIso(),tokens:aiUsed()+Math.max(0,Math.round(n))};save();paintUsage()}
+function aiSpend(n,purpose){
+  const d=todayIso(),t=Math.max(0,Math.round(n));S.aiUse={day:d,tokens:aiUsed()+t};
+  // a short history by day and purpose (loan checks, tab reviews, sorting), shown in the API tab
+  const log=S.aiLog&&typeof S.aiLog==='object'?S.aiLog:{},day=log[d]||(log[d]={});day[purpose||'other']=(day[purpose||'other']||0)+t;
+  Object.keys(log).sort().slice(0,-7).forEach(k=>delete log[k]);S.aiLog=log;save();paintUsage();
+}
+var USE_NAME={loan:'Loan checks',review:'Tab reviews',sort:'Sorting bills',other:'Other'};
 function paintUsage(){
   const L=aiLimit(),u=aiUsed(),el=$('#aiUsage');if(!el)return;
-  el.innerHTML=`<div class="usage-t"><span>Today</span><span class="num">${u.toLocaleString()}${L?' / '+L.toLocaleString():''} tokens</span></div>`+
-    (L?`<div class="ubar" role="img" aria-label="${Math.min(100,u/L*100).toFixed(0)}% of today's limit used"><i class="${u>=L?'bad':u>=L*LOW_SHARE?'warn':''}" style="width:${Math.min(100,u/L*100).toFixed(1)}%"></i></div>`:'');
+  const log=S.aiLog||{},today=log[todayIso()]||{},days=Object.keys(log).sort().reverse().filter(d=>d!==todayIso()).slice(0,6);
+  const sum=o=>Object.values(o).reduce((s,v)=>s+num(v),0);
+  const names=USE_NAME||{};el.innerHTML=`<div class="usage-t"><span>Today</span><span class="num">${u.toLocaleString()}${L?' / '+L.toLocaleString():''} tokens</span></div>`+
+    (L?`<div class="ubar" role="img" aria-label="${Math.min(100,u/L*100).toFixed(0)}% of today's limit used"><i class="${u>=L?'bad':u>=L*LOW_SHARE?'warn':''}" style="width:${Math.min(100,u/L*100).toFixed(1)}%"></i></div>`:'')+
+    (Object.keys(today).length?`<div class="usage-p">${Object.entries(today).map(([k,v])=>`<span>${names[k]||k} <b class="num">${num(v).toLocaleString()}</b></span>`).join('')}</div>`:'')+
+    (days.length?`<details class="paidlist"><summary>Earlier days</summary><ul>${days.map(d=>`<li><span>${fmtD(parseD(d))}</span><span class="num">${sum(log[d]).toLocaleString()} tokens</span></li>`).join('')}</ul></details>`:'');
 }
 const hashStr=t=>{let h=5381;for(let k=0;k<t.length;k++)h=(h*33^t.charCodeAt(k))>>>0;return h.toString(36)};
 async function aiAsk(job){
@@ -1195,7 +1269,7 @@ async function aiAsk(job){
   const L=aiLimit(),est=Math.ceil((job.system.length+job.user.length)/3.5)+job.out;
   if(L&&aiUsed()+est>(job.priority==='low'?L*LOW_SHARE:L))throw Object.assign(new Error('limit'),{kind:'limit',low:job.priority==='low'});
   const out=c.provider==='anthropic'?await askClaude(c,job):await askOpenAIFormat(c,job);
-  aiSpend(out.tokens||est);
+  aiSpend(out.tokens||est,job.purpose);
   aiMemo.set(memoKey,out);return out;
 }
 async function askClaude(c,job){
@@ -1235,7 +1309,7 @@ async function askOpenAIFormat(c,job){
 }
 const strList=x=>Array.isArray(x)?x.map(String).filter(Boolean).slice(0,5):[];
 const checkLoan=a=>a&&['yes','careful','no'].includes(a.verdict)&&typeof a.headline==='string'?{verdict:a.verdict,headline:a.headline,reasons:strList(a.reasons),safe_amount:num(a.safe_amount),tips:strList(a.tips)}:null;
-const askAI=R=>aiAsk({name:'loan_advice',system:AI_SYSTEM,schema:AI_SCHEMA,check:checkLoan,priority:'high',out:700,
+const askAI=R=>aiAsk({name:'loan_advice',purpose:'loan',system:AI_SYSTEM,schema:AI_SCHEMA,check:checkLoan,priority:'high',out:700,
   user:'Should I take this loan? Planner summary:\n'+JSON.stringify(aiSummary(R))});
 function aiError(e){
   const A=window.AnthropicSDK?.Anthropic,who=aiConf().provider==='anthropic'?'Claude':aiConf().provider==='openai'?'ChatGPT':'The AI';

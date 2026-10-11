@@ -509,3 +509,6 @@ input[type=date],input[type=month]{cursor:pointer}
 .sub-f{display:flex;justify-content:space-between;align-items:center;gap:6px 10px;flex-wrap:wrap}
 .sub .acts{display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-left:auto}
 .loans{gap:10px}
+
+.usage-p{display:flex;flex-wrap:wrap;gap:4px 14px}
+.usage-p b{color:var(--ink);font-weight:600}
