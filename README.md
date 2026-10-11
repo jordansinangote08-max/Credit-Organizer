@@ -52,9 +52,15 @@ With an AI key in the **API** tab, the AI then reads a short summary of those nu
 
 Keys are saved in your account and used straight from the device, so give each a monthly spend limit with its provider.
 
+## Tap, fold, compact
+
+- **Tap to open a window:** the salary card's result (Short / Extra) opens this cycle's breakdown: money in, bills by category, paid so far and what's left. An installment's name opens its payment schedule: every payment still to come, with its date, 4/12-style number and the total to go. A bill's name opens its edit window.
+- **Fold:** tap a header to fold what's under it: Money in and out, each Bills category, each lender on Installments, a card's installments in Accounts, and the BillBuddy and AI settings in API. Folds reset when the page reloads.
+- The layout is compact; every button and tap area stays at least 44px.
+
 ## Draft: a testing room
 
-**Draft** (next to your email at the top) opens a copy of the whole planner: every tab, bill, installment, card and setting, with the AI working as usual. Try anything there (a new bill, a different salary, marking things paid, a loan check). Nothing in a draft is saved, and changes from your other devices aren't pulled in while you're in it. BillBuddy keeps syncing, so new bills appear in the draft too. The same button then reads **Close draft**: it brings back your planner exactly as it was; closing the tab does the same. AI used in a draft is real, so it still counts toward the daily AI limit.
+**Draft** (next to your email at the top) opens a copy of the whole planner: every tab, bill, installment, card and setting, with the AI working as usual. Try anything there (a new bill, a different salary, marking things paid, a loan check). Nothing in a draft is saved, and changes from your other devices aren't pulled in while you're in it. BillBuddy keeps syncing, so new bills appear in the draft too. The same button then reads **Close draft**: it brings back your planner exactly as it was; closing the tab does the same. AI used in a draft is real, so it still counts toward the daily AI limit. A draft is black and white, so it can't be mistaken for the real planner.
 
 ## Saving
 

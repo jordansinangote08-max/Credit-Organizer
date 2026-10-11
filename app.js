@@ -224,8 +224,9 @@ function compute(){
 function renderStatus(C){
   const el=$('#status');
   const flow=`<div class="flow"><span>Money in <b>${peso(C.avail)}</b></span><span>Bills <b>${peso(C.total)}</b></span>${C.paidAmt>0?`<span>Paid so far <b>${peso(C.paidAmt)}</b></span>`:''}</div>`;
-  if(C.gap>0.004){el.className='status bad';el.innerHTML=`<span class="label">Short this cycle</span><span class="big">${peso(C.gap)}</span>${flow}`}
-  else{el.className='status ok';el.innerHTML=`<span class="label">${C.surplus>0.004?'Extra after all bills':'Everything is covered'}</span><span class="big">${peso(Math.max(0,C.surplus))}</span>${flow}`}
+  const more=`<span class="more">Breakdown ${IC.chev}</span>`;
+  if(C.gap>0.004){el.className='status bad';el.innerHTML=`<span class="label">Short this cycle</span><span class="big">${peso(C.gap)}</span>${flow}${more}`}
+  else{el.className='status ok';el.innerHTML=`<span class="label">${C.surplus>0.004?'Extra after all bills':'Everything is covered'}</span><span class="big">${peso(Math.max(0,C.surplus))}</span>${flow}${more}`}
 }
 
 // ---------- this cycle ----------
@@ -314,9 +315,9 @@ function itemRow(i,start){
   if(i.kind!=='card'&&i.bbLast4)meta.push(`<span>•••• ${esc(i.bbLast4)}</span>`);
   if(i.kind==='card'){const a=acctOf(i);if(a&&a.last4)meta.push(`<span>•••• ${esc(a.last4)}</span>`)}
   if(paid)meta.unshift(`<span class="t-ok">Paid · clears in ${Math.max(1,Math.ceil((DAY-(Date.now()-num(i.paidAt)))/3600000))}h</span>`);
-  return `<div class="bill${paid?' done':''}"><div><div class="nm">${esc(i.name||'Untitled bill')}</div><div class="mt">${meta.join('')}</div></div>
+  return `<div class="bill${paid?' done':''}"><div><button class="nm openw" data-edit="${i.id}" aria-haspopup="dialog" title="Edit">${esc(i.name||'Untitled bill')}</button><div class="mt">${meta.join('')}</div></div>
     <div class="rt">${amt>0?`<span class="amt">${peso(amt)}</span>`:'<span class="pill warn">Add amount</span>'}
-    <div class="bt">${paid?undoBtn(`data-unpaid="${i.id}"`,i.name):`${editBtn(`data-edit="${i.id}"`,i.name||"bill")}${amt>0?paidBtn(`data-paid="${i.id}"`,i.name):''}`}</div></div></div>`;
+    <div class="bt">${paid?undoBtn(`data-unpaid="${i.id}"`,i.name):amt>0?paidBtn(`data-paid="${i.id}"`,i.name):''}</div></div></div>`;
 }
 function renderItems(){
   ensureCats();
@@ -329,7 +330,8 @@ function renderItems(){
     const its=vis.filter(i=>i.cat===c.key);if(!its.length)return '';
     its.sort((a,b)=>(isPaid(a)-isPaid(b))||dueOf(a,start)-dueOf(b,start));
     const due=its.filter(i=>!isPaid(i)).reduce((s,i)=>s+num(i.amount),0);
-    return `<div class="grp" data-c="${esc(c.color)}"><div class="grp-h"><h3>${esc(c.name)}<span>${its.length}</span></h3><span class="sub">${peso(due)}</span></div>${its.map(i=>itemRow(i,start)).join('')}</div>`;
+    const fk='g:'+c.key;
+    return `<div class="grp${folded.has(fk)?' folded':''}" data-c="${esc(c.color)}"><div class="grp-h"><h3>${foldBtn(fk,esc(c.name)+`<span>${its.length}</span>`)}</h3><span class="sub">${peso(due)}</span></div>${its.map(i=>itemRow(i,start)).join('')}</div>`;
   }).join('');
   const left=vis.filter(i=>!isPaid(i)).reduce((s,i)=>s+num(i.amount),0);
   $('#itemList').innerHTML=(html||'<p class="empty">Nothing left to pay this cycle.</p>')+
@@ -403,7 +405,7 @@ function renderInst(){
       const of=planOf(i);
       const nm=billed(i)||i.bbInst||(i.name&&i.name!==lenderName(i))?planLabel(i):'Installment '+(n+1);
       return `<div class="sub">
-        <div class="sub-h"><span class="sub-n">${of?`<span class="plan-of" aria-label="payment ${of.replace('/',' of ')}">${of}</span>`:''}${esc(nm)}${last4Of(i)?`<span class="l4">•••• ${esc(last4Of(i))}</span>`:''}</span><span class="pay">${peso(pay)}<span class="muted small">/mo</span></span></div>
+        <div class="sub-h"><span class="sub-n"><button class="openw" data-isched="${i.id}" aria-haspopup="dialog" title="Payment schedule">${of?`<span class="plan-of" aria-label="payment ${of.replace('/',' of ')}">${of}</span>`:''}${esc(nm)}${last4Of(i)?`<span class="l4">•••• ${esc(last4Of(i))}</span>`:''}</button></span><span class="pay">${peso(pay)}<span class="muted small">/mo</span></span></div>
         ${pct!=null?`<div class="bar" role="img" aria-label="${total-left} of ${total} paid"><i style="width:${pct}%"></i></div>`:''}
         <div class="sub-f"><div class="facts">${total?`<span><b>${peso(pay*left)}</b> to go</span><span>Last payment <b>${ym(end)}</b></span>`:i.bbTerm?'<span>Months not on the statement</span>':`<span><b>${left}</b> left</span><span><b>${peso(pay*left)}</b> to go</span><span>Last payment <b>${ym(end)}</b></span>`}</div>
         <div class="acts">${billed(i)?'':`${isPaid(i)?`<span class="pill ok">Paid</span>${!isHiddenPaid(i)?undoBtn(`data-iundo="${i.id}"`,i.name):''}`:''}${last4Of(i)?'':`<button class="pill warn ask4" data-iedit4="${i.id}">Add last 4</button>`}${editBtn(`data-iedit="${i.id}"`,i.name)}${left>0&&!isPaid(i)?paidBtn(`data-ipaid="${i.id}"`,i.name):''}`}${billed(i)?editBtn(`data-iedit="${i.id}"`,i.name):''}</div></div>
@@ -411,7 +413,8 @@ function renderInst(){
     }).join('');
     monthly+=gm;remaining+=gr;if(gl&&(!last||gl>last))last=gl;
     const r=list[0];
-    return `<div class="lgrp"><div class="lgrp-h"><h3>${esc(lenderName(r))}</h3>
+    const fk='l:'+lenderKey(r);
+    return `<div class="lgrp${folded.has(fk)?' folded':''}"><div class="lgrp-h"><h3>${foldBtn(fk,esc(lenderName(r)))}</h3>
       <span class="muted small"><b>${peso(gm)}</b>/mo · <b>${peso(gr)}</b> to go · until ${ym(gl)}${list.length>1?' · '+list.length+' installments':''}${r.inCard?' · billed with the card':r.inBill?' · one bill':''}</span></div>${rows}</div>`;
   }).join('');
   $('#instSum').innerHTML=`<div><span class="label">Per month</span><span class="v">${peso(monthly)}</span></div><div><span class="label">Still to pay</span><span class="v">${peso(remaining)}</span></div><div><span class="label">All done by</span><span class="v">${ym(last)}</span></div>`;
@@ -562,7 +565,8 @@ function cardPlans(a,bill){
   const plans=S.items.filter(i=>i.inCard===a.key).sort((x,y)=>String(planOf(x)).localeCompare(planOf(y),undefined,{numeric:true}));
   if(!plans.length)return '';
   const sum=plans.reduce((t,i)=>t+num(i.amount),0),total=num(bill&&bill.amount);
-  return `<div class="cplans">${plans.map(i=>`<div class="cplan"><span class="plan-of">${planOf(i)||'—'}</span><span class="cplan-n">${esc(planLabel(i))}</span><span class="num">${peso(num(i.amount))}</span></div>`).join('')}
+  const fk='c:'+a.key;
+  return `<div class="cplans${folded.has(fk)?' folded':''}"><div class="cplans-h">${foldBtn(fk,`Installments <span>${plans.length}</span>`)}<span class="num">${peso(sum)}</span></div>${plans.map(i=>`<div class="cplan"><span class="plan-of">${planOf(i)||'—'}</span><span class="cplan-n">${esc(planLabel(i))}</span><span class="num">${peso(num(i.amount))}</span></div>`).join('')}
     <div class="cplan foot"><span>Installments this period</span><span class="num">${peso(sum)}</span></div>
     ${total?`<div class="cplan foot"><span>Rest of the bill</span><span class="num">${peso(Math.max(0,total-sum))}</span></div><div class="cplan tot"><span>Statement total</span><span class="num">${peso(total)}</span></div>`:''}</div>`;
 }
@@ -601,6 +605,43 @@ const JOB_PANEL={src:'borrow'};
 const stale=new Set();
 const shown=job=>!$('#panel-'+(JOB_PANEL[job]||job)).hidden;
 function runJobs(jobs,C){jobs.forEach(j=>{if(shown(j)){stale.delete(j);JOBS[j](C||compute());paintMon(JOB_PANEL[j]||j)}else stale.add(j)})}
+// ---------- folding and windows ----------
+// Sections fold with a tap on their header (kept until the page reloads). Some rows open a window with more.
+const folded=new Set();
+const foldBtn=(key,label)=>`<button class="fold" data-fold="${esc(key)}" aria-expanded="${!folded.has(key)}">${label}<i class="chev" aria-hidden="true"></i></button>`;
+document.addEventListener('click',e=>{
+  const f=e.target.closest('[data-fold]');if(!f)return;
+  const k=f.dataset.fold,box=f.closest('.grp,.lgrp,.sec,.cplans');
+  if(folded.has(k))folded.delete(k);else folded.add(k);
+  f.setAttribute('aria-expanded',!folded.has(k));box&&box.classList.toggle('folded',folded.has(k));
+});
+function infoWin(title,html){$('#infoTitle').textContent=title;$('#infoBody').innerHTML=html;const d=$('#infoDlg');if(!d.open)d.showModal()}
+$('#infoDlg').addEventListener('click',e=>{if(e.target.closest('[data-infoclose]'))$('#infoDlg').close()});
+const infoRows=rows=>`<ul class="ilist">${rows.map(([a,b,c])=>`<li${c?` class="${c}"`:''}><span>${a}</span><span class="num">${b}</span></li>`).join('')}</ul>`;
+// This cycle, line by line: what comes in, what each category of bills takes, and what's left
+function cycleInfo(){
+  const C=compute(),by=new Map();
+  C.lines.forEach(l=>{const c=catOf(l.i),k=c?c.name:'Bills';by.set(k,(by.get(k)||0)+l.need)});
+  const inRows=[['Salary',peso(num(S.salary))],...C.inc.map(o=>[esc(o.x.label||'Other money'),peso(num(o.x.amount))]),['Money in',peso(C.avail),'tot']];
+  const outRows=[...[...by].map(([k,v])=>[esc(k),peso(v)]),['Bills',peso(C.total),'tot']];
+  if(C.paidAmt>0)outRows.push(['Paid so far',peso(C.paidAmt)],['Still to pay',peso(C.total-C.paidAmt)]);
+  infoWin(fmtD(C.start)+' – '+fmtD(C.end),
+    `<h3 class="ih">Money in</h3>${infoRows(inRows)}<h3 class="ih">Bills</h3>${infoRows(outRows)}`+
+    infoRows([[C.gap>0.004?'Short':'Left over',peso(C.gap>0.004?C.gap:Math.max(0,C.surplus)),'res '+(C.gap>0.004?'bad':'ok')]]));
+}
+// every payment still to come on one installment, with its date and what's left after it
+function schedInfo(i){
+  const total=Math.round(num(i.total)),dates=loanDates(i).filter((d,k)=>!(isPaid(i)&&k===0)),amt=num(i.amount);
+  if(!dates.length){infoWin(planLabel(i),i.bbTerm?'<p class="small">The statement didn\'t show how many months this has, so its schedule isn\'t known yet.</p>':'<p class="small">No payments left.</p>');return}
+  const first=total?total-dates.length+1:null;
+  const rows=dates.map((d,k)=>[`${first?`<span class="plan-of">${first+k}/${total}</span>`:''}${fmtD(d)}, ${d.getFullYear()}`,peso(amt)]);
+  rows.push(['Still to pay',peso(amt*dates.length),'tot']);
+  infoWin(planLabel(i),`<p class="small muted">${esc(lenderName(i))}${i.inCard?' · billed with the card':''}</p>${infoRows(rows)}`);
+}
+$('#status').addEventListener('click',cycleInfo);
+$('#status').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();cycleInfo()}});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-isched]');if(!b)return;const it=S.items.find(i=>i.id==b.dataset.isched);if(it)schedInfo(it)});
+
 function render(){const C=compute();renderStatus(C);runJobs(['cycle','inst','borrow','ahead','acct'],C)}
 function renderAll(){runJobs(['bills','money','src','ai']);render()}
 function flushStale(){if(!stale.size)return;const C=compute();[...stale].forEach(j=>{if(shown(j)){stale.delete(j);JOBS[j](C);paintMon(JOB_PANEL[j]||j)}})}
