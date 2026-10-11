@@ -516,16 +516,7 @@ input[type=date],input[type=month]{cursor:pointer}
 .usage-p{display:flex;flex-wrap:wrap;gap:4px 14px}
 .usage-p b{color:var(--ink);font-weight:600}
 
-/* ---------- draft ----------
-   A frosted capsule floats at the bottom while you try things in a copy that is never saved. */
-.draftbar{position:fixed;left:50%;bottom:calc(14px + var(--safe-b));transform:translateX(-50%);z-index:30;
-  display:flex;align-items:center;gap:14px;padding:8px 8px 8px 18px;border-radius:999px;max-width:calc(100% - 2 * var(--gutter));
-  background:var(--glass-strong);border:1px solid color-mix(in srgb,var(--c-orange) 45%,var(--glass-edge));
-  box-shadow:var(--shadow),0 0 0 4px color-mix(in srgb,var(--c-orange) 14%,transparent);
-  -webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);font-size:.92rem;white-space:nowrap}
-.draftbar b{color:var(--c-orange)}
-.draftbar .btn{min-height:36px;padding:6px 14px;border-radius:999px}
-.drafting .app{padding-bottom:calc(96px + var(--safe-b))}
+/* ---------- draft ---------- */
+#draftBtn.on{background:color-mix(in srgb,var(--c-orange) 16%,transparent);color:var(--c-orange)}
 .drafting #syncState{color:var(--c-orange);font-weight:600}
-@media (prefers-reduced-transparency:reduce){.draftbar{-webkit-backdrop-filter:none;backdrop-filter:none}}
-@media print{.draftbar{display:none}}
+.reco-total{font-size:1.35rem;font-weight:700;letter-spacing:-.01em}

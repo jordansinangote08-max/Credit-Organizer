@@ -50,7 +50,7 @@ Keys are saved in your account and used straight from the device, so give each a
 
 ## Draft: a testing room
 
-**Draft** (next to your email at the top) opens a copy of the whole planner: every tab, bill, installment, card and setting, with the AI working as usual. Try anything there (a new bill, a different salary, marking things paid, a loan check). Nothing in a draft is saved, and changes from your other devices aren't pulled in while you're in it. BillBuddy keeps syncing, so new bills appear in the draft too. **Close draft** (in the capsule at the bottom) brings back your planner exactly as it was; closing the tab does the same. AI used in a draft is real, so it still counts toward the daily AI limit.
+**Draft** (next to your email at the top) opens a copy of the whole planner: every tab, bill, installment, card and setting, with the AI working as usual. Try anything there (a new bill, a different salary, marking things paid, a loan check). Nothing in a draft is saved, and changes from your other devices aren't pulled in while you're in it. BillBuddy keeps syncing, so new bills appear in the draft too. The same button then reads **Close draft**: it brings back your planner exactly as it was; closing the tab does the same. AI used in a draft is real, so it still counts toward the daily AI limit.
 
 ## Saving
 

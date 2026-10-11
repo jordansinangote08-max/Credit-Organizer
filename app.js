@@ -26,6 +26,7 @@ const delBtn=(attr,label)=>`<button class="danger ib" ${attr} aria-label="${esc(
 const clone=o=>JSON.parse(JSON.stringify(o));
 const $=s=>document.querySelector(s);
 const num=v=>{const n=parseFloat(v);return isFinite(n)?n:0};
+const cents=x=>Math.round(num(x)*100)/100;
 const peso=n=>{const v=Math.round(n*100)/100;return (v<0?'−₱':'₱')+Math.abs(v).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -461,16 +462,12 @@ function loanDates(l){
 }
 const loansIn=(start,skipPaid)=>{const end=shiftCycle(start,1);return S.items.filter(l=>l.kind==='loan'&&!l.inCard&&!hasParts(l)&&num(l.amount)>0&&!(skipPaid&&isPaid(l)&&inCycle(l,start))).reduce((s,l)=>s+num(l.amount)*loanDates(l).filter(d=>d>=start&&d<end).length,0)};
 const fixedIn=start=>S.items.filter(i=>(i.kind==='essential'||i.kind==='bill')&&inCycle(i,start)).reduce((s,i)=>s+num(i.amount),0);
-function nextFree(){
-  const next=shiftCycle(cycleStart(),1);
-  return num(S.salary)-fixedIn(next)-loansIn(next);
-}
 let needOverride=null;
 function quote(s,need){
   const f=Math.min(0.99,num(s.fee)/100),n=Math.max(1,Math.round(num(s.term)||1)),avail=num(s.avail);
   let B=need/(1-f),capped=false;if(avail>0&&B>avail){B=avail;capped=true}
   const net=B*(1-f),k=known(s),p=k?payFor(s,B,n):null;
-  return {s,B,net,n,p,capped,known:k,limitSet:avail>0,e:k?effRate(s):null,cost:p===null?null:p*n-net};
+  return {s,B,net,n,p,capped,known:k,limitSet:avail>0,e:k?effRate(s):null,cost:p===null?null:cents(p)*n-net};
 }
 function renderBorrow(C){
   $('#shortHead').innerHTML=C.gap>0.004
@@ -489,7 +486,7 @@ function renderBorrow(C){
     return `<div class="cred"><span class="rank">${k+1}</span><div><b>${esc(q.s.name)}</b>
       <div class="meta"><span>Borrow <b>${peso(q.B)}</b></span>${q.B-q.net>0.004?`<span>Receive <b>${peso(q.net)}</b></span>`:''}<span>${q.n===1?`Repay <b>${peso(q.p)}</b> next month`:`<b>${peso(q.p)}</b> × ${q.n} mo`}</span><span>${pct(q.e)}/mo real cost</span></div>
       ${q.capped?`<div class="meta" style="color:var(--bad)">Limit covers only ${peso(q.net)}.</div>`:''}
-      ${alts.length?`<div class="meta">${alts.map(t=>{const p=payFor(q.s,q.B,t);return `${t} mo: <b>${peso(p)}</b>/mo, cost <b>${peso(p*t-q.net)}</b>`}).join(' · ')}</div>`:''}
+      ${alts.length?`<div class="meta">${alts.map(t=>{const p=payFor(q.s,q.B,t);return `${t} mo: <b>${peso(p)}</b>/mo, cost <b>${peso(cents(p)*t-q.net)}</b>`}).join(' · ')}</div>`:''}
     </div><div class="right"><span class="cost">${peso(q.cost)}<small>interest + fees</small></span><span class="pill ${best?'ok':bad?'bad':'warn'}">${best?'Cheapest':bad?'Expensive':'Okay'}</span></div></div>`;
   }).join('');
   let rem=need;const parts=[];
@@ -497,12 +494,14 @@ function renderBorrow(C){
     if(rem<=0.004)return;
     const f=Math.min(0.99,num(q.s.fee)/100),avail=num(q.s.avail);
     const net=avail>0?Math.min(rem,avail*(1-f)):rem,B=net/(1-f),p=payFor(q.s,B,q.n);
-    parts.push({q,B,p,cost:p*q.n-net});rem-=net;
+    parts.push({q,B,p,net,total:cents(p)*q.n});rem-=net;
   });
   if(!parts.length){box.innerHTML='';return}
-  const newMonthly=parts.reduce((s,x)=>s+(x.q.n>1?x.p:0),0),nf=nextFree();
+  // everything you pay back: every payment, so principal, interest and fees together
+  const total=parts.reduce((s,x)=>s+x.total,0),cost=total-parts.reduce((s,x)=>s+x.net,0);
   box.innerHTML=`<div class="reco ok"><h3>Best option</h3><ul>${parts.map(x=>`<li><span>${esc(x.q.s.name)} · borrow ${peso(x.B)}</span><span class="a">${x.q.n===1?'repay '+peso(x.p):peso(x.p)+' × '+x.q.n}</span></li>`).join('')}</ul>
-    <p class="small">Costs <b class="num">${peso(parts.reduce((s,x)=>s+x.cost,0))}</b> in interest and fees.${newMonthly>0?` Adds ${peso(newMonthly)} a month; ${newMonthly>nf?'<b style="color:var(--bad)">next month would be short too.</b>':'next month should still fit.'}`:''}</p>
+    <p class="small">Costs <b class="num">${peso(cost)}</b> in interest and fees.</p>
+    <p class="reco-total num">${peso(total)}</p>
     ${rem>0.004?`<p class="small" style="color:var(--bad)">Still ${peso(rem)} short after every creditor.</p>`:''}</div>`;
 }
 function srcFields(s){return `
@@ -1531,13 +1530,14 @@ document.addEventListener('visibilitychange',async()=>{
 let authKnown=false; // false until Supabase has checked this device for a saved sign-in
 function renderAuth(){
   document.body.classList.toggle('locked',!cloudReady);
-  $('#draftBtn').hidden=!cloudReady||!!draft;
+  const db=$('#draftBtn');db.hidden=!cloudReady;db.textContent=draft?'Close draft':'Draft';db.classList.toggle('on',!!draft);
+  db.title=draft?'Close the draft; nothing in it is kept':'Try changes in a copy that is never saved';
   $('#authBtn').hidden=!cloudUser;
   $('#authForm').hidden=!sb||!authKnown||!!cloudUser;
   $('#authWho').textContent=cloudUser?.email||'';$('#authWho').title=cloudUser?.email||'';
 }
 function signedOut(){
-  cloudUser=null;cloudReady=false;clearTimeout(cloudTimer);cloudTimer=null;draft=null;document.body.classList.remove('drafting');$('#draftBar').hidden=true;
+  cloudUser=null;cloudReady=false;clearTimeout(cloudTimer);cloudTimer=null;draft=null;document.body.classList.remove('drafting');
   S=clone(DEFAULTS);prepare();editingId=null;syncInputs();renderAll();fillBB();fillAI();aiMemo.clear();$('#aiOut').innerHTML='';
   setSync('','Sign in to open your planner');renderAuth();
 }
@@ -1571,14 +1571,14 @@ initCloud();
 // ---------- draft ----------
 // A testing room: Draft copies the whole planner (every tab, bill, setting and the AI) and you change the copy.
 // Nothing in it is saved, other devices' changes aren't pulled in, and closing it brings back the planner as it
-// was. BillBuddy keeps syncing into the draft, so new bills show up there too. AI used in a draft is real, so
+// was (the same button, now Close draft). BillBuddy keeps syncing into the draft, so new bills show up there too. AI used in a draft is real, so
 // its usage is carried back to the planner's daily count.
 async function openDraft(){
   if(!cloudReady||draft)return;
   if(cloudTimer){clearTimeout(cloudTimer);await pushCloud()}   // a change still waiting to save is saved first
   closeDialogs();
   draft={main:clone(S)};
-  document.body.classList.add('drafting');$('#draftBar').hidden=false;renderAuth();
+  document.body.classList.add('drafting');renderAuth();
   setSync('draft','Draft · nothing is saved');
 }
 function closeDraft(){
@@ -1586,13 +1586,12 @@ function closeDraft(){
   closeDialogs();
   const used=S.aiUse,log=S.aiLog,main=draft.main;draft=null;
   if(used)main.aiUse=used;if(log)main.aiLog=log;
-  document.body.classList.remove('drafting');$('#draftBar').hidden=true;
+  document.body.classList.remove('drafting');
   adopt(main);renderAuth();
   save();syncBillBuddy();                                       // keeps the AI count, and picks up new bills
 }
 function closeDialogs(){document.querySelectorAll('dialog[open]').forEach(d=>d.close())}
-$('#draftBtn').addEventListener('click',openDraft);
-$('#draftClose').addEventListener('click',closeDraft);
+$('#draftBtn').addEventListener('click',()=>draft?closeDraft():openDraft());
 
 // ---------- updates ----------
 // A tab left open keeps running the code it loaded with. When a newer version is published, reload, so an
