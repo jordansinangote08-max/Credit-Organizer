@@ -15,10 +15,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=35">
-<script src="config.js?v=35" defer></script>
+<link rel="stylesheet" href="styles.css?v=36">
+<script src="config.js?v=36" defer></script>
 <script src="vendor/supabase-2.116.0.js" defer></script>
-<script src="app.js?v=35" defer></script>
+<script src="app.js?v=36" defer></script>
 </head>
 <body class="locked">
 <div class="app">
@@ -189,9 +189,9 @@
           <div class="field wide" id="aiBaseF" hidden><label for="aiBase">API address</label><input id="aiBase" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://…/v1"></div>
           <div class="field wide"><label for="aiKey">API key</label><input id="aiKey" type="password" autocomplete="off" spellcheck="false"><span class="hint" id="aiHelp"></span></div>
           <div class="field wide" id="aiModelF"><label for="aiModel">Model</label><select id="aiModel">
-            <option value="claude-opus-5-5">Opus 5.5 · most careful · ~$0.02</option>
+            <option value="claude-haiku-5-5">Haiku 5.5 · cheapest · &lt;$0.01 (recommended)</option>
             <option value="claude-sonnet-5-5">Sonnet 5.5 · balanced · ~$0.01</option>
-            <option value="claude-haiku-5-5">Haiku 5.5 · cheapest · &lt;$0.01</option>
+            <option value="claude-opus-5-5">Opus 5.5 · most careful · ~$0.02</option>
           </select></div>
           <div class="field wide" id="aiModelTF" hidden><label for="aiModelT">Model</label><input id="aiModelT" list="aiModels" autocomplete="off" spellcheck="false"><datalist id="aiModels"><option value="gpt-5-mini"><option value="gpt-5"><option value="gpt-5-nano"></datalist><span class="hint">Type any model your key can use.</span></div>
           <label class="check wide"><input type="checkbox" id="aiSort" checked><span>Sort unclear BillBuddy bills and place their installments with AI<span class="muted small" style="display:block;margin-top:2px">Always on the lightest model (Haiku 5.5, or gpt-5-nano with ChatGPT), whatever is picked above.</span></span></label>
