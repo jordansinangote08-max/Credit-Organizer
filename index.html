@@ -15,10 +15,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=29">
-<script src="config.js?v=29" defer></script>
+<link rel="stylesheet" href="styles.css?v=30">
+<script src="config.js?v=30" defer></script>
 <script src="vendor/supabase-2.116.0.js" defer></script>
-<script src="app.js?v=29" defer></script>
+<script src="app.js?v=30" defer></script>
 </head>
 <body class="locked">
 <div class="app">
@@ -171,7 +171,7 @@
 
     <section class="panel" role="tabpanel" id="panel-bbsync" aria-labelledby="tab-bbsync" data-panel="bbsync" hidden>
       <div class="sec">
-        <div><h2>BillBuddy</h2><p class="muted small lead">Syncs card bills every minute, matched by last 4 digits.</p></div>
+        <div><h2>BillBuddy</h2><p class="muted small lead">Syncs bills every minute, with card limits and installment breakdowns. Matched by last 4 digits.</p></div>
         <div class="form flat">
           <div class="field wide"><label for="bbUrl">BillBuddy API link</label><input id="bbUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://your-billbuddy.vercel.app/api/bills"></div>
           <div class="field wide"><label for="bbKey">API key</label><input id="bbKey" type="password" autocomplete="off" spellcheck="false" placeholder="BILLS_API_KEY"></div>
@@ -194,6 +194,7 @@
             <option value="claude-haiku-5-5">Haiku 5.5 · cheapest · &lt;$0.01</option>
           </select></div>
           <div class="field wide" id="aiModelTF" hidden><label for="aiModelT">Model</label><input id="aiModelT" list="aiModels" autocomplete="off" spellcheck="false"><datalist id="aiModels"><option value="gpt-5-mini"><option value="gpt-5"><option value="gpt-5-nano"></datalist><span class="hint">Type any model your key can use.</span></div>
+          <label class="check wide"><input type="checkbox" id="aiSort" checked><span>Sort unclear BillBuddy bills with AI</span></label>
           <div class="field wide"><label for="aiLimit">Daily token limit</label><input id="aiLimit" type="number" inputmode="numeric" min="0" step="1000" placeholder="No limit"><span class="hint">About 2,000 tokens a question. Resets every day; tab reviews pause at 70% so loan checks keep room.</span></div>
           <div class="acts"><span></span><button class="danger ib" id="aiClear" aria-label="Remove this AI key" title="Remove key"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13.5a4 4 0 005.6 0l2.9-2.9a4 4 0 00-5.6-5.6l-1.1 1.1"/><path d="M14 10.5a4 4 0 00-5.6 0l-2.9 2.9a4 4 0 005.6 5.6l1.1-1.1"/><path d="M4 4l16 16"/></svg></button></div>
         </div>
