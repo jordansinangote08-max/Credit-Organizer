@@ -463,3 +463,8 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 .ghost.sm.ib svg{width:17px;height:17px}
 @media (pointer:coarse){.ghost.sm.ib{width:var(--tap);height:var(--tap)}}
 .sec-h .row{gap:6px}
+
+/* bill window: room for the form, scrolls when tall */
+#billDlg{width:min(480px,calc(100vw - 24px))}
+#billDlg .dlg-in{max-height:calc(100dvh - 48px);overflow:auto;overscroll-behavior:contain}
+#billDlg .form{background:transparent;padding:0;margin:0}

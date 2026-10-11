@@ -282,9 +282,9 @@ function renderTimeline(C){
 // ---------- bills ----------
 let editingId=null;
 const catOptions=sel=>S.cats.map(c=>`<option value="${esc(c.key)}" ${c.key===sel?'selected':''}>${esc(c.name)}</option>`).join('');
-function itemForm(i){
-  return `<div class="form" data-id="${i.id}">
-    <div class="field wide"><label for="n${i.id}">Name</label><input id="n${i.id}" data-k="name" placeholder="e.g. Meralco" value="${esc(i.name)}"></div>
+function itemForm(i,isNew){
+  return `<div class="form flat" data-id="${i.id}">
+    <div class="field wide"><label for="n${i.id}">Name</label><input id="n${i.id}" data-k="name" placeholder="${i.kind==='loan'?'e.g. Home Credit':'e.g. Meralco'}" value="${esc(i.name)}"></div>
     <div class="field wide"><label for="k${i.id}">Category</label><select id="k${i.id}" data-k="cat">${catOptions(catOf(i)?.key)}</select></div>
     <div class="field"><label for="a${i.id}">${i.kind==='card'?'Statement amount':repeats(i)&&i.once?'Amount':'Monthly amount'}</label><input id="a${i.id}" data-k="amount" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" value="${i.amount??''}"></div>
     ${repeats(i)&&i.once?`<div class="field"><label for="dt${i.id}">Due date</label><input id="dt${i.id}" data-k="date" type="date" value="${esc(i.date||'')}"></div>`
@@ -294,7 +294,7 @@ function itemForm(i){
     ${i.kind==='loan'?`<div class="field"><label for="l${i.id}">Payments left</label><input id="l${i.id}" data-k="left" type="number" inputmode="numeric" min="0" value="${i.left??''}"></div><div class="field"><label for="t${i.id}">Total payments</label><input id="t${i.id}" data-k="total" type="number" inputmode="numeric" min="0" value="${i.total??''}"></div>`:''}
     ${i.kind==='card'||i.kind==='loan'?`<div class="field"><label for="f4${i.id}">Last 4 digits</label><input id="f4${i.id}" data-k="last4" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="1234" autocomplete="off" value="${esc(last4Of(i))}"><span class="hint">Matches BillBuddy bills.</span></div>`:''}
     ${i.kind==='card'||i.kind==='loan'?`<div class="field"><label for="r${i.id}">Interest %/month</label><input id="r${i.id}" data-k="rate" type="number" inputmode="decimal" step="0.01" min="0" value="${i.rate??''}"></div>`:''}
-    <div class="acts">${delBtn(`data-del="${i.id}"`,"Remove "+(i.name||"this bill"))}<button class="btn" data-done="1">Done</button></div>
+    <div class="acts">${isNew?'<span></span>':delBtn(`data-del="${i.id}"`,"Remove "+(i.name||"this bill"))}<button class="btn" data-done="1">${isNew?'Add':'Done'}</button></div>
   </div>`;
 }
 function itemRow(i,start){
@@ -319,15 +319,15 @@ function renderItems(){
     const its=vis.filter(i=>i.cat===c.key);if(!its.length)return '';
     its.sort((a,b)=>(isPaid(a)-isPaid(b))||dueOf(a,start)-dueOf(b,start));
     const due=its.filter(i=>!isPaid(i)).reduce((s,i)=>s+num(i.amount),0);
-    return `<div class="grp" data-c="${esc(c.color)}"><div class="grp-h"><h3>${esc(c.name)}<span>${its.length}</span></h3><span class="sub">${peso(due)}</span></div>${its.map(i=>i.id===editingId?itemForm(i):itemRow(i,start)).join('')}</div>`;
+    return `<div class="grp" data-c="${esc(c.color)}"><div class="grp-h"><h3>${esc(c.name)}<span>${its.length}</span></h3><span class="sub">${peso(due)}</span></div>${its.map(i=>itemRow(i,start)).join('')}</div>`;
   }).join('');
   const left=vis.filter(i=>!isPaid(i)).reduce((s,i)=>s+num(i.amount),0);
   $('#itemList').innerHTML=(html||'<p class="empty">Nothing left to pay this cycle.</p>')+
     `<div class="tot"><span>Still to pay</span><span>${peso(left)}</span></div>`+
     (hidden.length?`<details class="paidlist"><summary>Paid this cycle (${hidden.length})</summary><ul>${hidden.map(i=>`<li><span>${esc(i.name)}</span><span class="num">${peso(num(i.amount))}</span></li>`).join('')}</ul></details>`:'')+
-    (later.length?`<details class="paidlist"${later.some(i=>i.id===editingId)?' open':''}><summary>Coming in a later cycle (${later.length})</summary><div class="later">${later.map(i=>i.id===editingId?itemForm(i):
+    (later.length?`<details class="paidlist"><summary>Coming in a later cycle (${later.length})</summary><div class="later">${later.map(i=>
       `<div class="laterrow"><span>${esc(i.name||'Untitled bill')} <span class="muted">· ${fmtD(exactDue(i))}, ${exactDue(i).getFullYear()}</span></span><span class="num">${peso(num(i.amount))}</span>${editBtn(`data-edit="${i.id}"`,i.name||"bill")}</div>`).join('')}</div></details>`:'')+
-    (done.length?`<details class="paidlist"${done.some(i=>i.id===editingId)?' open':''}><summary>Ended (${done.length})</summary><div class="later">${done.map(i=>i.id===editingId?itemForm(i):
+    (done.length?`<details class="paidlist"><summary>Ended (${done.length})</summary><div class="later">${done.map(i=>
       `<div class="laterrow"><span>${esc(i.name||'Untitled bill')} <span class="muted">· ${i.once?'was due '+fmtD(exactDue(i)):'stopped after '+MON[untilYm(i.until)%100-1]+' '+Math.floor(untilYm(i.until)/100)}</span></span><span class="num">${peso(num(i.amount))}</span>${editBtn(`data-edit="${i.id}"`,i.name||"bill")}</div>`).join('')}</div></details>`:'');
 }
 
@@ -581,13 +581,13 @@ document.addEventListener('input',e=>{if(e.target.id==='buffer'){S.buffer=num(e.
   const pos=e.target.selectionStart;renderAdvice(C);const b=$('#buffer');if(b){b.focus();try{b.setSelectionRange(pos,pos)}catch(_){}}}});
 document.addEventListener('click',e=>{const g=e.target.closest('[data-goto]');if(g)selectTab(g.dataset.goto)});
 
-$('#itemList').addEventListener('input',e=>{
+$('#billBody').addEventListener('input',e=>{
   const row=e.target.closest('.form');if(!row)return;const it=S.items.find(i=>i.id==row.dataset.id),k=e.target.dataset.k;if(!it||!k)return;
-  if(k==='cat'){const c=S.cats.find(x=>x.key===e.target.value);if(!c)return;it.cat=c.key;setKind(it,c.kind);ensureLinks();commit();renderItems();const f=$('#k'+it.id);f&&f.focus();return}
+  if(k==='cat'){const c=S.cats.find(x=>x.key===e.target.value);if(!c)return;it.cat=c.key;setKind(it,c.kind);ensureLinks();commit();refreshBill();const f=$('#k'+it.id);f&&f.focus();return}
   if(k==='repeat'){
     if(e.target.checked){delete it.once;const d=parseD(it.date);if(d){it.day=d.getDate();delete it.date}}
     else{it.once=true;it.date=it.date||iso(dueOf(it,cycleStart()));delete it.until}
-    commit();renderItems();const f=$('#rp'+it.id);f&&f.focus();return}
+    commit();refreshBill();const f=$('#rp'+it.id);f&&f.focus();return}
   if(k==='last4'){const v=e.target.value.replace(/\D/g,'').slice(0,4);if(v!==e.target.value)e.target.value=v;
     const a=it.kind==='card'&&acctOf(it);if(a)a.last4=v;else if(v)it.bbLast4=v;else delete it.bbLast4;commit();renderAccounts();return}
   if(k==='until'||k==='date'){if(e.target.value)it[k]=e.target.value;else delete it[k];commit();return}
@@ -607,9 +607,7 @@ function setKind(it,kind){
 }
 $('#itemList').addEventListener('click',e=>{
   const t=e.target.closest('button');if(!t)return;
-  if(t.dataset.del){S.items=S.items.filter(i=>i.id!=t.dataset.del);editingId=null;save();renderAll();return}
-  if(t.dataset.edit){editingId=+t.dataset.edit;renderItems();const f=$('#a'+editingId);f&&f.focus();return}
-  if(t.dataset.done){const it=S.items.find(i=>i.id===editingId);if(it&&!it.name.trim()){it.name='New bill';save()}editingId=null;renderItems();render();return}
+  if(t.dataset.edit){openBill(+t.dataset.edit);return}
   const id=t.dataset.paid||t.dataset.unpaid;if(!id)return;const it=S.items.find(i=>i.id==id);if(!it)return;
   t.dataset.paid?markPaid(it):undoPaid(it);save();renderItems();render();
 });
@@ -617,12 +615,38 @@ function deleteCat(c,to){
   if(to){S.items.forEach(i=>{if(i.cat===c.key){i.cat=to.key;setKind(i,to.kind)}})}
   S.cats=S.cats.filter(x=>x!==c);catEditing=null;catDeleting=false;ensureLinks();save();renderAll();renderCats();
 }
-$('#addBtn').addEventListener('click',()=>{
-  const c=S.cats.find(x=>x.kind==='bill')||S.cats[0];
-  const it={id:uid++,name:'New bill',kind:c.kind,cat:c.key,amount:null,day:clampPd()};
-  if(c.kind==='loan')Object.assign(it,{left:null,total:null,rate:null});
-  S.items.push(it);ensureLinks();editingId=it.id;save();renderItems();render();const f=$('#n'+it.id);f&&(f.focus(),f.select());
+// ---------- the bill window ----------
+// Adding or editing a bill opens a small window. Edits save as you type. A new bill is kept only
+// when you tap Add; closing the window any other way (×, Esc, tapping outside) leaves it out.
+let billNew=false,billKeep=false;
+function refreshBill(){const it=S.items.find(i=>i.id===editingId);if(!it)return;
+  $('#billTitle').textContent=billNew?(it.kind==='loan'?'New installment':'New bill'):'Edit '+(it.kind==='loan'?'installment':'bill');
+  $('#billBody').innerHTML=itemForm(it,billNew)}
+function openBill(id,isNew){
+  editingId=id;billNew=!!isNew;billKeep=false;refreshBill();
+  const d=$('#billDlg');if(!d.open)d.showModal();
+  const f=isNew?$('#n'+id):$('#a'+id);f&&(f.focus(),isNew&&f.select());
+}
+$('#billDlg').addEventListener('close',()=>{
+  const it=S.items.find(i=>i.id===editingId);
+  if(it&&billNew&&!billKeep)S.items=S.items.filter(i=>i!==it);           // closed without Add
+  else if(it&&!String(it.name||'').trim())it.name=it.kind==='loan'?'New installment':'New bill';
+  editingId=null;billNew=false;$('#billBody').innerHTML='';ensureLinks();save();renderAll();
 });
+$('#billDlg').addEventListener('click',e=>{
+  if(e.target===e.currentTarget){e.currentTarget.close();return} // tap outside the window
+  const t=e.target.closest('button');if(!t)return;
+  if(t.dataset.billclose){$('#billDlg').close();return}
+  if(t.dataset.done){billKeep=true;$('#billDlg').close();return}
+  if(t.dataset.del){S.items=S.items.filter(i=>i.id!=t.dataset.del);billKeep=true;$('#billDlg').close()}
+});
+function newBill(kind){
+  const c=S.cats.find(x=>x.kind===kind)||S.cats.find(x=>x.kind==='bill')||S.cats[0];
+  const it={id:uid++,name:'',kind:c.kind,cat:c.key,amount:null,day:clampPd()};
+  if(c.kind==='loan')Object.assign(it,{left:null,total:null,rate:null});
+  S.items.push(it);ensureLinks();openBill(it.id,true);
+}
+$('#addBtn').addEventListener('click',()=>newBill('bill'));
 $('#catBtn').addEventListener('click',openCats);
 $('#catDlg').addEventListener('close',()=>{closeCatEdit()});
 $('#catDlg').addEventListener('click',e=>{
@@ -647,7 +671,7 @@ $('#catDlg').addEventListener('input',e=>{
 });
 
 
-function openEdit(id){editingId=id;selectTab('bills');renderItems();const f=$('#n'+id);f&&f.focus()}
+const openEdit=id=>openBill(id);
 $('#instList').addEventListener('click',e=>{
   const t=e.target.closest('button');if(!t)return;
   const id=t.dataset.ipaid||t.dataset.iundo||t.dataset.iedit||t.dataset.iedit4,it=S.items.find(i=>i.id==id);if(!it)return;
@@ -655,7 +679,7 @@ $('#instList').addEventListener('click',e=>{
   if(t.dataset.iedit4){openEdit(it.id);const f=$('#f4'+it.id);f&&f.focus();return}
   t.dataset.ipaid?markPaid(it):undoPaid(it);save();renderItems();render();
 });
-$('#instAdd').addEventListener('click',()=>{const it={id:uid++,name:'New installment',kind:'loan',amount:null,day:clampPd(),left:null,total:null,rate:null};S.items.push(it);save();render();openEdit(it.id)});
+$('#instAdd').addEventListener('click',()=>newBill('loan'));
 
 $('#incList').addEventListener('input',e=>{
   const row=e.target.closest('.inc');if(!row)return;const x=S.income.find(o=>o.id==row.dataset.iid),k=e.target.dataset.k;if(!x||!k)return;
@@ -838,14 +862,40 @@ setInterval(()=>{if(rollover())save();if(editingId==null&&!document.activeElemen
 // short summary of those numbers and explains the call; it is told to use them rather than redo them.
 const AI_SDK='vendor/anthropic-sdk-0.133.0.js';
 const AI_PRICE={'claude-opus-5-5':[4,20],'claude-sonnet-5-5':[2,10],'claude-haiku-5-5':[0.1,0.5]}; // $ per million tokens in / out
-const aiConf=()=>S.ai||{};
-const aiModel=()=>AI_PRICE[aiConf().model]?aiConf().model:'claude-opus-5-5';
+// Pick an AI provider in the API tab: Claude (Anthropic), ChatGPT (OpenAI), or any other service that speaks
+// OpenAI's chat format at its own address. Each keeps its own key and model.
+const AI_PROV={
+  anthropic:{name:'Claude',key:'sk-ant-…',help:'Key from console.anthropic.com.',model:'claude-opus-5-5'},
+  openai:{name:'ChatGPT',key:'sk-…',help:'Key from platform.openai.com.',model:'gpt-5-mini'},
+  compat:{name:'AI',key:'Your key',help:'Any OpenAI-compatible API that allows browser requests.',model:''}
+};
+function aiAll(){
+  const a=S.ai;
+  if(a&&!a.provider&&a.key)S.ai={provider:'anthropic',anthropic:{key:a.key,model:a.model}}; // saved before providers existed
+  return S.ai||{provider:'anthropic'};
+}
+const aiProv=()=>AI_PROV[aiAll().provider]?aiAll().provider:'anthropic';
+function aiConf(){const p=aiProv(),c=aiAll()[p]||{};return {provider:p,key:c.key||'',base:c.base||'',model:p==='anthropic'?(AI_PRICE[c.model]?c.model:AI_PROV.anthropic.model):(c.model||AI_PROV[p].model)}}
+const aiReady=()=>{const c=aiConf();return !!(c.key&&c.model&&(c.provider!=='compat'||/^https:\/\//i.test(c.base)))};
+const aiModel=()=>aiConf().model;
+const aiName=()=>{const c=aiConf();return c.provider==='anthropic'?$('#aiModel').selectedOptions[0]?.text.split(' · ')[0]||'Claude':c.provider==='openai'?'ChatGPT ('+c.model+')':c.model||'AI'};
 const aiState=(cls,txt)=>{const el=$('#aiState');el.className='sync '+cls;el.textContent=txt};
-function fillAI(){const c=aiConf();$('#aiKey').value=c.key||'';$('#aiModel').value=aiModel();aiState(c.key?'ok':'off',c.key?'Ready':'Not connected');aiNote()}
-function aiNote(){$('#aiNote').textContent=aiConf().key?'Then asks '+$('#aiModel').selectedOptions[0].text.split(' –')[0]:'Add a key in API for AI advice'}
-$('#aiKey').addEventListener('change',()=>{const key=$('#aiKey').value.trim();if(key)S.ai={...aiConf(),key,model:aiModel()};else delete S.ai;save();fillAI()});
-$('#aiModel').addEventListener('change',()=>{S.ai={...aiConf(),model:$('#aiModel').value};save();aiNote()});
-$('#aiClear').addEventListener('click',()=>{delete S.ai;save();fillAI()});
+function aiSet(patch){const a=aiAll(),p=aiProv();S.ai={...a,provider:p,[p]:{...(a[p]||{}),...patch}};save()}
+function fillAI(){
+  const c=aiConf(),P=AI_PROV[c.provider];
+  $('#aiProv').value=c.provider;$('#aiKey').value=c.key;$('#aiKey').placeholder=P.key;$('#aiHelp').textContent=P.help;
+  $('#aiBaseF').hidden=c.provider!=='compat';$('#aiBase').value=c.base;
+  $('#aiModelF').hidden=c.provider!=='anthropic';$('#aiModelTF').hidden=c.provider==='anthropic';
+  if(c.provider==='anthropic')$('#aiModel').value=c.model;else{$('#aiModelT').value=c.model;$('#aiModelT').placeholder=c.provider==='openai'?'gpt-5-mini':'e.g. a model name from your provider'}
+  aiState(aiReady()?'ok':'off',aiReady()?'Ready':'Not connected');aiNote();
+}
+function aiNote(){$('#aiNote').textContent=aiReady()?'Then asks '+aiName():'Add a key in API for AI advice'}
+$('#aiProv').addEventListener('change',()=>{S.ai={...aiAll(),provider:$('#aiProv').value};save();fillAI()});
+$('#aiKey').addEventListener('change',()=>{aiSet({key:$('#aiKey').value.trim()});fillAI()});
+$('#aiModel').addEventListener('change',()=>{aiSet({model:$('#aiModel').value});fillAI()});
+$('#aiModelT').addEventListener('change',()=>{aiSet({model:$('#aiModelT').value.trim()});fillAI()});
+$('#aiBase').addEventListener('change',()=>{aiSet({base:$('#aiBase').value.trim().replace(/\/+$/,'')});fillAI()});
+$('#aiClear').addEventListener('click',()=>{const a=aiAll();delete a[aiProv()];S.ai=a;save();fillAI()});
 fillAI();
 
 // the money in, and everything due, in the pay cycle that starts on `start`
@@ -924,32 +974,61 @@ function aiSummary(R){
     creditors:S.sources.filter(x=>known(x)).map(x=>({name:x.name,rate_pct_month:num(x.rate),rate_type:x.addon?'add-on':'diminishing',available:num(x.avail)||undefined}))};
 }
 async function askAI(R){
-  const {key}=aiConf(),model=aiModel(),summary=JSON.stringify(aiSummary(R)),memoKey=model+summary;
+  const c=aiConf(),summary=JSON.stringify(aiSummary(R)),memoKey=c.provider+'|'+c.base+'|'+c.model+'|'+summary;
   if(aiMemo.has(memoKey))return aiMemo.get(memoKey); // the same question twice costs nothing
+  const out=c.provider==='anthropic'?await askClaude(c,summary):await askOpenAIFormat(c,summary);
+  aiMemo.set(memoKey,out);return out;
+}
+async function askClaude(c,summary){
   const SDK=await loadAISdk();
-  const client=new SDK.Anthropic({apiKey:key,dangerouslyAllowBrowser:true,maxRetries:1});
-  const req={model,max_tokens:4000,output_config:{effort:'low',format:SDK.jsonSchemaOutputFormat(AI_SCHEMA)},system:AI_SYSTEM,
+  const client=new SDK.Anthropic({apiKey:c.key,dangerouslyAllowBrowser:true,maxRetries:1});
+  const req={model:c.model,max_tokens:4000,output_config:{effort:'low',format:SDK.jsonSchemaOutputFormat(AI_SCHEMA)},system:AI_SYSTEM,
     messages:[{role:'user',content:'Should I take this loan? Planner summary:\n'+summary}]};
   // Opus and Sonnet can retry a declined request on another model; Haiku has no server-side fallback
-  if(model!=='claude-haiku-5-5')Object.assign(req,{betas:['server-side-fallback-2026-07-01'],fallbacks:'default'});
+  if(c.model!=='claude-haiku-5-5')Object.assign(req,{betas:['server-side-fallback-2026-07-01'],fallbacks:'default'});
   const res=await client.beta.messages.parse(req);
   if(res.stop_reason==='refusal')throw Object.assign(new Error('refusal'),{kind:'refusal'});
   if(res.stop_reason==='max_tokens'||!res.parsed_output)throw Object.assign(new Error('incomplete'),{kind:'incomplete'});
-  const [pin,pout]=AI_PRICE[model],u=res.usage||{};
-  const out={a:res.parsed_output,cost:((u.input_tokens||0)*pin+(u.output_tokens||0)*pout)/1e6,model:res.model||model};
-  aiMemo.set(memoKey,out);return out;
+  const [pin,pout]=AI_PRICE[c.model],u=res.usage||{};
+  return {a:res.parsed_output,model:res.model||c.model,cost:'~$'+(((u.input_tokens||0)*pin+(u.output_tokens||0)*pout)/1e6).toFixed(4)};
+}
+// OpenAI's chat completions format: ChatGPT gets a strict JSON schema; other services get plain JSON mode,
+// which more of them support, with the shape spelled out in the prompt and checked here
+async function askOpenAIFormat(c,summary){
+  const openai=c.provider==='openai',url=(openai?'https://api.openai.com/v1':c.base)+'/chat/completions';
+  const body={model:c.model,messages:[{role:'system',content:AI_SYSTEM+(openai?'':'\nReply with only a JSON object with the keys verdict, headline, reasons, safe_amount and tips.')},
+    {role:'user',content:'Should I take this loan? Planner summary:\n'+summary}],
+    response_format:openai?{type:'json_schema',json_schema:{name:'loan_advice',strict:true,schema:AI_SCHEMA}}:{type:'json_object'}};
+  if(openai){body.max_completion_tokens=4000;if(/^(gpt-5|o\d)/i.test(c.model))body.reasoning_effort='low'}else body.max_tokens=4000;
+  let r;
+  try{r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+c.key},body:JSON.stringify(body)})}
+  catch(e){throw Object.assign(new Error('network'),{kind:'network'})}
+  const j=await r.json().catch(()=>null);
+  if(!r.ok)throw Object.assign(new Error(j?.error?.message||'HTTP '+r.status),{kind:'http',status:r.status});
+  const ch=j?.choices?.[0],m=ch?.message;
+  if(m?.refusal)throw Object.assign(new Error('refusal'),{kind:'refusal'});
+  if(ch?.finish_reason==='length')throw Object.assign(new Error('incomplete'),{kind:'incomplete'});
+  let a;try{a=JSON.parse(String(m?.content||'').replace(/^```(?:json)?\s*|\s*```$/g,''))}catch(e){a=null}
+  const list=x=>Array.isArray(x)?x.map(String):[];
+  if(!a||!['yes','careful','no'].includes(a.verdict)||typeof a.headline!=='string')throw Object.assign(new Error('incomplete'),{kind:'incomplete'});
+  a={verdict:a.verdict,headline:a.headline,reasons:list(a.reasons),safe_amount:num(a.safe_amount),tips:list(a.tips)};
+  const u=j.usage||{},tok=(u.prompt_tokens||0)+(u.completion_tokens||0);
+  return {a,model:j.model||c.model,cost:tok?tok.toLocaleString()+' tokens':''};
 }
 function aiError(e){
-  const A=window.AnthropicSDK?.Anthropic;
+  const A=window.AnthropicSDK?.Anthropic,who=aiConf().provider==='anthropic'?'Claude':aiConf().provider==='openai'?'ChatGPT':'The AI';
   if(e.message==='load')return 'Could not load the AI library. Check your connection.';
-  if(e.kind==='refusal')return 'Claude declined to answer this one. The planner\'s check above still applies.';
-  if(e.kind==='incomplete')return 'Claude\'s answer was cut off. Try again.';
-  if(A&&e instanceof A.AuthenticationError)return 'The API key was not accepted. Check it in the API tab.';
-  if(A&&e instanceof A.PermissionDeniedError)return 'This API key is not allowed to use that model.';
-  if(A&&e instanceof A.RateLimitError)return 'Too many requests or no credit left on the key. Try again later.';
-  if(A&&e instanceof A.BadRequestError)return 'The AI could not read the request: '+e.message;
+  if(e.kind==='refusal')return who+' declined to answer this one. The planner\'s check above still applies.';
+  if(e.kind==='incomplete')return who+'\'s answer was cut off or unreadable. Try again.';
+  if(e.kind==='network')return 'Could not reach '+who+'. Check your connection'+(aiConf().provider==='compat'?', and that this service allows requests from a browser.':'.');
+  const st=e.kind==='http'?e.status:A&&e instanceof A.APIError?e.status:null;
   if(A&&e instanceof A.APIConnectionError)return 'Could not reach Anthropic. Check your connection.';
-  if(A&&e instanceof A.APIError)return 'The AI service had a problem ('+e.status+'). Try again.';
+  if(st===401)return 'The API key was not accepted. Check it in the API tab.';
+  if(st===403)return 'This API key is not allowed to use that model.';
+  if(st===404)return 'That model or address was not found. Check it in the API tab.';
+  if(st===429)return 'Too many requests or no credit left on the key. Try again later.';
+  if(st===400)return 'The AI could not read the request: '+e.message;
+  if(st)return 'The AI service had a problem ('+st+'). Try again.';
   return 'Something went wrong asking the AI.';
 }
 let aiRun=0;
@@ -958,16 +1037,16 @@ $('#aiForm').addEventListener('submit',async e=>{
   const f=readLoanForm(),out=$('#aiOut');
   if(typeof f==='string'){out.innerHTML=`<p class="t-bad small">${f}</p>`;return}
   const R=loanCheck(f),run=++aiRun;
-  out.innerHTML=renderLoanCheck(R)+(aiConf().key?'<div class="aibox" id="aiAns"><p class="muted small">Asking Claude…</p></div>':'');
-  if(!aiConf().key)return;
+  out.innerHTML=renderLoanCheck(R)+(aiReady()?`<div class="aibox" id="aiAns"><p class="muted small">Asking ${esc(aiName())}…</p></div>`:'');
+  if(!aiReady())return;
   const btn=$('#aiGo');btn.disabled=true;
   try{
-    const {a,cost,model}=await askAI(R);if(run!==aiRun)return;
+    const who=AI_PROV[aiConf().provider].name,{a,cost,model}=await askAI(R);if(run!==aiRun)return;
     const [cls,word]=VERDICT[a.verdict]||VERDICT.careful;
-    $('#aiAns').innerHTML=`<div class="aiv-h"><span class="pill ${cls}">${word}</span><span class="muted small">Claude's view</span></div>
+    $('#aiAns').innerHTML=`<div class="aiv-h"><span class="pill ${cls}">${word}</span><span class="muted small">${esc(who)}'s view</span></div>
       <p class="aih">${esc(a.headline)}</p>${a.reasons.length?`<ul>${a.reasons.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
       ${a.tips.length?`<p class="label">Tips</p><ul>${a.tips.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
-      <p class="note">${model} · cost ~$${cost<0.001?cost.toFixed(5):cost.toFixed(3)}</p>`;
+      <p class="note">${esc(model)}${cost?' · '+esc(cost):''}</p>`;
   }catch(err){if(run===aiRun)$('#aiAns').innerHTML=`<p class="t-bad small">${aiError(err)}</p>`}
   finally{btn.disabled=false}
 });

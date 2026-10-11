@@ -18,6 +18,8 @@ Under the salary, **Payday** sets your pay schedule: once a month on one day, tw
 
 ## Bills and categories
 
+**Add bill**, or the pencil on a bill, opens a small window with its form. Edits save as you type; a new bill is kept only when you tap **Add** (closing the window any other way leaves it out). Adding or editing an installment opens the same window from the Installments tab.
+
 Each category's bills sit together on a background of that category's color. **Categories** (on the Bills tab) opens a small window: add a category, or pick one to rename it, change its color, choose what it counts as (bills you must pay, essentials, installments, credit cards, or can be cut) or delete it. A category that still has bills asks where to move them. To move a bill, tap Edit on it and pick its category.
 
 ## Repeating and one-time bills
@@ -28,7 +30,13 @@ A bill repeats every month on its due day. In its form, **Stops after** sets the
 
 The **AI** tab checks a loan before you take it: the amount, installments or a one-time payment, the interest, and when it's due. The planner first does the maths itself: it lays the loan's payments over your coming pay cycles next to every bill, installment, card and income you've entered, and works out the most you can borrow on those terms while every cycle keeps your buffer. That part is exact, free and needs no key.
 
-With an Anthropic API key in the **API** tab, Claude then reads a short summary of those numbers (about 2,000 characters: amounts, bill names, the cycle table; never card digits or your email) and explains the call in plain words, with tips. It's told to use the planner's numbers rather than redo them, and it's asked with low effort and a fixed JSON answer format, so a question costs about $0.02 on Claude Opus 5.5 (the default), $0.01 on Sonnet 5.5, or well under a cent on Haiku 5.5. Asking the same question again doesn't call the API. The key is saved in your account and used straight from the device, so give it a monthly spend limit in the Anthropic Console.
+With an AI key in the **API** tab, the AI then reads a short summary of those numbers (about 2,000 characters: amounts, bill names, the cycle table; never card digits or your email) and explains the call in plain words, with tips. It's told to use the planner's numbers rather than redo them, and it answers in a fixed JSON format, so a question costs very little. Asking the same question again doesn't call the API. Pick the provider in the API tab; each keeps its own key and model:
+
+- **Claude (Anthropic)**: through the Anthropic SDK, at low effort, with server-side fallback on Opus and Sonnet. About $0.02 a question on Claude Opus 5.5 (the default), $0.01 on Sonnet 5.5, well under a cent on Haiku 5.5.
+- **ChatGPT (OpenAI)**: OpenAI's chat completions with a strict JSON schema; type any model your key can use (starts at `gpt-5-mini`). The answer shows the tokens used.
+- **Other (OpenAI-compatible)**: any service that speaks OpenAI's chat format at its own address (for example OpenRouter or a local server), in plain JSON mode. It has to allow requests from a browser.
+
+Keys are saved in your account and used straight from the device, so give each a monthly spend limit with its provider.
 
 ## Saving
 
