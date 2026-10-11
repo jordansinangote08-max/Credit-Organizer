@@ -527,3 +527,112 @@ input[type=date],input[type=month]{cursor:pointer}
 .reco.ahead .bufin{display:flex;align-items:center;gap:6px}
 .reco.ahead .bufrow input{width:8em;font-size:16px;min-height:var(--tap);padding:6px 10px;border-radius:10px}
 #aheadList{display:grid;gap:12px}
+
+/* ---------- folding ----------
+   A section header is a button: tap it to fold or unfold what's under it. The whole header row is the
+   target (the button stretches over it), and the chevron turns to show the state. */
+.fold{all:unset;box-sizing:border-box;cursor:pointer;display:inline-flex;align-items:center;gap:8px;min-height:var(--tap);
+  font:inherit;color:inherit;border-radius:8px;-webkit-tap-highlight-color:transparent}
+.fold:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.fold .chev{width:7px;height:7px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg) translateY(-2px);transition:transform .2s var(--ease);flex:none;margin-left:2px}
+.fold[aria-expanded="false"] .chev{transform:rotate(-45deg)}
+.grp-h,.lgrp-h,.cplans-h{position:relative}
+.grp-h .fold::after,.lgrp-h .fold::after,.cplans-h .fold::after{content:"";position:absolute;inset:0}
+.grp.folded>:not(.grp-h),.lgrp.folded>.sub,.cplans.folded>.cplan,.sec.folded #timeline{display:none}
+.grp.folded .grp-h{padding-bottom:10px}
+.lgrp.folded .lgrp-h{padding-bottom:0}
+.cplans-h{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:.9rem;font-weight:600}
+.cplans-h .fold span,.grp-h .fold span{margin-left:2px;font-weight:400;color:var(--muted)}
+.cplans-h .num{font-family:var(--mono);font-weight:500}
+.lgrp-h .fold{min-height:36px}
+@media (prefers-reduced-motion:reduce){.fold .chev{transition:none}}
+
+/* ---------- things that open a window ---------- */
+.status[role="button"]{cursor:pointer;position:relative;transition:transform var(--fast) var(--ease)}
+.status[role="button"]:active{transform:scale(.99)}
+.status[role="button"]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.status .more{display:inline-flex;align-items:center;gap:2px;font-size:.8rem;font-weight:600;color:var(--muted);justify-self:start}
+.status .more svg{width:14px;height:14px}
+.openw{all:unset;box-sizing:border-box;cursor:pointer;display:inline-flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px;min-height:32px;border-radius:6px;
+  text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--ink) 25%,transparent);text-underline-offset:3px}
+.openw:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (hover:hover){.openw:hover{text-decoration-color:var(--ink)}}
+.info{display:grid;gap:8px}
+.info .ih{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-top:6px}
+.ilist{list-style:none;margin:0;padding:0;display:grid}
+.ilist li{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--line);align-items:baseline}
+.ilist li:first-child{border-top:0}
+.ilist li .num{font-family:var(--mono);flex:none}
+.ilist li.tot{font-weight:600}
+.ilist li.res{font-size:1.1rem;font-weight:700;border-top:2px solid var(--line)}
+.ilist li.res.bad .num{color:var(--bad)} .ilist li.res.ok .num{color:var(--ok)}
+.ilist .plan-of{display:inline-block;min-width:3.2em;color:var(--muted);font-family:var(--mono)}
+
+/* ---------- compact ----------
+   Tighter spacing everywhere; every tap target stays at least 44px with 8px between targets. */
+:root{--r:16px}
+.app{gap:14px;padding-top:calc(14px + var(--safe-t))}
+.side,.main{gap:14px}
+.hero{padding:14px;gap:12px}
+.sec{padding:14px;gap:10px}
+.status{padding:10px 12px;gap:2px}
+.status .big{font-size:1.4rem}
+.money input{font-size:1.6rem}
+.mon{padding:10px 12px;gap:6px}
+.reco{padding:12px;gap:8px}
+.grp{padding:2px 12px 0;margin-bottom:8px}
+.grp-h{padding:4px 0}
+.bill{padding:8px 0;gap:10px}
+.bill .rt{gap:4px}
+.day{padding:8px 0;gap:10px}
+.lgrp{padding:10px 12px}
+.lgrp-h{padding-bottom:6px}
+.lgrp .sub{padding:8px 0 2px;gap:4px}
+.acct{padding:10px 0;gap:6px}
+.cplan{padding:6px 0}
+.add{padding:10px}
+.tab{padding:7px 12px}
+h2{font-size:1.02rem}
+.label{font-size:.7rem}
+
+/* ---------- draft: black and white ----------
+   The whole planner, windows included, turns grayscale while you're in a draft, so it can't be mistaken for
+   the real one. States keep their words and icons, so nothing relies on color. */
+body.drafting{
+  --accent:#1c1c1e;--accent-ink:#fff;--accent-soft:#e5e5ea;
+  --ok:#1c1c1e;--ok-soft:#ececef;--warn:#3a3a3c;--warn-soft:#f2f2f4;--bad:#000;--bad-soft:#e2e2e5;
+  --c-loan:#1c1c1e;--c-card:#48484a;--c-essential:#3a3a3c;--c-bill:#636366;--c-flex:#6e6e73;
+  --c-orange:#1c1c1e;--c-blue:#48484a;--c-green:#3a3a3c;--c-amber:#636366;--c-purple:#6e6e73;--c-pink:#545458;--c-teal:#48484a;--c-slate:#636366;
+  --blob1:#e5e5ea;--blob2:#d8d8dc;--blob3:#efeff2;--blob4:#dcdce0;--bg:#f2f2f4;
+  --muted:#5a5a5f;--ring:0 0 0 3px #d1d1d6}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) body.drafting{
+  --accent:#f2f2f7;--accent-ink:#000;--accent-soft:#2c2c2e;
+  --ok:#f2f2f7;--ok-soft:#1f1f21;--warn:#d1d1d6;--warn-soft:#262628;--bad:#fff;--bad-soft:#2c2c2e;
+  --c-loan:#f2f2f7;--c-card:#c7c7cc;--c-essential:#d1d1d6;--c-bill:#aeaeb2;--c-flex:#a1a1a6;
+  --c-orange:#f2f2f7;--c-blue:#c7c7cc;--c-green:#d1d1d6;--c-amber:#aeaeb2;--c-purple:#a1a1a6;--c-pink:#b5b5ba;--c-teal:#c7c7cc;--c-slate:#aeaeb2;
+  --blob1:#1c1c1e;--blob2:#232325;--blob3:#18181a;--blob4:#202022;--bg:#0b0b0c;
+  --muted:#a1a1a6;--ring:0 0 0 3px #3a3a3c}}
+:root[data-theme="dark"] body.drafting{
+  --accent:#f2f2f7;--accent-ink:#000;--accent-soft:#2c2c2e;
+  --ok:#f2f2f7;--ok-soft:#1f1f21;--warn:#d1d1d6;--warn-soft:#262628;--bad:#fff;--bad-soft:#2c2c2e;
+  --c-loan:#f2f2f7;--c-card:#c7c7cc;--c-essential:#d1d1d6;--c-bill:#aeaeb2;--c-flex:#a1a1a6;
+  --c-orange:#f2f2f7;--c-blue:#c7c7cc;--c-green:#d1d1d6;--c-amber:#aeaeb2;--c-purple:#a1a1a6;--c-pink:#b5b5ba;--c-teal:#c7c7cc;--c-slate:#aeaeb2;
+  --blob1:#1c1c1e;--blob2:#232325;--blob3:#18181a;--blob4:#202022;--bg:#0b0b0c;
+  --muted:#a1a1a6;--ring:0 0 0 3px #3a3a3c}
+body.drafting #draftBtn.on{background:var(--ink);color:var(--bg)}
+
+/* a bill row on one line: the name opens its window; the amount and the paid check sit side by side */
+.bill .rt{display:flex;align-items:center;gap:8px}
+.bill .nm.openw{font-weight:600;min-height:28px;overflow-wrap:anywhere}
+.bill .bt:empty{display:none}
+/* category header: colour square, name and count wrap together, the total stays on the right */
+.grp-h{align-items:center}
+.grp-h h3{display:flex;align-items:center;min-width:0;flex:1}
+.grp-h h3 .fold{min-width:0;flex-wrap:nowrap;gap:6px}
+.grp-h h3::before{margin-right:8px;flex:none}
+/* installment rows: 3/12 and the name stay together, the pencil sits beside the figures */
+.sub-n .openw{flex-wrap:nowrap;align-items:baseline}
+.sub-n .openw .plan-of{flex:none}
+.lgrp .sub-f{flex-wrap:nowrap;align-items:center}
+.lgrp .sub .facts{flex:1;min-width:0}
+.lgrp .sub .acts{flex:none}

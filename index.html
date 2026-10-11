@@ -15,10 +15,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=39">
-<script src="config.js?v=39" defer></script>
+<link rel="stylesheet" href="styles.css?v=40">
+<script src="config.js?v=40" defer></script>
 <script src="vendor/supabase-2.116.0.js" defer></script>
-<script src="app.js?v=39" defer></script>
+<script src="app.js?v=40" defer></script>
 </head>
 <body class="locked">
 <div class="app">
@@ -46,7 +46,7 @@
           <span id="pdWeek" class="pdpart" hidden>on <select id="payweekday" aria-label="Payday, day of the week"><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option><option value="0">Sunday</option></select></span>
         </div>
       </div>
-      <div id="status" class="status" aria-live="polite"></div>
+      <div id="status" class="status" aria-live="polite" role="button" tabindex="0" aria-haspopup="dialog" aria-label="This cycle's breakdown"></div>
     </section>
   </aside>
 
@@ -67,7 +67,7 @@
       <div class="mon" id="mon-cycle" aria-live="polite"></div>
       <div id="advice"></div>
       <div class="sec">
-        <div class="sec-h"><h2>Money in and out</h2><span class="muted small" id="cycleLabel"></span></div>
+        <div class="sec-h"><h2><button class="fold" data-fold="tl" aria-expanded="true">Money in and out<i class="chev" aria-hidden="true"></i></button></h2><span class="muted small" id="cycleLabel"></span></div>
         <div id="timeline"></div>
       </div>
     </section>
@@ -170,8 +170,9 @@
     </section>
 
     <section class="panel" role="tabpanel" id="panel-bbsync" aria-labelledby="tab-bbsync" data-panel="bbsync" hidden>
-      <div class="sec">
-        <div><h2>BillBuddy</h2><p class="muted small lead">Syncs bills every minute, with card limits and installment breakdowns. Matched by last 4 digits.</p></div>
+      <details class="sec" open>
+        <summary><h2>BillBuddy</h2></summary>
+        <p class="muted small">Syncs bills every minute, with card limits and installment breakdowns. Matched by last 4 digits.</p>
         <div class="form flat">
           <div class="field wide"><label for="bbUrl">BillBuddy API link</label><input id="bbUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://your-billbuddy.vercel.app/api/bills"></div>
           <div class="field wide"><label for="bbKey">API key</label><input id="bbKey" type="password" autocomplete="off" spellcheck="false" placeholder="BILLS_API_KEY"></div>
@@ -179,9 +180,10 @@
         </div>
         <span class="sync" id="bbState">Not connected</span>
         <p class="muted small">Saved privately in your account.</p>
-      </div>
-      <div class="sec">
-        <div><h2>AI</h2><p class="muted small lead">The planner does the maths; the AI only explains it, so it costs little.</p></div>
+      </details>
+      <details class="sec" open>
+        <summary><h2>AI</h2></summary>
+        <p class="muted small">The planner does the maths; the AI only explains it, so it costs little.</p>
         <div class="form flat">
           <div class="field wide"><label for="aiProv">Provider</label><select id="aiProv">
             <option value="anthropic">Claude (Anthropic)</option><option value="openai">ChatGPT (OpenAI)</option><option value="compat">Other (OpenAI-compatible)</option>
@@ -201,10 +203,14 @@
         <span class="sync" id="aiState">Not connected</span>
         <div class="usage" id="aiUsage"></div>
         <p class="muted small">Set a spend limit with your provider. Bill names and amounts go to the provider; card digits and email never do.</p>
-      </div>
+      </details>
     </section>
   </main>
 </div>
+<dialog id="infoDlg" class="dlg" aria-labelledby="infoTitle"><div class="dlg-in">
+  <div class="dlg-h"><h2 id="infoTitle"></h2><button class="x" data-infoclose="1" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div id="infoBody" class="info"></div>
+</div></dialog>
 <dialog id="aheadDlg" class="dlg" aria-labelledby="aheadTitle"><div class="dlg-in">
   <div class="dlg-h"><h2 id="aheadTitle">Pay ahead</h2><button class="x" data-aheadclose="1" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
   <div class="reco ahead">
