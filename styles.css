@@ -503,6 +503,14 @@ input[type=date],input[type=month]{cursor:pointer}
 .sub{display:grid;gap:6px;padding:12px 0 4px;border-top:1px solid var(--line)}
 .sub-h{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
 .sub-n{font-weight:600;display:flex;align-items:baseline;gap:4px 10px;flex-wrap:wrap}
+.cplans{display:grid;margin:4px 0 2px;border-top:1px solid var(--line)}
+.cplan{display:flex;align-items:baseline;gap:10px;padding:8px 0;font-size:.9rem;border-bottom:1px solid var(--line)}
+.cplan .plan-of{font-family:var(--mono);color:var(--muted);min-width:3.2em}
+.cplan-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cplan .num{margin-left:auto;font-family:var(--mono)}
+.cplan.foot{color:var(--muted);font-size:.84rem}
+.cplan.tot{font-weight:600;border-bottom:0}
+.sub-n .plan-of{font-family:var(--mono);font-weight:500;color:var(--muted);min-width:3.2em}
 .sub-n .l4{font-family:var(--mono);font-weight:400;font-size:.85rem;color:var(--muted);letter-spacing:.06em}
 .sub .facts{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:.84rem;color:var(--muted)}
 .sub .facts b{font-weight:600;color:var(--ink)}

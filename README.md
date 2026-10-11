@@ -24,7 +24,7 @@ Each category's bills sit together on a background of that category's color. **C
 
 ## Installments by lender
 
-The Installments tab groups installments by lender: each lender is a card showing its total per month, what's left to pay and when it's all done, with each installment inside as Installment 1, 2… showing payments left (like 4/6), the amount still to go and the month it ends. The lender is the **Lender** field in the installment's form (it suggests the lenders you already have); left empty, it's the name without a trailing letter or number, so "UnionBank Loan A" and "UnionBank Loan B" both sit under UnionBank Loan. Loans that BillBuddy adds are filed under their bank.
+Each installment shows its payment the way BillBuddy does: **3/12** means this bill is your 3rd payment of 12 (after you mark it paid, the one you just paid). A card in Accounts lists the installments inside its statement the same way, with what they come to, the rest of the bill and the statement total. The Installments tab groups installments by lender: each lender is a card showing its total per month, what's left to pay and when it's all done, with each installment inside as Installment 1, 2… showing payments left (like 4/6), the amount still to go and the month it ends. The lender is the **Lender** field in the installment's form (it suggests the lenders you already have); left empty, it's the name without a trailing letter or number, so "UnionBank Loan A" and "UnionBank Loan B" both sit under UnionBank Loan. Loans that BillBuddy adds are filed under their bank.
 
 ## Repeating and one-time bills
 
