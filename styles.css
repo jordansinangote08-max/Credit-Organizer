@@ -520,3 +520,10 @@ input[type=date],input[type=month]{cursor:pointer}
 #draftBtn.on{background:color-mix(in srgb,var(--c-orange) 16%,transparent);color:var(--c-orange)}
 .drafting #syncState{color:var(--c-orange);font-weight:600}
 .reco-total{font-size:1.35rem;font-weight:700;letter-spacing:-.01em}
+
+/* the Pay ahead window: the list reads like the This cycle card, without its green panel */
+.reco.ahead{padding:0;background:none;gap:14px}
+.reco.ahead .bufrow{padding-top:12px;border-top:1px solid var(--line);font-size:.95rem}
+.reco.ahead .bufin{display:flex;align-items:center;gap:6px}
+.reco.ahead .bufrow input{width:8em;font-size:16px;min-height:var(--tap);padding:6px 10px;border-radius:10px}
+#aheadList{display:grid;gap:12px}

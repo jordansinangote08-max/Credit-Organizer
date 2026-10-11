@@ -236,11 +236,13 @@ function renderAdvice(C){
     box.innerHTML=`<div class="reco bad"><h3>You're ${peso(C.gap)} short</h3><p class="small">Your money won't cover every bill this cycle.</p><div><button class="btn" data-goto="borrow">See options</button></div></div>`;
     return;
   }
-  const buffer=Math.max(0,num(S.buffer)),extra=C.surplus-buffer;
-  const bufInput=`<div class="bufrow"><label for="buffer">Buffer</label><span>₱</span><input id="buffer" type="number" min="0" step="100" value="${num(S.buffer)}"></div>`;
-  if(C.surplus<=0.004){box.innerHTML='';return}
+  // The pay-ahead list and the buffer live in a window (Pay ahead). The card here only sums it up, and the
+  // buffer field is never redrawn while you type in it: only the list under it is.
+  const buffer=Math.max(0,num(S.buffer)),extra=C.surplus-buffer,list=$('#aheadList');
+  if(C.surplus<=0.004){box.innerHTML='';list.innerHTML='<p class="small">Nothing left over this cycle.</p>';return}
   if(extra<=0.004){
-    box.innerHTML=`<div class="reco ok"><h3>All bills covered</h3><p class="small">${peso(C.surplus)} left, within your buffer.</p>${bufInput}</div>`;
+    box.innerHTML=`<div class="reco ok"><h3>All bills covered</h3><p class="small">${peso(C.surplus)} left, within your ${peso(buffer)} buffer.</p><div><button class="ghost" data-ahead="1">Change buffer</button></div></div>`;
+    list.innerHTML=`<p class="small">${peso(C.surplus)} left, within your buffer. Nothing to pay ahead.</p>`;
     return;
   }
   // pay-ahead candidates: next cycle's installments (costliest first), then next cycle's fixed bills
@@ -255,11 +257,10 @@ function renderAdvice(C){
   let pool=extra;const picks=[];
   recs.forEach(r=>{if(pool<=0.004)return;const p=Math.min(pool,r.amt);pool-=p;picks.push({...r,p})});
   box.innerHTML=`<div class="reco ok"><h3>You have ${peso(extra)} extra</h3>
-    <p class="small">Pay these ahead to lighten next cycle.</p>
+    <p class="small">Pay some of next cycle's bills ahead.</p><div><button class="btn" data-ahead="1">See what to pay ahead</button></div></div>`;
+  list.innerHTML=`<p class="small"><b>${peso(extra)}</b> extra after your ${peso(buffer)} buffer. Pay these ahead to lighten next cycle.</p>
     <ul>${picks.map(r=>`<li><span>${esc(r.i.name)} <span class="muted small">· due ${fmtD(r.date)} · ${r.why}${r.p<r.amt-0.004?` · part of ${peso(r.amt)}`:''}</span></span><span class="a">${peso(r.p)}</span></li>`).join('')}
-    ${pool>0.004?`<li><span>Emergency fund <span class="muted small">· nothing left to pay ahead</span></span><span class="a">${peso(pool)}</span></li>`:''}</ul>
-    ${bufInput}
-    <p class="note">Paying early frees next month; it doesn't cut interest.</p></div>`;
+    ${pool>0.004?`<li><span>Emergency fund <span class="muted small">· nothing left to pay ahead</span></span><span class="a">${peso(pool)}</span></li>`:''}</ul>`;
 }
 function renderTimeline(C){
   $('#cycleLabel').textContent=fmtD(C.start)+' – '+fmtD(C.end)+', '+C.end.getFullYear();
@@ -624,8 +625,10 @@ function syncInputs(){
   $('#pdDays').hidden=f==='week';$('#pd2').hidden=f!=='twice';$('#pdWeek').hidden=f!=='week';
   $('#salLabel').textContent=f==='month'?'Salary this cycle':'Salary each payday';
 }
-document.addEventListener('input',e=>{if(e.target.id==='buffer'){S.buffer=num(e.target.value);save();const C=compute();renderStatus(C);
-  const pos=e.target.selectionStart;renderAdvice(C);const b=$('#buffer');if(b){b.focus();try{b.setSelectionRange(pos,pos)}catch(_){}}}});
+// the buffer field sits in the Pay ahead window and keeps your typing; everything that depends on it redraws around it
+$('#buffer').addEventListener('input',e=>{S.buffer=Math.max(0,num(e.target.value));save();render()});
+document.addEventListener('click',e=>{if(e.target.closest('[data-ahead]')){$('#buffer').value=num(S.buffer);$('#aheadDlg').showModal()}});
+$('#aheadDlg').addEventListener('click',e=>{if(e.target.closest('[data-aheadclose]'))$('#aheadDlg').close()});
 document.addEventListener('click',e=>{const g=e.target.closest('[data-goto]');if(g)selectTab(g.dataset.goto)});
 
 $('#billBody').addEventListener('input',e=>{

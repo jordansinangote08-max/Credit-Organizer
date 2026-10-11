@@ -30,6 +30,10 @@ Each installment shows its payment the way BillBuddy does: **3/12** means this b
 
 A bill repeats every month on its due day. In its form, **Stops after** sets the last month it's due; leave it empty and it never stops. Untick **Repeats every month** for a one-time bill, which takes an exact due date and only counts in the pay cycle that date falls in. One-time bills in a later cycle are listed under *Coming in a later cycle*; bills that have stopped, or one-time bills whose date has passed, are kept under *Ended* until you remove them. Installments and credit cards don't have these options: installments end by payments left, and card amounts come from each statement.
 
+## Extra money: pay ahead
+
+When this cycle's money covers every bill with some to spare, This cycle says how much extra you have. **See what to pay ahead** opens a window listing next cycle's bills to pay early (costliest installments first), with your **Buffer**, the amount kept aside every cycle, at the bottom. The list updates as you type the buffer. Close the window with ✕.
+
 ## Every tab is monitored
 
 The top of each tab (This cycle, Bills, Installments, Accounts, Income, Borrow, Plan) lists what needs attention: money running out, bills past due or due soon, cards over 30% or 50% of their limit, missing last 4 digits, installments without payments left, expensive debt, entries from past cycles. The planner works these out itself as you go, free and instantly. With an AI key set, the ✨ button asks the AI to review that tab: it gets the tab's checks plus a snapshot of the whole planner, so its advice rests on the same numbers. A review is kept for the day until the numbers change, so looking again costs nothing.
