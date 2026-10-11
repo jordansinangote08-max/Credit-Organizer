@@ -14,7 +14,7 @@ Plain static files, no build step. Open `index.html` or serve the folder (e.g. `
 
 ## Payday
 
-Under the salary, **Payday** sets your pay schedule: once a month on one day, twice a month on two days (like the 15th and 30th), or every week on a weekday. A pay cycle runs from one payday to the day before the next, and each bill, installment and card counts in the cycle its due date falls in. Paid once a month, the planner switches to the upcoming cycle in the last 16 days before payday so you can plan it; paid more often, it shows the cycle you're in. Plan ahead shows one row per pay cycle.
+Under the salary, **Payday** sets your pay schedule: once a month on one day, twice a month on two days (like the 15th and 30th), or every week on a weekday. A pay cycle runs from one payday to the day before the next, and each bill, installment and card counts in the cycle its due date falls in. Paid once a month, the planner switches to the upcoming cycle in the last 16 days before payday so you can plan it; paid more often, it shows the cycle you're in. The Plan tab shows one row per pay cycle. Each schedule remembers its own days, so switching back and forth keeps them.
 
 ## Bills and categories
 

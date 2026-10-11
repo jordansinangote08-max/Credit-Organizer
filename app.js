@@ -18,9 +18,13 @@ const SRC_TPL=[
 const IC={
   edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2 5.2l3.6 3.6M4 20l1-4.6L15.6 4.8a2 2 0 012.8 0l.8.8a2 2 0 010 2.8L8.6 19 4 20z"/></svg>',
   trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 002 2h6a2 2 0 002-2l1-12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  undo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/></svg>',
   chev:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 6l6 6-6 6"/></svg>'
 };
 const editBtn=(attr,name)=>`<button class="ghost ib" ${attr} aria-label="Edit ${esc(name)}" title="Edit">${IC.edit}</button>`;
+const paidBtn=(attr,name)=>`<button class="paidbtn ib" ${attr} aria-label="Mark ${esc(name)} paid" title="Paid">${IC.check}</button>`;
+const undoBtn=(attr,name)=>`<button class="ghost ib" ${attr} aria-label="Undo paid for ${esc(name)}" title="Undo">${IC.undo}</button>`;
 const delBtn=(attr,label)=>`<button class="danger ib" ${attr} aria-label="${esc(label)}" title="${esc(label)}">${IC.trash}</button>`;
 const clone=o=>JSON.parse(JSON.stringify(o));
 const $=s=>document.querySelector(s);
@@ -63,11 +67,23 @@ function prevPay(d){
   if(payFreq()==='week'){const r=new Date(d.getFullYear(),d.getMonth(),d.getDate()-1);while(r.getDay()!==num(S.payweekday)%7)r.setDate(r.getDate()-1);return r}
   for(let k=0;k<3;k++){const f=new Date(d.getFullYear(),d.getMonth()-k,1),p=paysIn(f.getFullYear(),f.getMonth()).filter(x=>x<d).pop();if(p)return p}
 }
-function shiftCycle(start,k){let d=start;for(;k>0;k--)d=nextPay(d);for(;k<0;k++)d=prevPay(d);return d}
+// Paydays are worked out once and remembered: every bill, row and chart asks for the same few dates.
+// The memo starts over whenever the schedule changes. Callers never change the dates they get back.
+let payMemo=new Map(),paySig='';
+function payCache(){const sig=[payFreq(),S.payday,S.payday2,S.payweekday].join();if(sig!==paySig||payMemo.size>2000){payMemo=new Map();paySig=sig}return payMemo}
+function shiftCycle(start,k){
+  const m=payCache(),key=start.getTime()+'|'+k;let d=m.get(key);
+  if(!d){d=start;for(let j=k;j>0;j--)d=nextPay(d);for(let j=k;j<0;j++)d=prevPay(d);m.set(key,d)}
+  return d;
+}
 // The cycle you're living in. Paid once a month, it switches to the upcoming cycle in the last 16 days
 // before payday so you can plan it; paid more often, it's the current one.
 function cycleStart(){
   const t=new Date();t.setHours(0,0,0,0);
+  const m=payCache(),key='start|'+t.getTime();if(m.has(key))return m.get(key);
+  const v=cycleStartFor(t);m.set(key,v);return v;
+}
+function cycleStartFor(t){
   const p0=prevPay(new Date(t.getFullYear(),t.getMonth(),t.getDate()+1));
   if(payFreq()!=='month')return p0;
   const p1=nextPay(p0);
@@ -216,14 +232,14 @@ const realRate=i=>num(i.rate)*(i.addon?1.65:1);
 function renderAdvice(C){
   const box=$('#advice');
   if(C.gap>0.004){
-    box.innerHTML=`<div class="reco bad"><h3>You're ${peso(C.gap)} short</h3><p class="small">Your salary${C.other?' and other money':''} won't cover every bill this cycle. See the cheapest way to cover it.</p><div><button class="btn" data-goto="borrow">See options</button></div></div>`;
+    box.innerHTML=`<div class="reco bad"><h3>You're ${peso(C.gap)} short</h3><p class="small">Your money won't cover every bill this cycle.</p><div><button class="btn" data-goto="borrow">See options</button></div></div>`;
     return;
   }
   const buffer=Math.max(0,num(S.buffer)),extra=C.surplus-buffer;
-  const bufInput=`<div class="bufrow"><label for="buffer">Keep on hand as a buffer</label><span>₱</span><input id="buffer" type="number" min="0" step="100" value="${num(S.buffer)}"></div>`;
+  const bufInput=`<div class="bufrow"><label for="buffer">Buffer</label><span>₱</span><input id="buffer" type="number" min="0" step="100" value="${num(S.buffer)}"></div>`;
   if(C.surplus<=0.004){box.innerHTML='';return}
   if(extra<=0.004){
-    box.innerHTML=`<div class="reco ok"><h3>All bills covered</h3><p class="small">The ${peso(C.surplus)} left is within your buffer. Keep it for surprises.</p>${bufInput}</div>`;
+    box.innerHTML=`<div class="reco ok"><h3>All bills covered</h3><p class="small">${peso(C.surplus)} left, within your buffer.</p>${bufInput}</div>`;
     return;
   }
   // pay-ahead candidates: next cycle's installments (costliest first), then next cycle's fixed bills
@@ -238,11 +254,11 @@ function renderAdvice(C){
   let pool=extra;const picks=[];
   recs.forEach(r=>{if(pool<=0.004)return;const p=Math.min(pool,r.amt);pool-=p;picks.push({...r,p})});
   box.innerHTML=`<div class="reco ok"><h3>You have ${peso(extra)} extra</h3>
-    <p class="small">Pay these ahead so next cycle starts lighter. Costliest installments come first.</p>
+    <p class="small">Pay these ahead to lighten next cycle.</p>
     <ul>${picks.map(r=>`<li><span>${esc(r.i.name)} <span class="muted small">· due ${fmtD(r.date)} · ${r.why}${r.p<r.amt-0.004?` · part of ${peso(r.amt)}`:''}</span></span><span class="a">${peso(r.p)}</span></li>`).join('')}
     ${pool>0.004?`<li><span>Emergency fund <span class="muted small">· nothing left to pay ahead</span></span><span class="a">${peso(pool)}</span></li>`:''}</ul>
     ${bufInput}
-    <p class="note">Paying an installment early doesn't lower its interest, but it frees up next month so you don't need a new loan.</p></div>`;
+    <p class="note">Paying early frees next month; it doesn't cut interest.</p></div>`;
 }
 function renderTimeline(C){
   $('#cycleLabel').textContent=fmtD(C.start)+' – '+fmtD(C.end)+', '+C.end.getFullYear();
@@ -274,9 +290,9 @@ function itemForm(i){
     ${repeats(i)&&i.once?`<div class="field"><label for="dt${i.id}">Due date</label><input id="dt${i.id}" data-k="date" type="date" value="${esc(i.date||'')}"></div>`
       :`<div class="field"><label for="d${i.id}">Due day</label><input id="d${i.id}" data-k="day" type="number" inputmode="numeric" min="1" max="31" value="${i.day??''}"></div>`}
     ${repeats(i)?`<label class="check wide"><input type="checkbox" id="rp${i.id}" data-k="repeat" ${i.once?'':'checked'}><span>Repeats every month</span></label>
-    ${i.once?'':`<div class="field wide"><label for="u${i.id}">Stops after</label><input id="u${i.id}" data-k="until" type="month" placeholder="YYYY-MM" pattern="[0-9]{4}-[0-9]{2}" value="${esc(i.until||'')}" aria-describedby="uh${i.id}"><span class="hint" id="uh${i.id}">The last month it's due. Leave empty if it never stops.</span></div>`}`:''}
+    ${i.once?'':`<div class="field wide"><label for="u${i.id}">Stops after</label><input id="u${i.id}" data-k="until" type="month" placeholder="YYYY-MM" pattern="[0-9]{4}-[0-9]{2}" value="${esc(i.until||'')}" aria-describedby="uh${i.id}"><span class="hint" id="uh${i.id}">Leave empty if it never stops.</span></div>`}`:''}
     ${i.kind==='loan'?`<div class="field"><label for="l${i.id}">Payments left</label><input id="l${i.id}" data-k="left" type="number" inputmode="numeric" min="0" value="${i.left??''}"></div><div class="field"><label for="t${i.id}">Total payments</label><input id="t${i.id}" data-k="total" type="number" inputmode="numeric" min="0" value="${i.total??''}"></div>`:''}
-    ${i.kind==='card'||i.kind==='loan'?`<div class="field"><label for="f4${i.id}">Last 4 digits</label><input id="f4${i.id}" data-k="last4" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="1234" autocomplete="off" value="${esc(last4Of(i))}"><span class="hint">So BillBuddy bills land on this one.</span></div>`:''}
+    ${i.kind==='card'||i.kind==='loan'?`<div class="field"><label for="f4${i.id}">Last 4 digits</label><input id="f4${i.id}" data-k="last4" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="1234" autocomplete="off" value="${esc(last4Of(i))}"><span class="hint">Matches BillBuddy bills.</span></div>`:''}
     ${i.kind==='card'||i.kind==='loan'?`<div class="field"><label for="r${i.id}">Interest %/month</label><input id="r${i.id}" data-k="rate" type="number" inputmode="decimal" step="0.01" min="0" value="${i.rate??''}"></div>`:''}
     <div class="acts">${delBtn(`data-del="${i.id}"`,"Remove "+(i.name||"this bill"))}<button class="btn" data-done="1">Done</button></div>
   </div>`;
@@ -291,7 +307,7 @@ function itemRow(i,start){
   if(paid)meta.unshift(`<span class="t-ok">Paid · clears in ${Math.max(1,Math.ceil((DAY-(Date.now()-num(i.paidAt)))/3600000))}h</span>`);
   return `<div class="bill${paid?' done':''}"><div><div class="nm">${esc(i.name||'Untitled bill')}</div><div class="mt">${meta.join('')}</div></div>
     <div class="rt">${amt>0?`<span class="amt">${peso(amt)}</span>`:'<span class="pill warn">Add amount</span>'}
-    <div class="bt">${paid?`<button class="ghost" data-unpaid="${i.id}">Undo</button>`:`${editBtn(`data-edit="${i.id}"`,i.name||"bill")}${amt>0?`<button class="paidbtn" data-paid="${i.id}">Paid</button>`:''}`}</div></div></div>`;
+    <div class="bt">${paid?undoBtn(`data-unpaid="${i.id}"`,i.name):`${editBtn(`data-edit="${i.id}"`,i.name||"bill")}${amt>0?paidBtn(`data-paid="${i.id}"`,i.name):''}`}</div></div></div>`;
 }
 function renderItems(){
   ensureCats();
@@ -356,7 +372,7 @@ function renderInst(){
       <div class="loan-h"><div><h3>${esc(i.name)}${last4Of(i)?`<span class="l4">•••• ${esc(last4Of(i))}</span>`:''}</h3><span class="muted small">${i.rate!=null&&i.rate!==''?num(i.rate)+'%'+(i.addon?' add-on':'')+'/mo · ':''}due every ${ord(num(i.day))}</span></div><span class="pay">${peso(pay)}<span class="muted small">/mo</span></span></div>
       ${total?`<div class="bar" role="img" aria-label="${done} of ${total} paid"><i style="width:${Math.round(done/total*100)}%"></i></div>`:''}
       <div class="facts">${total?`<span><b>${done}/${total}</b> paid</span>`:''}<span><b>${left}</b> left</span><span><b>${peso(pay*left)}</b> to go</span><span>Ends <b>${end?MON[end.getMonth()]+' '+end.getFullYear():'—'}</b></span></div>
-      <div class="acts">${isPaid(i)?`<span class="pill ok">Paid this month</span>${!isHiddenPaid(i)?`<button class="ghost" data-iundo="${i.id}">Undo</button>`:''}`:''}${last4Of(i)?'':`<button class="pill warn ask4" data-iedit4="${i.id}">Add last 4</button>`}${editBtn(`data-iedit="${i.id}"`,i.name)}${left>0&&!isPaid(i)?`<button class="paidbtn" data-ipaid="${i.id}">Paid</button>`:''}</div>
+      <div class="acts">${isPaid(i)?`<span class="pill ok">Paid</span>${!isHiddenPaid(i)?undoBtn(`data-iundo="${i.id}"`,i.name):''}`:''}${last4Of(i)?'':`<button class="pill warn ask4" data-iedit4="${i.id}">Add last 4</button>`}${editBtn(`data-iedit="${i.id}"`,i.name)}${left>0&&!isPaid(i)?paidBtn(`data-ipaid="${i.id}"`,i.name):''}</div>
     </div>`;
   }).join('');
   $('#instSum').innerHTML=`<div><span class="label">Per month</span><span class="v">${peso(monthly)}</span></div><div><span class="label">Still to pay</span><span class="v">${peso(remaining)}</span></div><div><span class="label">All done by</span><span class="v">${last?MON[last.getMonth()]+' '+last.getFullYear():'—'}</span></div>`;
@@ -421,8 +437,8 @@ function quote(s,need){
 }
 function renderBorrow(C){
   $('#shortHead').innerHTML=C.gap>0.004
-    ?`<h2>Cover ${peso(C.gap)}</h2><p class="muted small" style="margin-top:4px">What it costs to borrow that from each creditor, cheapest first.</p>`
-    :`<h2>You're not short</h2><p class="muted small" style="margin-top:4px">Your money covers every bill this cycle. Nothing to borrow.</p>`;
+    ?`<h2>Cover ${peso(C.gap)}</h2><p class="muted small" style="margin-top:4px">Cheapest first.</p>`
+    :`<h2>You're not short</h2><p class="muted small" style="margin-top:4px">Every bill is covered.</p>`;
   const need=needOverride!==null?needOverride:Math.max(0,C.gap);
   const list=$('#credList'),box=$('#srcPick');
   if(need<=0.004){list.innerHTML='';box.innerHTML='';return}
@@ -495,7 +511,7 @@ const ucls=p=>p>50?'bad':p>30?'warn':'';
 function acctForm(a){
   return `<div class="form" data-aid="${a.id}">
     <div class="field wide"><label for="an${a.id}">Card name</label><input id="an${a.id}" data-k="name" value="${esc(a.name)}"></div>
-    <div class="field"><label for="a4${a.id}">Last 4 digits</label><input id="a4${a.id}" data-k="last4" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="1234" autocomplete="off" value="${esc(a.last4||'')}"><span class="hint">So BillBuddy bills land on this one.</span></div>
+    <div class="field"><label for="a4${a.id}">Last 4 digits</label><input id="a4${a.id}" data-k="last4" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="1234" autocomplete="off" value="${esc(a.last4||'')}"><span class="hint">Matches BillBuddy bills.</span></div>
     <div class="field"><label for="al${a.id}">Credit limit (₱)</label><input id="al${a.id}" data-k="limit" type="number" min="0" step="0.01" value="${a.limit??''}"></div>
     <div class="field"><label for="as${a.id}">Statement day</label><input id="as${a.id}" data-k="stmt" type="number" min="1" max="31" value="${a.stmt??''}"></div>
     <div class="field"><label for="ad${a.id}">Payment due day</label><input id="ad${a.id}" data-k="due" type="number" min="1" max="31" value="${billOf(a)?.day??''}"></div>
@@ -528,18 +544,30 @@ function renderAccounts(){
 }
 
 // ---------- render ----------
-function render(){
-  const C=compute();
-  renderStatus(C);renderAdvice(C);renderTimeline(C);renderInst();renderBorrow(C);renderAhead(C);if(acctEditing==null)renderAccounts();
-}
-function renderAll(){renderItems();renderIncome();renderSrcList();render()}
+// Only the open tab is redrawn as you type; the others are marked and redrawn when you open them.
+const JOBS={
+  cycle:C=>{renderAdvice(C);renderTimeline(C)}, inst:()=>renderInst(), borrow:C=>renderBorrow(C), ahead:C=>renderAhead(C),
+  acct:()=>{if(acctEditing==null)renderAccounts()}, bills:()=>renderItems(), money:()=>renderIncome(), src:()=>renderSrcList()
+};
+const JOB_PANEL={src:'borrow'};
+const stale=new Set();
+const shown=job=>!$('#panel-'+(JOB_PANEL[job]||job)).hidden;
+function runJobs(jobs,C){jobs.forEach(j=>{if(shown(j)){stale.delete(j);JOBS[j](C||compute())}else stale.add(j)})}
+function render(){const C=compute();renderStatus(C);runJobs(['cycle','inst','borrow','ahead','acct'],C)}
+function renderAll(){runJobs(['bills','money','src']);render()}
+function flushStale(){if(!stale.size)return;const C=compute();[...stale].forEach(j=>{if(shown(j)){stale.delete(j);JOBS[j](C)}})}
+window.addEventListener('beforeprint',()=>{const C=compute();Object.keys(JOBS).forEach(j=>JOBS[j](C));stale.clear()});
 const commit=()=>{save();render()};
 
 // ---------- events ----------
 ['salary','payday','payday2','payweekday'].forEach(k=>{$('#'+k).addEventListener('input',e=>{S[k]=e.target.value===''?(k==='salary'?0:null):num(e.target.value);save();if(k==='salary')render();else renderAll()})});
 $('#payfreq').addEventListener('change',e=>{
-  S.payfreq=e.target.value;
-  if(S.payfreq==='twice'&&!num(S.payday2)){S.payday=15;S.payday2=30} // the usual cutoffs, to change as needed
+  const was=payFreq();S.payfreq=e.target.value;
+  // monthly and twice-a-month share the payday box: each keeps its own day, so switching back restores it
+  if(was==='month')S.paydayMonth=S.payday;
+  if(was==='twice')S.paydayTwice=S.payday;
+  if(S.payfreq==='month'&&S.paydayMonth!=null)S.payday=S.paydayMonth;
+  if(S.payfreq==='twice'){S.payday=S.paydayTwice??15;if(!num(S.payday2))S.payday2=30} // the usual cutoffs, to change as needed
   if(S.payfreq==='week'&&S.payweekday==null)S.payweekday=5;
   save();syncInputs();renderAll();
 });
@@ -668,6 +696,7 @@ function selectTab(name){
   document.querySelectorAll('.tab').forEach(x=>{const on=x.dataset.tab===name;x.setAttribute('aria-selected',on);x.tabIndex=on?0:-1;
     if(on&&x.parentElement.scrollWidth>x.parentElement.clientWidth)x.parentElement.scrollTo({left:x.offsetLeft-x.parentElement.clientWidth/2+x.offsetWidth/2,behavior:'smooth'})});
   document.querySelectorAll('[data-panel]').forEach(p=>p.hidden=p.dataset.panel!==name);
+  flushStale();
   // when the tab bar is stuck to the top, bring the new panel's start into view
   const bar=$('.tabs'),top=bar.getBoundingClientRect().top;
   if(top<=parseFloat(getComputedStyle(bar).top)+1)bar.parentElement.scrollIntoView({block:'start'});
@@ -813,7 +842,7 @@ const aiConf=()=>S.ai||{};
 const aiModel=()=>AI_PRICE[aiConf().model]?aiConf().model:'claude-opus-5-5';
 const aiState=(cls,txt)=>{const el=$('#aiState');el.className='sync '+cls;el.textContent=txt};
 function fillAI(){const c=aiConf();$('#aiKey').value=c.key||'';$('#aiModel').value=aiModel();aiState(c.key?'ok':'off',c.key?'Ready':'Not connected');aiNote()}
-function aiNote(){$('#aiNote').textContent=aiConf().key?'Then asks '+$('#aiModel').selectedOptions[0].text.split(' –')[0]:'Add an AI key in the API tab for an explanation'}
+function aiNote(){$('#aiNote').textContent=aiConf().key?'Then asks '+$('#aiModel').selectedOptions[0].text.split(' –')[0]:'Add a key in API for AI advice'}
 $('#aiKey').addEventListener('change',()=>{const key=$('#aiKey').value.trim();if(key)S.ai={...aiConf(),key,model:aiModel()};else delete S.ai;save();fillAI()});
 $('#aiModel').addEventListener('change',()=>{S.ai={...aiConf(),model:$('#aiModel').value};save();aiNote()});
 $('#aiClear').addEventListener('click',()=>{delete S.ai;save();fillAI()});
@@ -860,13 +889,13 @@ function renderLoanCheck(R){
   const [cls,word]=VERDICT[R.verdict],f=R.f,per=f.type==='inst'?R.plan[0].amt:R.total;
   return `<div class="reco ${cls==='bad'?'bad':'ok'} aiv"><div class="aiv-h"><span class="pill ${cls}">${word}</span><span class="muted small">Planner's check</span></div>
     <h3>${f.type==='inst'?`${peso(per)} a month for ${f.term} month${f.term===1?'':'s'}`:`Pay back ${peso(R.total)} on ${fmtD(f.due)}`}</h3>
-    <ul><li><span>Interest and fees</span><span class="a">${peso(R.interest)}</span></li>
-      ${R.eff!=null?`<li><span>Real cost per month</span><span class="a">${R.eff.toFixed(2)}%</span></li>`:''}
-      <li><span>Tightest pay cycle${isFinite(R.worst.after)?' ('+fmtD(R.worst.start)+')':''}</span><span class="a">${isFinite(R.worst.after)?peso(R.worst.after)+' left':'—'}</span></li>
-      <li><span>Most you can safely borrow on these terms</span><span class="a"><b>${peso(R.safe)}</b></span></li></ul>
-    <p class="note">"Safely" keeps every pay cycle at least ${peso(R.buffer)} ahead (your buffer, set on This cycle). It counts this cycle's card bills again in later cycles as an estimate, and assumes the borrowed money is spent on what it's for.${R.shortNow?' You are already short this cycle before this loan.':''}</p>
-    <details class="paidlist"><summary>Pay cycle by pay cycle</summary><div class="cyc">${R.rows.map(x=>`<div class="cycrow${x.after<0?' neg':''}"><span>${fmtD(x.start)} – ${fmtD(x.end)}</span><span class="num">${peso(x.before)}${x.pay?` − ${peso(x.pay)}`:''}</span><span class="num">${peso(x.after)}</span></div>`).join('')}</div>
-    <p class="note">Left after bills, minus this loan's payment, then what's left.</p></details></div>`;
+    <ul><li><span>Interest</span><span class="a">${peso(R.interest)}</span></li>
+      ${R.eff!=null?`<li><span>Real rate /mo</span><span class="a">${R.eff.toFixed(2)}%</span></li>`:''}
+      <li><span>Tightest cycle${isFinite(R.worst.after)?' ('+fmtD(R.worst.start)+')':''}</span><span class="a">${isFinite(R.worst.after)?peso(R.worst.after)+' left':'—'}</span></li>
+      <li><span>Safe to borrow</span><span class="a"><b>${peso(R.safe)}</b></span></li></ul>
+    <p class="note">Safe = every cycle keeps your ${peso(R.buffer)} buffer. Card bills are estimated from this cycle.${R.shortNow?' You\'re already short this cycle.':''}</p>
+    <details class="paidlist"><summary>By pay cycle</summary><div class="cyc">${R.rows.map(x=>`<div class="cycrow${x.after<0?' neg':''}"><span>${fmtD(x.start)} – ${fmtD(x.end)}</span><span class="num">${peso(x.before)}${x.pay?` − ${peso(x.pay)}`:''}</span><span class="num">${peso(x.after)}</span></div>`).join('')}</div>
+    <p class="note">After bills − loan = left</p></details></div>`;
 }
 
 // ---------- asking Claude ----------
@@ -937,8 +966,8 @@ $('#aiForm').addEventListener('submit',async e=>{
     const [cls,word]=VERDICT[a.verdict]||VERDICT.careful;
     $('#aiAns').innerHTML=`<div class="aiv-h"><span class="pill ${cls}">${word}</span><span class="muted small">Claude's view</span></div>
       <p class="aih">${esc(a.headline)}</p>${a.reasons.length?`<ul>${a.reasons.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
-      ${a.tips.length?`<p class="label">What you could do</p><ul>${a.tips.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
-      <p class="note">${model} · this answer cost about $${cost<0.001?cost.toFixed(5):cost.toFixed(3)}</p>`;
+      ${a.tips.length?`<p class="label">Tips</p><ul>${a.tips.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
+      <p class="note">${model} · cost ~$${cost<0.001?cost.toFixed(5):cost.toFixed(3)}</p>`;
   }catch(err){if(run===aiRun)$('#aiAns').innerHTML=`<p class="t-bad small">${aiError(err)}</p>`}
   finally{btn.disabled=false}
 });

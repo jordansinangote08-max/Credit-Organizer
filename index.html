@@ -15,22 +15,22 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=23">
-<script src="config.js?v=23" defer></script>
+<link rel="stylesheet" href="styles.css?v=24">
+<script src="config.js?v=24" defer></script>
 <script src="vendor/supabase-2.116.0.js" defer></script>
-<script src="app.js?v=23" defer></script>
+<script src="app.js?v=24" defer></script>
 </head>
 <body class="locked">
 <div class="app">
   <aside class="side">
     <header>
       <h1>Paycheck and Debt Planner</h1>
-      <div class="acctbar"><p id="syncState" class="sync">Loading…</p><span id="authWho" class="muted small"></span><button class="ghost sm" id="authBtn" hidden>Sign out</button></div>
+      <div class="acctbar"><p id="syncState" class="sync">Loading…</p><span id="authWho" class="muted small"></span><button class="ghost sm ib" id="authBtn" aria-label="Sign out" title="Sign out" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 012 2v12a2 2 0 01-2 2h-3"/><path d="M10 17l5-5-5-5"/><path d="M15 12H4"/></svg></button></div>
     </header>
     <form id="authForm" class="authform" hidden>
       <label class="label" for="authEmail">Sign in to open your planner</label>
       <div class="row"><input id="authEmail" type="email" autocomplete="email" inputmode="email" required placeholder="you@example.com"><button class="btn" id="authSend">Send link</button></div>
-      <p class="muted small" id="authMsg">We'll email you a sign-in link. Your planner is saved in your account and opens on any device.</p>
+      <p class="muted small" id="authMsg">We'll email you a sign-in link.</p>
     </form>
 
     <section class="hero" aria-label="This pay cycle">
@@ -56,9 +56,9 @@
       <button class="tab" role="tab" id="tab-bills" aria-controls="panel-bills" data-tab="bills" aria-selected="false" tabindex="-1">Bills</button>
       <button class="tab" role="tab" id="tab-inst" aria-controls="panel-inst" data-tab="inst" aria-selected="false" tabindex="-1">Installments</button>
       <button class="tab" role="tab" id="tab-acct" aria-controls="panel-acct" data-tab="acct" aria-selected="false" tabindex="-1">Accounts</button>
-      <button class="tab" role="tab" id="tab-money" aria-controls="panel-money" data-tab="money" aria-selected="false" tabindex="-1">Other money</button>
-      <button class="tab" role="tab" id="tab-borrow" aria-controls="panel-borrow" data-tab="borrow" aria-selected="false" tabindex="-1">If short</button>
-      <button class="tab" role="tab" id="tab-ahead" aria-controls="panel-ahead" data-tab="ahead" aria-selected="false" tabindex="-1">Plan ahead</button>
+      <button class="tab" role="tab" id="tab-money" aria-controls="panel-money" data-tab="money" aria-selected="false" tabindex="-1">Income</button>
+      <button class="tab" role="tab" id="tab-borrow" aria-controls="panel-borrow" data-tab="borrow" aria-selected="false" tabindex="-1">Borrow</button>
+      <button class="tab" role="tab" id="tab-ahead" aria-controls="panel-ahead" data-tab="ahead" aria-selected="false" tabindex="-1">Plan</button>
       <button class="tab" role="tab" id="tab-ai" aria-controls="panel-ai" data-tab="ai" aria-selected="false" tabindex="-1">AI</button>
       <button class="tab" role="tab" id="tab-bbsync" aria-controls="panel-bbsync" data-tab="bbsync" aria-selected="false" tabindex="-1">API</button>
     </nav>
@@ -73,9 +73,8 @@
 
     <section class="panel" role="tabpanel" id="panel-bills" aria-labelledby="tab-bills" data-panel="bills" hidden>
       <div class="sec">
-        <div class="sec-h"><h2>Bills</h2><div class="row"><button class="ghost" id="catBtn">Categories</button><button class="ghost" id="resetBtn">Reset</button></div></div>
-        <p class="muted small">All paid in full, on time.</p>
-        <div id="resetConfirm" class="reco bad" hidden><p class="small">This erases all your changes and restores the starting bills and categories.</p><div class="row"><button class="btn" id="resetYes">Yes, reset</button><button class="ghost" id="resetNo">Cancel</button></div></div>
+        <div class="sec-h"><h2>Bills</h2><div class="row"><button class="ghost ib" id="catBtn" aria-label="Categories" title="Categories"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg></button><button class="ghost ib" id="resetBtn" aria-label="Reset to starting bills" title="Reset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 109-9 9.3 9.3 0 00-6.4 2.6L3 8"/><path d="M3 3v5h5"/></svg></button></div></div>
+        <div id="resetConfirm" class="reco bad" hidden><p class="small">Erase your changes and restore the starting bills and categories?</p><div class="row"><button class="btn" id="resetYes">Yes, reset</button><button class="ghost" id="resetNo">Cancel</button></div></div>
         <div id="itemList"></div>
         <button class="add" id="addBtn">+ Add bill</button>
       </div>
@@ -93,19 +92,19 @@
 
     <section class="panel" role="tabpanel" id="panel-acct" aria-labelledby="tab-acct" data-panel="acct" hidden>
       <div class="sec">
-        <div><h2>Credit cards</h2><p class="muted small lead">Your cards, limits and statement dates. Keep each card's usage under 30% of its limit to protect your credit score.</p></div>
+        <div><h2>Credit cards</h2><p class="muted small lead">Keep each card under 30% of its limit.</p></div>
         <div class="sumrow" id="acctSum"></div>
       </div>
       <div class="sec">
         <div id="acctList"></div>
         <button class="add" id="acctAdd">+ Add card</button>
-        <p class="muted small">Only ever save the last 4 digits. Never type your full card number, CVV or PIN here.</p>
+        <p class="muted small">Last 4 digits only. Never your full number, CVV or PIN.</p>
       </div>
     </section>
 
     <section class="panel" role="tabpanel" id="panel-money" aria-labelledby="tab-money" data-panel="money" hidden>
       <div class="sec">
-        <div><h2>Other money</h2><p class="muted small lead">Side income, refunds, bonuses, money someone owes you. Set the date it arrives; it only counts in the pay cycle that date falls in.</p></div>
+        <div><h2>Other money</h2><p class="muted small lead">Side income, refunds, bonuses. Counts in the cycle it arrives.</p></div>
         <div class="sumrow" id="incSum"></div>
       </div>
       <div class="sec">
@@ -138,7 +137,7 @@
 
     <section class="panel" role="tabpanel" id="panel-ahead" aria-labelledby="tab-ahead" data-panel="ahead" hidden>
       <div class="sec">
-        <div><h2>When your salary frees up</h2><p class="muted small lead">Installments and fixed bills only, based on payments left.</p></div>
+        <div><h2>When money frees up</h2><p class="muted small lead">Installments and fixed bills, by pay cycle.</p></div>
         <div class="legend"><span><i class="k-loan"></i>Installments</span><span><i class="k-fixed"></i>Rent and bills</span><span><i class="k-free"></i>Free for cards and savings</span></div>
         <div id="monthList"></div>
       </div>
@@ -146,15 +145,15 @@
 
     <section class="panel" role="tabpanel" id="panel-ai" aria-labelledby="tab-ai" data-panel="ai" hidden>
       <div class="sec">
-        <div><h2>Should I take this loan?</h2><p class="muted small lead">Checks a loan against your salary, paydays, bills, installments, cards and other money, pay cycle by pay cycle.</p></div>
+        <div><h2>Should I take this loan?</h2><p class="muted small lead">Checks a loan against every payday and bill.</p></div>
         <form class="form flat" id="aiForm" novalidate>
-          <div class="field"><label for="aiAmt">Amount to borrow (₱)</label><input id="aiAmt" type="number" inputmode="decimal" min="0" step="0.01" placeholder="10000" required></div>
-          <div class="field"><label for="aiType">How you pay it back</label><select id="aiType"><option value="inst">Installments</option><option value="once">One-time payment</option></select></div>
+          <div class="field"><label for="aiAmt">Amount (₱)</label><input id="aiAmt" type="number" inputmode="decimal" min="0" step="0.01" placeholder="10000" required></div>
+          <div class="field"><label for="aiType">Pay back</label><select id="aiType"><option value="inst">Installments</option><option value="once">One-time</option></select></div>
           <div class="field" id="aiTermF"><label for="aiTerm">Months</label><input id="aiTerm" type="number" inputmode="numeric" min="1" max="60" placeholder="6"></div>
           <div class="field"><label for="aiRate" id="aiRateL">Interest %/month</label><input id="aiRate" type="number" inputmode="decimal" min="0" step="0.01" placeholder="2.5"></div>
           <div class="field" id="aiAddonF"><label for="aiAddon">Rate type</label><select id="aiAddon"><option value="1">Add-on (flat)</option><option value="0">Diminishing</option></select></div>
           <div class="field"><label for="aiDue" id="aiDueL">First due date</label><input id="aiDue" type="date"></div>
-          <div class="field wide"><label for="aiWhy">What it's for <span class="muted">(optional)</span></label><input id="aiWhy" maxlength="120" placeholder="e.g. to cover this cycle's shortfall"></div>
+          <div class="field wide"><label for="aiWhy">For <span class="muted">(optional)</span></label><input id="aiWhy" maxlength="120" placeholder="e.g. this cycle's shortfall"></div>
           <div class="acts"><span class="muted small" id="aiNote"></span><button class="btn" id="aiGo">Check</button></div>
         </form>
         <div id="aiOut" aria-live="polite"></div>
@@ -163,28 +162,28 @@
 
     <section class="panel" role="tabpanel" id="panel-bbsync" aria-labelledby="tab-bbsync" data-panel="bbsync" hidden>
       <div class="sec">
-        <div><h2>BillBuddy</h2><p class="muted small lead">Fills your credit card amounts and due dates from BillBuddy, every minute. Cards are matched by their last 4 digits, then by bank name.</p></div>
+        <div><h2>BillBuddy</h2><p class="muted small lead">Syncs card bills every minute, matched by last 4 digits.</p></div>
         <div class="form flat">
           <div class="field wide"><label for="bbUrl">BillBuddy API link</label><input id="bbUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://your-billbuddy.vercel.app/api/bills"></div>
           <div class="field wide"><label for="bbKey">API key</label><input id="bbKey" type="password" autocomplete="off" spellcheck="false" placeholder="BILLS_API_KEY"></div>
-          <div class="acts"><button class="danger" id="bbClear">Disconnect</button></div>
+          <div class="acts"><button class="danger ib" id="bbClear" aria-label="Disconnect BillBuddy" title="Disconnect"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13.5a4 4 0 005.6 0l2.9-2.9a4 4 0 00-5.6-5.6l-1.1 1.1"/><path d="M14 10.5a4 4 0 00-5.6 0l-2.9 2.9a4 4 0 005.6 5.6l1.1-1.1"/><path d="M4 4l16 16"/></svg></button></div>
         </div>
         <span class="sync" id="bbState">Not connected</span>
-        <p class="muted small">The link and key are saved privately in your account, so every device you sign in on syncs with BillBuddy.</p>
+        <p class="muted small">Saved privately in your account.</p>
       </div>
       <div class="sec">
-        <div><h2>AI (Claude)</h2><p class="muted small lead">Powers the AI tab. Paste an API key from console.anthropic.com. The planner does the maths itself; the AI only reads a short summary of it, so each question costs very little.</p></div>
+        <div><h2>AI (Claude)</h2><p class="muted small lead">Key from console.anthropic.com. The planner does the maths; the AI only explains it, so it costs little.</p></div>
         <div class="form flat">
           <div class="field wide"><label for="aiKey">Anthropic API key</label><input id="aiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…"></div>
           <div class="field wide"><label for="aiModel">Model</label><select id="aiModel">
-            <option value="claude-opus-5-5">Claude Opus 5.5 – most careful (about $0.02 a question)</option>
-            <option value="claude-sonnet-5-5">Claude Sonnet 5.5 – balanced (about $0.01)</option>
-            <option value="claude-haiku-5-5">Claude Haiku 5.5 – cheapest (well under $0.01)</option>
+            <option value="claude-opus-5-5">Opus 5.5 · most careful · ~$0.02</option>
+            <option value="claude-sonnet-5-5">Sonnet 5.5 · balanced · ~$0.01</option>
+            <option value="claude-haiku-5-5">Haiku 5.5 · cheapest · &lt;$0.01</option>
           </select></div>
-          <div class="acts"><button class="danger" id="aiClear">Disconnect</button></div>
+          <div class="acts"><button class="danger ib" id="aiClear" aria-label="Remove AI key" title="Remove key"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13.5a4 4 0 005.6 0l2.9-2.9a4 4 0 00-5.6-5.6l-1.1 1.1"/><path d="M14 10.5a4 4 0 00-5.6 0l-2.9 2.9a4 4 0 005.6 5.6l1.1-1.1"/><path d="M4 4l16 16"/></svg></button></div>
         </div>
         <span class="sync" id="aiState">Not connected</span>
-        <p class="muted small">The key is saved privately in your account and used straight from this device, so set a monthly spend limit for it in the Anthropic Console. Asking sends your bill names and amounts to Anthropic; card digits and your email are never sent.</p>
+        <p class="muted small">Set a spend limit in the Anthropic Console. Bill names and amounts go to Anthropic; card digits and email never do.</p>
       </div>
     </section>
   </main>
