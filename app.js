@@ -848,12 +848,18 @@ async function syncBillBuddy(){
     const j=await r.json();if(!j.ok)throw new Error(j.error||'BillBuddy returned an error');bills=j.bills||[];
   }catch(e){console.warn('BillBuddy sync failed',e);bbState('off','Could not reach BillBuddy. Check the link.');return}
   finally{bbBusy=false;if(bbAgain){bbAgain=false;setTimeout(syncBillBuddy,0)}}
+  bbLast=bills;applyBB(bills);
+}
+let bbLast=[];
+function applyBB(bills){
   let changed=false;const claimed=new Set();
   bills.forEach(b=>{
     const bank=squash(b.bank),due=parseD(b.due_date),amt=num(b.amount);
     if(!bank||!due||!(amt>0))return;
     const kind=bbKind(b),l4=String(b.last4||'').replace(/\D/g,'').slice(-4),key=b.account_key||null;
-    const ofBank=i=>squash(i.name).includes(bank),free=i=>!i.inCard&&!claimed.has(i)&&(!i.bbKey||i.bbKey===key);
+    // a statement of several loans you already track (UnionBank Loan A and B on one bill) goes to each of them
+    if(kind==='loan'){const r=splitLoan(b,due,key,l4);if(r){if(r.ch)changed=true;return}}
+    const ofBank=i=>squash(i.name).includes(bank),free=i=>!i.inCard&&!i.bbInst&&!claimed.has(i)&&(!i.bbKey||i.bbKey===key);
     // same account as last time, then same last 4 digits (same type first, then any), then same bank and type
     // (several loans at one bank: the one with this amount, then this due day)
     let it=(key&&S.items.find(i=>i.bbKey===key&&!claimed.has(i)))
@@ -904,17 +910,26 @@ async function syncBillBuddy(){
     if(bills.some(b=>bbTyped(b)&&bbKind(b)!==i.kind&&squash(i.name).includes(squash(b.bank))&&near(i.amount,b.amount))){removeItem(i);changed=true}
   });
   if(changed){ensureLinks();save();if(editingId==null)renderItems();render()}
-  aiSortBills();
+  aiSortBills();aiPlacePlans();
   const t=new Date();
   bbState('ok',`Synced ${bills.length} bill${bills.length===1?'':'s'} at ${t.getHours()%12||12}:${String(t.getMinutes()).padStart(2,'0')} ${t.getHours()<12?'AM':'PM'}`);
 }
 // What a BillBuddy bill brings besides its amount and due date. A card fills in its account's credit limit and
 // statement day when those are empty, and the installment plans its statement lists become installments
-// filed under the card (part of the card's bill, so they never count twice). A loan's breakdown sets its
-// payments left and total. Returns true when anything changed.
+// filed under the card (part of the card's bill, so they never count twice). A plan that is an installment
+// you already entered yourself is moved under the card instead of added again (see planHome). A loan's
+// breakdown sets its payments left and total. Returns true when anything changed.
+// BillBuddy sends each plan as payment `term` of `of` for `amount` (newer feeds repeat these as paid_count,
+// term_count, monthly_amount and description); a plan whose term the statement cut off is skipped.
+const bbPlans=b=>(Array.isArray(b.installments)?b.installments:[]).map(x=>({desc:String(x.description||x.label||'Installment'),
+  paid:Math.round(num(x.paid_count??x.term)),total:Math.round(num(x.term_count??x.of)),amt:Math.round(num(x.monthly_amount??x.amount)*100)/100}))
+  .filter(x=>x.amt>0&&x.total>=2&&x.paid>=1&&x.paid<=x.total);
+const planName=x=>x.desc.toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());
+// payments left counting this statement's, unless it is already paid
+const planLeft=(x,paidNow)=>Math.max(0,x.total-x.paid+(paidNow?0:1));
 function adoptBB(it,b,due){
   let ch=false;const set=(o,k,v)=>{if(v!=null&&o[k]!==v){o[k]=v;ch=true}};
-  const plans=(Array.isArray(b.installments)?b.installments:[]).filter(x=>num(x.monthly_amount)>0&&num(x.term_count)>=2&&num(x.paid_count)>=1&&num(x.paid_count)<=num(x.term_count));
+  const plans=bbPlans(b);
   const paidNow=isPaid(it)||it.bbPaidDue===b.due_date; // this statement is already paid
   if(it.kind==='card'){
     const a=acctOf(it);if(!a)return ch;
@@ -923,23 +938,101 @@ function adoptBB(it,b,due){
     if(!Array.isArray(b.installments))return ch;    // an older feed: leave the card's installments alone
     const seen=new Set();
     plans.forEach(x=>{
-      const total=Math.round(num(x.term_count)),k=a.key+'|'+squash(x.description)+'|'+total,left=total-Math.round(num(x.paid_count))+(paidNow?0:1);
+      const k=a.key+'|'+squash(x.desc)+'|'+x.total;
       seen.add(k);
-      let i=S.items.find(y=>y.inCard===a.key&&y.bbInst===k);
-      if(!i){const nm=String(x.description||'Installment').toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());
-        i={id:uid++,name:nm,kind:'loan',inCard:a.key,bbInst:k,amount:null,day:due.getDate(),left:null,total:null,rate:null};S.items.push(i);ch=true}
-      set(i,'amount',Math.round(num(x.monthly_amount)*100)/100);set(i,'day',due.getDate());set(i,'total',total);set(i,'left',Math.max(0,left));
+      let i=S.items.find(y=>y.bbInst===k);
+      if(!i){const home=planHome(k,x,b,null);if(home==='wait')return;   // the AI is being asked where it goes
+        if(home){i=home;i.bbInst=k}
+        else{i={id:uid++,name:planName(x),kind:'loan',inCard:a.key,bbInst:k,amount:null,day:due.getDate(),left:null,total:null,rate:null};S.items.push(i)}
+        ch=true}
+      set(i,'inCard',a.key);set(i,'amount',x.amt);set(i,'day',due.getDate());set(i,'total',x.total);set(i,'left',planLeft(x,paidNow));
     });
     // a plan the newest statement no longer lists after its last payment is finished
     const before=S.items.length;
     S.items=S.items.filter(i=>!(i.inCard===a.key&&i.bbInst&&!seen.has(i.bbInst)&&num(i.left)<=1));
     if(S.items.length!==before)ch=true;
   }else if(it.kind==='loan'&&plans.length){
-    const x=plans.length===1?plans[0]:plans.find(y=>near(y.monthly_amount,b.amount)||near(y.monthly_amount,it.amount));
-    if(x){const total=Math.round(num(x.term_count));set(it,'total',total);set(it,'left',Math.max(0,total-Math.round(num(x.paid_count))+(paidNow?0:1)))}
+    const x=plans.length===1?plans[0]:plans.find(y=>near(y.amt,b.amount)||near(y.amt,it.amount));
+    if(x){set(it,'total',x.total);set(it,'left',planLeft(x,paidNow))}
   }
   return ch;
 }
+// A loan statement that lists several plans, where some are installments you entered yourself: each plan
+// goes to its own installment (yours, or a new one under the bank) and the statement's single bill is dropped,
+// so nothing counts twice. Returns null to treat the statement as one bill, as before.
+function splitLoan(b,due,key,l4){
+  const plans=bbPlans(b),sk='L'+(key||squash(b.bank)),split=S.bbSplit&&S.bbSplit[sk];
+  if(!split&&plans.length<2)return null;
+  if(!plans.length)return {ch:false};          // split before, and this statement shows no plans: leave them
+  const auto=b.bank+BB_SUFFIX.loan,bill=key&&S.items.find(i=>i.bbKey===key&&!i.bbInst);
+  // the bill an earlier sync filed this statement under is one of the candidates, unless the sync made it
+  const own=bill&&bill.name!==auto?bill:null;
+  let wait=false;
+  const homes=plans.map(x=>{const k=sk+'|'+squash(x.desc)+'|'+x.total;
+    let y=S.items.find(i=>i.bbInst===k);
+    if(!y&&!split){const h=planHome(k,x,b,own);if(h==='wait')wait=true;else if(h){y=h;y.bbInst=k}}
+    return [x,k,y]});
+  if(wait)return {ch:false};                   // decided once the AI answers; the bill stays as it is until then
+  if(!split&&!homes.some(h=>h[2]))return null; // none of them is an installment you have: one bill, as before
+  S.bbSplit={...(S.bbSplit||{}),[sk]:1};
+  let ch=!split;
+  if(bill){if(bill.bbInst||own){delete bill.bbKey;delete bill.bbDue;delete bill.bbPaidDue}else removeItem(bill);ch=true}
+  const set=(o,k,v)=>{if(v!=null&&o[k]!==v){o[k]=v;ch=true}},seen=new Set();
+  homes.forEach(([x,k,y])=>{seen.add(k);
+    if(!y){y={id:uid++,name:b.bank+' '+planName(x),kind:'loan',lender:auto,bbInst:k,amount:null,day:null,left:null,total:null,rate:null};S.items.push(y);ch=true}
+    if(isPaid(y)&&y.bbPaidDue!==b.due_date){y.bbPaidDue=b.due_date;ch=true}
+    set(y,'amount',x.amt);set(y,'day',due.getDate());set(y,'total',x.total);set(y,'left',planLeft(x,isPaid(y)||y.bbPaidDue===b.due_date));
+    if(l4&&!y.bbLast4)set(y,'bbLast4',l4);
+  });
+  const before=S.items.length;
+  S.items=S.items.filter(i=>!(i.bbInst&&i.bbInst.startsWith(sk+'|')&&!seen.has(i.bbInst)&&num(i.left)<=1));
+  if(S.items.length!==before)ch=true;
+  return {ch};
+}
+// Where a plan on a statement belongs. Usually it's new (null: under the card, or the loan itself). But you may
+// have entered that purchase or loan yourself, and then adding it again would count it twice. Installments
+// you entered that could be it (a word of its name or bank in common, or about the same monthly amount):
+// none, it's new; exactly one with the same amount to the centavo, it's that one; otherwise the AI decides,
+// once per plan, all plans in one small request ('wait' until it answers). Without AI it's new.
+const PLAN_STOP=new Set(['installment','instalment','instl','inst','loan','loans','personal','payment','amortization','bank','card','credit','plan','the','and','for']);
+const planWords=t=>String(t||'').toLowerCase().split(/[^a-z0-9]+/).filter(w=>w.length>=3&&!/^\d+$/.test(w)&&!PLAN_STOP.has(w));
+const placeQ=[],placeBusy=new Set(),placeTried=new Set();
+function planCands(x,b,extra){
+  const ws=new Set([...planWords(x.desc),...planWords(b.bank)]);
+  return S.items.filter(y=>y.kind==='loan'&&!y.inCard&&!y.bbInst&&(y===extra||!y.bbKey)
+    &&(Math.abs(num(y.amount)-x.amt)<=Math.max(1,x.amt*0.03)||planWords(y.name+' '+(y.lender||'')).some(w=>ws.has(w))));
+}
+function planHome(k,x,b,extra){
+  if(S.bbHome&&S.bbHome[k])return null;
+  if(placeBusy.has(k))return 'wait';
+  const c=planCands(x,b,extra);if(!c.length)return null;
+  const exact=c.filter(y=>near(y.amount,x.amt));if(exact.length===1)return exact[0];
+  if(S.aiSortOff||!aiReady()||placeTried.has(k))return null;
+  if(!placeQ.some(q=>q.k===k))placeQ.push({k,x,c,on:b.bank+' '+String(b.category||b.type||'').replace(/_/g,' ')+(b.last4?' ••••'+b.last4:'')});
+  return 'wait';
+}
+async function aiPlacePlans(){
+  const q=placeQ.splice(0);if(!q.length)return;
+  q.forEach(p=>placeBusy.add(p.k));
+  const cands=[...new Set(q.flatMap(p=>p.c))],r2=v=>Math.round(num(v)*100)/100;
+  const user='Statement plans:\n'+JSON.stringify(q.map((p,n)=>({plan:'p'+n,statement:p.on,description:p.x.desc,monthly:p.x.amt,payment:p.x.paid+' of '+p.x.total,could_be:p.c.map(y=>'i'+y.id)})))
+    +'\nInstallments in the planner:\n'+JSON.stringify(cands.map(y=>({id:'i'+y.id,name:y.name,lender:lenderName(y),monthly:r2(y.amount),payments_left:y.left??null,total_payments:y.total??null})));
+  let r=null;
+  try{r=await aiAsk({name:'plan_place',purpose:'place',light:true,system:PLACE_SYSTEM,schema:PLACE_SCHEMA,check:checkPlace,priority:'low',out:60+40*q.length,user})}
+  catch(e){console.warn('AI placing skipped:',e.kind||e.message)}
+  q.forEach(p=>{placeBusy.delete(p.k);placeTried.add(p.k)});
+  if(!r)return applyBB(bbLast);                // no answer: each plan is placed as new
+  q.forEach((p,n)=>{const home=(r.a.find(x=>x.plan==='p'+n)||{}).home,y=p.c.find(c=>'i'+c.id===home);
+    if(y&&!y.bbInst&&!S.items.some(z=>z.bbInst===p.k))y.bbInst=p.k;else S.bbHome={...(S.bbHome||{}),[p.k]:'new'}});
+  save();applyBB(bbLast);
+}
+const PLACE_SYSTEM=`A credit card or loan statement from a bank in the Philippines lists installment plans that are part of its total.
+For each plan, decide if it is one of the installments the user already entered in their planner: the same purchase or loan, so a similar name or lender, about the same monthly amount, and payments left that fit.
+home: that installment's id, only from the plan's could_be list and never the same id for two plans; or "new" when it is none of them or you are unsure.
+Return every plan you were given, once.`;
+const PLACE_SCHEMA={type:'object',additionalProperties:false,required:['placed'],properties:{placed:{type:'array',items:{type:'object',additionalProperties:false,required:['plan','home'],
+  properties:{plan:{type:'string'},home:{type:'string'}}}}}};
+const checkPlace=a=>a&&Array.isArray(a.placed)?a.placed.filter(x=>x&&typeof x.plan==='string'&&typeof x.home==='string'):null;
 // The one place the AI helps with BillBuddy: a bill it couldn't type ("other") is sorted into the right kind.
 // Only new unclear bills are sent, all in one small request, each at most once; it keeps to the daily budget.
 const aiSortTried=new Set();
@@ -950,7 +1043,7 @@ async function aiSortBills(){
   todo.forEach(i=>aiSortTried.add(i.bbKey));
   const user='Sort these bills:\n'+JSON.stringify(todo.map(i=>({key:i.bbKey,name:i.name,amount:Math.round(num(i.amount)*100)/100})));
   try{
-    const r=await aiAsk({name:'bill_sort',purpose:'sort',system:SORT_SYSTEM,schema:SORT_SCHEMA,check:checkSort,priority:'low',out:200,user});
+    const r=await aiAsk({name:'bill_sort',purpose:'sort',light:true,system:SORT_SYSTEM,schema:SORT_SCHEMA,check:checkSort,priority:'low',out:200,user});
     let changed=false;
     r.a.forEach(({key,kind})=>{const it=S.items.find(i=>i.bbKey===key);if(!it)return;it.bbAi=kind;delete it.bbUnsure;
       if(it.kind!==kind){setKind(it,kind);delete it.cat;changed=true}});
@@ -1252,7 +1345,7 @@ function aiSpend(n,purpose){
   const log=S.aiLog&&typeof S.aiLog==='object'?S.aiLog:{},day=log[d]||(log[d]={});day[purpose||'other']=(day[purpose||'other']||0)+t;
   Object.keys(log).sort().slice(0,-7).forEach(k=>delete log[k]);S.aiLog=log;save();paintUsage();
 }
-var USE_NAME={loan:'Loan checks',review:'Tab reviews',sort:'Sorting bills',other:'Other'};
+var USE_NAME={loan:'Loan checks',review:'Tab reviews',sort:'Sorting bills',place:'Placing installments',other:'Other'};
 function paintUsage(){
   const L=aiLimit(),u=aiUsed(),el=$('#aiUsage');if(!el)return;
   const log=S.aiLog||{},today=log[todayIso()]||{},days=Object.keys(log).sort().reverse().filter(d=>d!==todayIso()).slice(0,6);
@@ -1263,12 +1356,18 @@ function paintUsage(){
     (days.length?`<details class="paidlist"><summary>Earlier days</summary><ul>${days.map(d=>`<li><span>${fmtD(parseD(d))}</span><span class="num">${sum(log[d]).toLocaleString()} tokens</span></li>`).join('')}</ul></details>`:'');
 }
 const hashStr=t=>{let h=5381;for(let k=0;k<t.length;k++)h=(h*33^t.charCodeAt(k))>>>0;return h.toString(36)};
+// Sorting bills and placing installments are simple matching, so they always use the provider's lightest
+// model, whatever the API tab picks for loan checks and reviews.
+const AI_LIGHT={anthropic:'claude-haiku-5-5',openai:'gpt-5-nano'};
+const aiLightConf=()=>{const c=aiConf();return {...c,model:AI_LIGHT[c.provider]||c.model}};
 async function aiAsk(job){
-  const c=aiConf(),memoKey=[c.provider,c.base,c.model,job.name,job.user].join('|');
+  const c=job.light?aiLightConf():aiConf(),memoKey=[c.provider,c.base,c.model,job.name,job.user].join('|');
   if(aiMemo.has(memoKey))return {...aiMemo.get(memoKey),cached:true}; // the same question twice costs nothing
   const L=aiLimit(),est=Math.ceil((job.system.length+job.user.length)/3.5)+job.out;
   if(L&&aiUsed()+est>(job.priority==='low'?L*LOW_SHARE:L))throw Object.assign(new Error('limit'),{kind:'limit',low:job.priority==='low'});
-  const out=c.provider==='anthropic'?await askClaude(c,job):await askOpenAIFormat(c,job);
+  const out=c.provider==='anthropic'?await askClaude(c,job):await askOpenAIFormat(c,job).catch(e=>{
+    // a key that can't use the light model falls back to the one picked in the API tab
+    if(job.light&&e.kind==='http'&&[400,403,404].includes(e.status)&&c.model!==aiConf().model)return askOpenAIFormat(aiConf(),job);throw e});
   aiSpend(out.tokens||est,job.purpose);
   aiMemo.set(memoKey,out);return out;
 }
