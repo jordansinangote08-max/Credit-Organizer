@@ -20,6 +20,10 @@ const IC={
   trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 002 2h6a2 2 0 002-2l1-12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>',
   check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   undo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/></svg>',
+  spark:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.7 1.8L21.5 17.5l-1.8.7L19 20l-.7-1.8-1.8-.7 1.8-.7z"/></svg>',
+  bad:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 4.3L2.6 18a2 2 0 001.7 3h15.4a2 2 0 001.7-3L13.7 4.3a2 2 0 00-3.4 0z"/><path d="M12 9.5v4"/><path d="M12 17.2h.01"/></svg>',
+  warn:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><path d="M12 16.3h.01"/></svg>',
+  ok:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.2 12.4l2.6 2.6 5-5.2"/></svg>',
   chev:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 6l6 6-6 6"/></svg>'
 };
 const editBtn=(attr,name)=>`<button class="ghost ib" ${attr} aria-label="Edit ${esc(name)}" title="Edit">${IC.edit}</button>`;
@@ -555,15 +559,15 @@ function renderAccounts(){
 // Only the open tab is redrawn as you type; the others are marked and redrawn when you open them.
 const JOBS={
   cycle:C=>{renderAdvice(C);renderTimeline(C)}, inst:()=>renderInst(), borrow:C=>renderBorrow(C), ahead:C=>renderAhead(C),
-  acct:()=>renderAccounts(), bills:()=>renderItems(), money:()=>renderIncome(), src:()=>renderSrcList()
+  acct:()=>renderAccounts(), bills:()=>renderItems(), money:()=>renderIncome(), src:()=>renderSrcList(), ai:()=>fillAISrc()
 };
 const JOB_PANEL={src:'borrow'};
 const stale=new Set();
 const shown=job=>!$('#panel-'+(JOB_PANEL[job]||job)).hidden;
-function runJobs(jobs,C){jobs.forEach(j=>{if(shown(j)){stale.delete(j);JOBS[j](C||compute())}else stale.add(j)})}
+function runJobs(jobs,C){jobs.forEach(j=>{if(shown(j)){stale.delete(j);JOBS[j](C||compute());paintMon(JOB_PANEL[j]||j)}else stale.add(j)})}
 function render(){const C=compute();renderStatus(C);runJobs(['cycle','inst','borrow','ahead','acct'],C)}
-function renderAll(){runJobs(['bills','money','src']);render()}
-function flushStale(){if(!stale.size)return;const C=compute();[...stale].forEach(j=>{if(shown(j)){stale.delete(j);JOBS[j](C)}})}
+function renderAll(){runJobs(['bills','money','src','ai']);render()}
+function flushStale(){if(!stale.size)return;const C=compute();[...stale].forEach(j=>{if(shown(j)){stale.delete(j);JOBS[j](C);paintMon(JOB_PANEL[j]||j)}})}
 window.addEventListener('beforeprint',()=>{const C=compute();Object.keys(JOBS).forEach(j=>JOBS[j](C));stale.clear()});
 const commit=()=>{save();render()};
 
@@ -931,12 +935,12 @@ const aiName=()=>{const c=aiConf();return c.provider==='anthropic'?$('#aiModel')
 const aiState=(cls,txt)=>{const el=$('#aiState');el.className='sync '+cls;el.textContent=txt};
 function aiSet(patch){const a=aiAll(),p=aiProv();S.ai={...a,provider:p,[p]:{...(a[p]||{}),...patch}};save()}
 function fillAI(){
-  const c=aiConf(),P=AI_PROV[c.provider];
+  const c=aiConf(),P=AI_PROV[c.provider];$('#aiLimit').value=aiLimit()||'';paintUsage();
   $('#aiProv').value=c.provider;$('#aiKey').value=c.key;$('#aiKey').placeholder=P.key;$('#aiHelp').textContent=P.help;
   $('#aiBaseF').hidden=c.provider!=='compat';$('#aiBase').value=c.base;
   $('#aiModelF').hidden=c.provider!=='anthropic';$('#aiModelTF').hidden=c.provider==='anthropic';
   if(c.provider==='anthropic')$('#aiModel').value=c.model;else{$('#aiModelT').value=c.model;$('#aiModelT').placeholder=c.provider==='openai'?'gpt-5-mini':'e.g. a model name from your provider'}
-  aiState(aiReady()?'ok':'off',aiReady()?'Ready':'Not connected');aiNote();
+  aiState(aiReady()?'ok':'off',aiReady()?'Ready':'Not connected');aiNote();setTimeout(paintAllMon,0);
 }
 function aiNote(){$('#aiNote').textContent=aiReady()?'Then asks '+aiName():'Add a key in API for AI advice'}
 $('#aiProv').addEventListener('change',()=>{S.ai={...aiAll(),provider:$('#aiProv').value};save();fillAI()});
@@ -945,6 +949,7 @@ $('#aiModel').addEventListener('change',()=>{aiSet({model:$('#aiModel').value});
 $('#aiModelT').addEventListener('change',()=>{aiSet({model:$('#aiModelT').value.trim()});fillAI()});
 $('#aiBase').addEventListener('change',()=>{aiSet({base:$('#aiBase').value.trim().replace(/\/+$/,'')});fillAI()});
 $('#aiClear').addEventListener('click',()=>{const a=aiAll();delete a[aiProv()];S.ai=a;save();fillAI()});
+$('#aiLimit').addEventListener('change',()=>{const v=Math.round(num($('#aiLimit').value));if(v>0)S.aiLimit=v;else delete S.aiLimit;$('#aiLimit').value=v>0?v:'';save();paintUsage()});
 fillAI();
 
 // the money in, and everything due, in the pay cycle that starts on `start`
@@ -970,25 +975,46 @@ function loanCheck(f){
   const worst=rows.reduce((a,x)=>x.pay>0&&x.after<a.after?x:a,{after:Infinity});
   const total=plan.reduce((s,p)=>s+p.amt,0),covered=rows.filter(x=>x.pay>0).length;
   const verdict=worst.after<-0.004?'no':worst.after<buffer-0.004?'careful':'yes';
-  const eff=f.type==='inst'?effRate({rate:f.rate,addon:f.addon,fee:0,term:f.term})*100:null;
-  return {f,plan,rows,buffer,safe:Math.floor(safe/100)*100,worst,total,interest:total-f.amt,eff,verdict,covered,shortNow:rows[0].before<0};
+  const fee=Math.min(99,Math.max(0,f.fee||0)),net=f.amt*(1-fee/100);
+  const eff=f.type==='inst'||fee>0?effRate({rate:f.type==='inst'?f.rate:0,addon:f.addon,fee,term:f.term})*100:null;
+  if(f.avail>0)safe=Math.min(safe,f.avail);                       // a creditor can't lend more than it offers
+  return {f,plan,rows,buffer,safe:Math.floor(safe/100)*100,worst,total,interest:total-net,net,fee,overLimit:f.avail>0&&f.amt>f.avail,
+    eff:eff!=null&&f.type==='once'&&fee>0?null:eff,verdict,covered,shortNow:rows[0].before<0};
 }
 function readLoanForm(){
   const amt=num($('#aiAmt').value),type=$('#aiType').value,due=parseD($('#aiDue').value),term=Math.round(num($('#aiTerm').value)),rate=num($('#aiRate').value);
   if(!(amt>0))return 'Enter how much you want to borrow.';
   if(type==='inst'&&!(term>=1&&term<=60))return 'Enter how many months, from 1 to 60.';
   if(!due)return 'Pick the '+(type==='inst'?'first due date':'due date')+'.';
-  return {amt,type,due,term:type==='inst'?term:1,rate,addon:$('#aiAddon').value==='1',why:$('#aiWhy').value.trim().slice(0,120)};
+  const src=S.sources.find(x=>String(x.id)===$('#aiSrc').value);
+  return {amt,type,due,term:type==='inst'?term:1,rate,addon:$('#aiAddon').value==='1',fee:num($('#aiFee').value),
+    src:src?.name||'',avail:num(src?.avail),why:$('#aiWhy').value.trim().slice(0,120)};
 }
 function syncLoanForm(){const inst=$('#aiType').value==='inst';$('#aiTermF').hidden=!inst;$('#aiAddonF').hidden=!inst;
   $('#aiRateL').textContent=inst?'Interest %/month':'Interest or fee (%)';$('#aiDueL').textContent=inst?'First due date':'Due date'}
 $('#aiType').addEventListener('change',syncLoanForm);syncLoanForm();
+// pick a creditor from the Borrow tab and its terms fill the form
+function fillAISrc(){
+  const sel=$('#aiSrc'),v=sel.value;
+  sel.innerHTML='<option value="">My own terms</option>'+S.sources.map(x=>`<option value="${x.id}">${esc(x.name||'Creditor')}${known(x)?` · ${num(x.rate)}%`:''}</option>`).join('');
+  sel.value=S.sources.some(x=>String(x.id)===v)?v:'';aiSrcHint();
+}
+function aiSrcHint(){const x=S.sources.find(y=>String(y.id)===$('#aiSrc').value);$('#aiAmtH').textContent=x&&num(x.avail)>0?'Up to '+peso(num(x.avail)):''}
+$('#aiSrc').addEventListener('change',()=>{
+  const x=S.sources.find(y=>String(y.id)===$('#aiSrc').value);aiSrcHint();if(!x)return;
+  const term=Math.max(1,Math.round(num(x.term)||1));
+  $('#aiType').value=term>1?'inst':'once';$('#aiTerm').value=term>1?term:'';$('#aiRate').value=x.rate??'';
+  $('#aiAddon').value=x.addon?'1':'0';$('#aiFee').value=num(x.fee)||'';
+  if(!$('#aiDue').value){const t=new Date();$('#aiDue').value=iso(new Date(t.getFullYear(),t.getMonth()+1,Math.min(t.getDate(),dim(t.getFullYear(),t.getMonth()+1))))}
+  syncLoanForm();
+});
 const VERDICT={yes:['ok','You can afford it'],careful:['warn','Tight, but possible'],no:['bad','Not without falling short']};
 function renderLoanCheck(R){
   const [cls,word]=VERDICT[R.verdict],f=R.f,per=f.type==='inst'?R.plan[0].amt:R.total;
   return `<div class="reco ${cls==='bad'?'bad':'ok'} aiv"><div class="aiv-h"><span class="pill ${cls}">${word}</span><span class="muted small">Planner's check</span></div>
     <h3>${f.type==='inst'?`${peso(per)} a month for ${f.term} month${f.term===1?'':'s'}`:`Pay back ${peso(R.total)} on ${fmtD(f.due)}`}</h3>
-    <ul><li><span>Interest</span><span class="a">${peso(R.interest)}</span></li>
+    ${R.overLimit?`<p class="small t-bad">More than ${esc(f.src)} offers (${peso(f.avail)}).</p>`:''}
+    <ul>${R.fee>0?`<li><span>You receive</span><span class="a">${peso(R.net)}</span></li>`:''}<li><span>Interest${R.fee>0?' and fee':''}</span><span class="a">${peso(R.interest)}</span></li>
       ${R.eff!=null?`<li><span>Real rate /mo</span><span class="a">${R.eff.toFixed(2)}%</span></li>`:''}
       <li><span>Tightest cycle${isFinite(R.worst.after)?' ('+fmtD(R.worst.start)+')':''}</span><span class="a">${isFinite(R.worst.after)?peso(R.worst.after)+' left':'—'}</span></li>
       <li><span>Safe to borrow</span><span class="a"><b>${peso(R.safe)}</b></span></li></ul>
@@ -996,6 +1022,117 @@ function renderLoanCheck(R){
     <details class="paidlist"><summary>By pay cycle</summary><div class="cyc">${R.rows.map(x=>`<div class="cycrow${x.after<0?' neg':''}"><span>${fmtD(x.start)} – ${fmtD(x.end)}</span><span class="num">${peso(x.before)}${x.pay?` − ${peso(x.pay)}`:''}</span><span class="num">${peso(x.after)}</span></div>`).join('')}</div>
     <p class="note">After bills − loan = left</p></details></div>`;
 }
+
+// ---------- each tab is monitored ----------
+// The planner checks every tab itself as you go (free and instant) and lists what needs attention at the
+// top. The ✨ button asks the AI for a short review of that tab: it gets these checks plus a snapshot of the
+// whole planner, so its advice rests on the same numbers. Reviews are only asked for when you tap, are kept
+// for the day until the numbers change, and stop at 70% of the daily limit (see aiAsk).
+var TAB_NAME={cycle:'This cycle',bills:'Bills',inst:'Installments',acct:'Accounts',money:'Income',borrow:'Borrow',ahead:'Plan'};
+function moneyRunsOut(C){
+  const ev=[{d:C.start,v:num(S.salary)},...C.inc.map(o=>({d:o.d,v:num(o.x.amount)})),...C.lines.map(l=>({d:l.date,v:-l.need}))].sort((a,b)=>a.d-b.d||b.v-a.v);
+  let bal=0;for(const e of ev){bal+=e.v;if(bal<-0.004)return e.d}return null;
+}
+function monitor(tab){
+  const C=compute(),out=[],add=(lv,t)=>out.push({lv,t}),t0=new Date();t0.setHours(0,0,0,0);
+  const days=d=>Math.round((d-t0)/DAY),plural=(n,w)=>n+' '+w+(n===1?'':'s');
+  const late=C.lines.filter(l=>!isPaid(l.i)&&l.date<t0);
+  if(tab==='cycle'){
+    if(C.gap>0.004)add('bad','Short '+peso(C.gap)+' this cycle');
+    const out1=moneyRunsOut(C);if(out1)add('bad','Money runs out '+fmtD(out1));
+    if(late.length)add('bad',plural(late.length,'bill')+' past due, not marked paid');
+    const extra=C.surplus-Math.max(0,num(S.buffer));if(extra>0.004)add('ok',peso(extra)+' extra to pay ahead');
+    if(!out.length)add('ok','Every bill is covered');
+  }else if(tab==='bills'){
+    const start=C.start,vis=S.items.filter(i=>!isHiddenPaid(i)&&inCycle(i,start));
+    late.slice(0,2).forEach(l=>add('bad',l.i.name+' was due '+fmtD(l.date)));
+    const noAmt=vis.filter(i=>!(num(i.amount)>0)).length;if(noAmt)add('warn',plural(noAmt,'bill')+' without an amount');
+    const soon=C.lines.filter(l=>!isPaid(l.i)&&days(l.date)>=0&&days(l.date)<=3).sort((a,b)=>a.date-b.date);
+    if(soon.length)add('warn',soon[0].i.name+' due '+(days(soon[0].date)===0?'today':days(soon[0].date)===1?'tomorrow':'in '+days(soon[0].date)+' days')+(soon.length>1?' (+'+(soon.length-1)+' more)':''));
+    const nEnded=S.items.filter(i=>ended(i,start)).length;if(nEnded)add('warn',plural(nEnded,'ended bill')+' to remove or update');
+    if(!out.length)add('ok','All set this cycle');
+  }else if(tab==='inst'){
+    const loans=S.items.filter(i=>i.kind==='loan');
+    loans.filter(i=>i.left==null||i.left==='').forEach(i=>add('warn',i.name+': add payments left'));
+    const no4=loans.filter(i=>!last4Of(i)).length;if(no4)add('warn',plural(no4,'installment')+' missing last 4 digits');
+    loans.filter(i=>realRate(i)>3).forEach(i=>add('warn',i.name+' costs about '+realRate(i).toFixed(1)+'%/mo'));
+    loans.filter(i=>num(i.left)===1&&!isPaid(i)).forEach(i=>add('ok',i.name+' ends with its next payment'));
+    if(!out.length)add('ok',loans.length?'Installments on track':'No installments');
+  }else if(tab==='acct'){
+    S.accounts.forEach(a=>{const L=num(a.limit);if(L>0){const p=usedOf(a)/L*100;if(p>50)add('bad',a.name+' at '+p.toFixed(0)+'% of its limit');else if(p>30)add('warn',a.name+' at '+p.toFixed(0)+'% of its limit')}});
+    const noL=S.accounts.filter(a=>!(num(a.limit)>0)).length;if(noL)add('warn',plural(noL,'card')+' without a limit');
+    const no4=S.accounts.filter(a=>!a.last4).length;if(no4)add('warn',plural(no4,'card')+' missing last 4 digits');
+    if(!out.length)add('ok',S.accounts.length?'Every card under 30%':'No cards');
+  }else if(tab==='money'){
+    const C0=C.start,past=S.income.filter(x=>{const d=parseD(x.date);return d&&d<C0}).length,bad=S.income.filter(x=>!(num(x.amount)>0)||!parseD(x.date)).length;
+    if(bad)add('warn',bad+' '+(bad===1?'entry needs':'entries need')+' an amount and date');
+    if(past)add('warn',past+' from past cycles, not counted');
+    if(C.other>0)add('ok',peso(C.other)+' arriving this cycle');
+    if(!out.length)add('ok','Nothing extra this cycle');
+  }else if(tab==='borrow'){
+    const kn=S.sources.filter(known),noRate=S.sources.length-kn.length;
+    if(!S.sources.length)add(C.gap>0.004?'warn':'ok',C.gap>0.004?'Add creditors to compare':'No creditors yet');
+    if(noRate)add('warn',plural(noRate,'creditor')+' without an interest rate');
+    if(kn.length){const c=kn.map(x=>({x,e:effRate(x)})).sort((a,b)=>a.e-b.e)[0];add('ok','Cheapest: '+c.x.name+' ('+(c.e*100).toFixed(2)+'%/mo)')}
+  }else if(tab==='ahead'){
+    const salary=num(S.salary);let first=null,last=null;
+    for(let m=0,d=C.start;m<36;m++,d=shiftCycle(d,1)){const free=salary-loansIn(d)-fixedIn(d);if(free<-0.004&&!first)first=d;if(loansIn(d)>0)last=d}
+    if(first)add('bad','Short in the '+fmtD(first)+' cycle');
+    if(last)add('ok','Installments done after '+MON[last.getMonth()]+' '+last.getFullYear());
+    if(!out.length)add('ok','No installments');
+  }
+  return out;
+}
+// a compact picture of the whole planner, for the AI
+function aiSnapshot(){
+  const C=compute(),r2=x=>Math.round(x*100)/100,d=x=>x?iso(x):undefined;
+  const sched=payFreq()==='week'?'every '+WD[num(S.payweekday)%7]:payFreq()==='twice'?`twice a month, days ${dayNum(S.payday,15)} and ${dayNum(S.payday2,30)}`:'monthly, day '+clampPd();
+  const next=[];for(let m=0,c=C.start;m<6;m++,c=shiftCycle(c,1)){const money=num(S.salary)+incomeIn(c),bills=dueIn(c);next.push({start:d(c),money_in:r2(money),bills:r2(bills),left:r2(money-bills)})}
+  return {today:todayIso(),pay_schedule:sched,salary_per_payday:r2(num(S.salary)),buffer_per_cycle:r2(Math.max(0,num(S.buffer))),
+    this_cycle:{start:d(C.start),end:d(C.end),money_in:r2(C.avail),bills:r2(C.total),paid_so_far:r2(C.paidAmt),short_by:C.gap>0?r2(C.gap):0,extra:C.surplus>0?r2(C.surplus):0},
+    bills:C.lines.map(l=>({name:l.i.name,category:catOf(l.i)?.name,type:l.i.kind,amount:r2(l.need),due:d(l.date),paid:isPaid(l.i)||undefined})),
+    installments:S.items.filter(i=>i.kind==='loan').map(i=>({name:i.name,monthly:r2(num(i.amount)),payments_left:i.left??null,total_payments:i.total??undefined,rate_pct_month:i.rate??undefined,rate_type:i.addon?'add-on':undefined,due_day:dayOf(i),last4_set:!!last4Of(i)})),
+    cards:S.accounts.map(a=>{const b=billOf(a),L=num(a.limit);return {name:a.name,statement:r2(num(b?.amount)),limit:L||undefined,usage_pct:L?r2(usedOf(a)/L*100):undefined,due:b&&(b.day||b.bbDue)?d(dueOf(b,C.start)):undefined,statement_day:a.stmt||undefined,last4_set:!!a.last4}}),
+    income:S.income.map(x=>({label:x.label,amount:r2(num(x.amount)),date:x.date||undefined,counts:incTag(x).t})),
+    creditors:S.sources.map(x=>({name:x.name,rate_pct_month:known(x)?num(x.rate):undefined,rate_type:x.addon?'add-on':'diminishing',fee_pct:num(x.fee)||undefined,term_months:num(x.term)||undefined,available:num(x.avail)||undefined})),
+    next_cycles:next};
+}
+const REVIEW_SYSTEM=`You review one tab of a person's budget planner in the Philippines. Amounts are in pesos.
+The planner has done all the arithmetic and lists its own checks for the tab. Trust its numbers; never recompute them or invent amounts or dates.
+Focus on the named tab and use the rest of the snapshot only for context.
+status: "good" if nothing needs attention, "watch" if something should be kept an eye on, "act" if something needs action now (a bill past due, money running out, a card above 50% of its limit).
+headline: one short sentence. points: up to three short findings naming the specific bills, cards, installments or dates. actions: up to three concrete next steps, most important first. Plain words, short sentences.`;
+const REVIEW_SCHEMA={type:'object',additionalProperties:false,required:['status','headline','points','actions'],properties:{
+  status:{type:'string',enum:['good','watch','act']},headline:{type:'string'},points:{type:'array',items:{type:'string'}},actions:{type:'array',items:{type:'string'}}}};
+const checkReview=a=>a&&['good','watch','act'].includes(a.status)&&typeof a.headline==='string'?{status:a.status,headline:a.headline,points:strList(a.points).slice(0,3),actions:strList(a.actions).slice(0,3)}:null;
+const reviewPrompt=(tab,list)=>`Review the "${TAB_NAME[tab]}" tab.\nPlanner checks: ${JSON.stringify(list.map(x=>x.lv+': '+x.t))}\nSnapshot: ${JSON.stringify(aiSnapshot())}`;
+const REVIEW_LOOK={good:['ok','Looks good'],watch:['warn','Keep an eye on'],act:['bad','Needs action']};
+function reviewHtml(r){const [cls,word]=REVIEW_LOOK[r.a.status];
+  return `<div class="aiv-h"><span class="pill ${cls}">${word}</span><span class="muted small">AI review</span></div><p class="aih">${esc(r.a.headline)}</p>
+    ${r.a.points.length?`<ul>${r.a.points.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
+    ${r.a.actions.length?`<p class="label">Next</p><ul>${r.a.actions.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
+    <p class="note">${esc(r.model)}${r.cost?' · '+esc(r.cost):''}</p>`}
+function paintMon(tab){
+  const el=$('#mon-'+tab);if(!el||!TAB_NAME||!TAB_NAME[tab])return; // the first draw at startup runs before this part has loaded
+  const list=monitor(tab),worst=list.some(x=>x.lv==='bad')?'bad':list.some(x=>x.lv==='warn')?'warn':'ok',n=list.filter(x=>x.lv!=='ok').length;
+  const c=S.aiTab?.[tab],fresh=c&&c.day===todayIso()&&c.h===hashStr(reviewPrompt(tab,list));
+  const box=el.querySelector('.mon-ai'),busy=box&&box.dataset.busy;
+  el.className='mon '+worst;
+  el.innerHTML=`<div class="mon-h">${IC[worst]}<span class="mon-t">${n?n+' to check':'All good'}</span>${aiReady()?`<button class="ghost ib" data-review="${tab}" aria-label="Review ${TAB_NAME[tab]} with AI" title="Review with AI"${busy?' disabled':''}>${IC.spark}</button>`:''}</div>
+    <ul class="mon-l">${list.slice(0,4).map(x=>`<li class="${x.lv}">${IC[x.lv]}<span>${esc(x.t)}</span></li>`).join('')}</ul>
+    <div class="mon-ai"${busy?' data-busy="1"':''}>${busy?box.innerHTML:fresh?reviewHtml(c):''}</div>`;
+}
+function paintAllMon(){Object.keys(TAB_NAME).forEach(t=>{if(!$('#panel-'+t).hidden)paintMon(t)});Object.keys(TAB_NAME).forEach(t=>{if($('#panel-'+t).hidden)stale.add(t==='borrow'?'borrow':t)})}
+document.addEventListener('click',async e=>{
+  const b=e.target.closest('[data-review]');if(!b)return;
+  const tab=b.dataset.review,list=monitor(tab),user=reviewPrompt(tab,list),box=$('#mon-'+tab+' .mon-ai');
+  box.dataset.busy='1';box.innerHTML='<p class="muted small">Reviewing…</p>';b.disabled=true;
+  try{
+    const r=await aiAsk({name:'tab_review',system:REVIEW_SYSTEM,schema:REVIEW_SCHEMA,check:checkReview,priority:'low',out:600,user});
+    S.aiTab={...(S.aiTab||{}),[tab]:{day:todayIso(),h:hashStr(user),a:r.a,model:r.model,cost:r.cost}};save();
+    delete box.dataset.busy;paintMon(tab);
+  }catch(err){delete box.dataset.busy;paintMon(tab);$('#mon-'+tab+' .mon-ai').innerHTML=`<p class="t-bad small">${aiError(err)}</p>`}
+});
 
 // ---------- asking Claude ----------
 let aiSdk=null;const aiMemo=new Map();
@@ -1012,7 +1149,7 @@ function aiSummary(R){
   const f=R.f,r2=x=>Math.round(x*100)/100,d=x=>iso(x);
   const sched=payFreq()==='week'?'every '+WD[num(S.payweekday)%7]:payFreq()==='twice'?`twice a month, days ${dayNum(S.payday,15)} and ${dayNum(S.payday2,30)}`:'monthly, day '+clampPd();
   return {today:iso(new Date()),pay_schedule:sched,salary_per_payday:r2(num(S.salary)),buffer_per_cycle:r2(R.buffer),
-    new_loan:{amount:r2(f.amt),repayment:f.type==='inst'?'installments':'one-time',months:f.type==='inst'?f.term:undefined,
+    new_loan:{creditor:f.src||undefined,creditor_limit:f.avail||undefined,upfront_fee_pct:R.fee||undefined,received_after_fee:R.fee?r2(R.net):undefined,amount:r2(f.amt),repayment:f.type==='inst'?'installments':'one-time',months:f.type==='inst'?f.term:undefined,
       interest_pct:f.rate,rate_type:f.type==='inst'?(f.addon?'add-on':'diminishing'):undefined,first_due:d(f.due),purpose:f.why||undefined,
       payment_each:r2(R.plan[0].amt),total_repay:r2(R.total),total_interest:r2(R.interest),real_monthly_rate_pct:R.eff!=null?r2(R.eff):undefined},
     planner_check:{verdict:R.verdict,safe_amount:R.safe,tightest_cycle_left:isFinite(R.worst.after)?r2(R.worst.after):null,already_short_this_cycle:R.shortNow},
@@ -1022,32 +1159,50 @@ function aiSummary(R){
     other_bills:S.items.filter(i=>i.kind!=='loan'&&i.kind!=='card'&&num(i.amount)>0).map(i=>({name:i.name,amount:r2(num(i.amount)),type:catOf(i)?.name})),
     creditors:S.sources.filter(x=>known(x)).map(x=>({name:x.name,rate_pct_month:num(x.rate),rate_type:x.addon?'add-on':'diminishing',available:num(x.avail)||undefined}))};
 }
-async function askAI(R){
-  const c=aiConf(),summary=JSON.stringify(aiSummary(R)),memoKey=c.provider+'|'+c.base+'|'+c.model+'|'+summary;
-  if(aiMemo.has(memoKey))return aiMemo.get(memoKey); // the same question twice costs nothing
-  const out=c.provider==='anthropic'?await askClaude(c,summary):await askOpenAIFormat(c,summary);
+// ---------- one way to ask the AI, with a daily budget ----------
+// Every question goes through aiAsk: it answers repeats from memory, keeps to the daily token limit set in
+// the API tab, and gives loan checks priority: tab reviews stop at 70% of the limit so loan checks keep room.
+function todayIso(){return iso(new Date())}
+function aiLimit(){return Math.max(0,Math.round(num(S.aiLimit)))} // 0 means no limit
+function aiUsed(){return S.aiUse&&S.aiUse.day===todayIso()?num(S.aiUse.tokens):0}
+var LOW_SHARE=0.7;
+function aiSpend(n){S.aiUse={day:todayIso(),tokens:aiUsed()+Math.max(0,Math.round(n))};save();paintUsage()}
+function paintUsage(){
+  const L=aiLimit(),u=aiUsed(),el=$('#aiUsage');if(!el)return;
+  el.innerHTML=`<div class="usage-t"><span>Today</span><span class="num">${u.toLocaleString()}${L?' / '+L.toLocaleString():''} tokens</span></div>`+
+    (L?`<div class="ubar" role="img" aria-label="${Math.min(100,u/L*100).toFixed(0)}% of today's limit used"><i class="${u>=L?'bad':u>=L*LOW_SHARE?'warn':''}" style="width:${Math.min(100,u/L*100).toFixed(1)}%"></i></div>`:'');
+}
+const hashStr=t=>{let h=5381;for(let k=0;k<t.length;k++)h=(h*33^t.charCodeAt(k))>>>0;return h.toString(36)};
+async function aiAsk(job){
+  const c=aiConf(),memoKey=[c.provider,c.base,c.model,job.name,job.user].join('|');
+  if(aiMemo.has(memoKey))return {...aiMemo.get(memoKey),cached:true}; // the same question twice costs nothing
+  const L=aiLimit(),est=Math.ceil((job.system.length+job.user.length)/3.5)+job.out;
+  if(L&&aiUsed()+est>(job.priority==='low'?L*LOW_SHARE:L))throw Object.assign(new Error('limit'),{kind:'limit',low:job.priority==='low'});
+  const out=c.provider==='anthropic'?await askClaude(c,job):await askOpenAIFormat(c,job);
+  aiSpend(out.tokens||est);
   aiMemo.set(memoKey,out);return out;
 }
-async function askClaude(c,summary){
+async function askClaude(c,job){
   const SDK=await loadAISdk();
   const client=new SDK.Anthropic({apiKey:c.key,dangerouslyAllowBrowser:true,maxRetries:1});
-  const req={model:c.model,max_tokens:4000,output_config:{effort:'low',format:SDK.jsonSchemaOutputFormat(AI_SCHEMA)},system:AI_SYSTEM,
-    messages:[{role:'user',content:'Should I take this loan? Planner summary:\n'+summary}]};
+  const req={model:c.model,max_tokens:4000,output_config:{effort:'low',format:SDK.jsonSchemaOutputFormat(job.schema)},system:job.system,
+    messages:[{role:'user',content:job.user}]};
   // Opus and Sonnet can retry a declined request on another model; Haiku has no server-side fallback
   if(c.model!=='claude-haiku-5-5')Object.assign(req,{betas:['server-side-fallback-2026-07-01'],fallbacks:'default'});
   const res=await client.beta.messages.parse(req);
   if(res.stop_reason==='refusal')throw Object.assign(new Error('refusal'),{kind:'refusal'});
-  if(res.stop_reason==='max_tokens'||!res.parsed_output)throw Object.assign(new Error('incomplete'),{kind:'incomplete'});
-  const [pin,pout]=AI_PRICE[c.model],u=res.usage||{};
-  return {a:res.parsed_output,model:res.model||c.model,cost:'~$'+(((u.input_tokens||0)*pin+(u.output_tokens||0)*pout)/1e6).toFixed(4)};
+  const a=res.stop_reason==='max_tokens'?null:job.check(res.parsed_output);
+  if(!a)throw Object.assign(new Error('incomplete'),{kind:'incomplete'});
+  const [pin,pout]=AI_PRICE[c.model],u=res.usage||{},tokens=(u.input_tokens||0)+(u.output_tokens||0);
+  return {a,model:res.model||c.model,tokens,cost:'~$'+(((u.input_tokens||0)*pin+(u.output_tokens||0)*pout)/1e6).toFixed(4)};
 }
 // OpenAI's chat completions format: ChatGPT gets a strict JSON schema; other services get plain JSON mode,
 // which more of them support, with the shape spelled out in the prompt and checked here
-async function askOpenAIFormat(c,summary){
+async function askOpenAIFormat(c,job){
   const openai=c.provider==='openai',url=(openai?'https://api.openai.com/v1':c.base)+'/chat/completions';
-  const body={model:c.model,messages:[{role:'system',content:AI_SYSTEM+(openai?'':'\nReply with only a JSON object with the keys verdict, headline, reasons, safe_amount and tips.')},
-    {role:'user',content:'Should I take this loan? Planner summary:\n'+summary}],
-    response_format:openai?{type:'json_schema',json_schema:{name:'loan_advice',strict:true,schema:AI_SCHEMA}}:{type:'json_object'}};
+  const body={model:c.model,messages:[{role:'system',content:job.system+(openai?'':'\nReply with only a JSON object with the keys '+job.schema.required.join(', ')+'.')},
+    {role:'user',content:job.user}],
+    response_format:openai?{type:'json_schema',json_schema:{name:job.name,strict:true,schema:job.schema}}:{type:'json_object'}};
   if(openai){body.max_completion_tokens=4000;if(/^(gpt-5|o\d)/i.test(c.model))body.reasoning_effort='low'}else body.max_tokens=4000;
   let r;
   try{r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+c.key},body:JSON.stringify(body)})}
@@ -1057,16 +1212,19 @@ async function askOpenAIFormat(c,summary){
   const ch=j?.choices?.[0],m=ch?.message;
   if(m?.refusal)throw Object.assign(new Error('refusal'),{kind:'refusal'});
   if(ch?.finish_reason==='length')throw Object.assign(new Error('incomplete'),{kind:'incomplete'});
-  let a;try{a=JSON.parse(String(m?.content||'').replace(/^```(?:json)?\s*|\s*```$/g,''))}catch(e){a=null}
-  const list=x=>Array.isArray(x)?x.map(String):[];
-  if(!a||!['yes','careful','no'].includes(a.verdict)||typeof a.headline!=='string')throw Object.assign(new Error('incomplete'),{kind:'incomplete'});
-  a={verdict:a.verdict,headline:a.headline,reasons:list(a.reasons),safe_amount:num(a.safe_amount),tips:list(a.tips)};
-  const u=j.usage||{},tok=(u.prompt_tokens||0)+(u.completion_tokens||0);
-  return {a,model:j.model||c.model,cost:tok?tok.toLocaleString()+' tokens':''};
+  let a;try{a=job.check(JSON.parse(String(m?.content||'').replace(/^```(?:json)?\s*|\s*```$/g,'')))}catch(e){a=null}
+  if(!a)throw Object.assign(new Error('incomplete'),{kind:'incomplete'});
+  const u=j.usage||{},tokens=(u.prompt_tokens||0)+(u.completion_tokens||0);
+  return {a,model:j.model||c.model,tokens,cost:tokens?tokens.toLocaleString()+' tokens':''};
 }
+const strList=x=>Array.isArray(x)?x.map(String).filter(Boolean).slice(0,5):[];
+const checkLoan=a=>a&&['yes','careful','no'].includes(a.verdict)&&typeof a.headline==='string'?{verdict:a.verdict,headline:a.headline,reasons:strList(a.reasons),safe_amount:num(a.safe_amount),tips:strList(a.tips)}:null;
+const askAI=R=>aiAsk({name:'loan_advice',system:AI_SYSTEM,schema:AI_SCHEMA,check:checkLoan,priority:'high',out:700,
+  user:'Should I take this loan? Planner summary:\n'+JSON.stringify(aiSummary(R))});
 function aiError(e){
   const A=window.AnthropicSDK?.Anthropic,who=aiConf().provider==='anthropic'?'Claude':aiConf().provider==='openai'?'ChatGPT':'The AI';
   if(e.message==='load')return 'Could not load the AI library. Check your connection.';
+  if(e.kind==='limit')return e.low?'Tab reviews pause at 70% of today\'s AI limit, so loan checks keep room. Resets tomorrow.':'Today\'s AI limit is used up. It resets tomorrow, or raise it in the API tab.';
   if(e.kind==='refusal')return who+' declined to answer this one. The planner\'s check above still applies.';
   if(e.kind==='incomplete')return who+'\'s answer was cut off or unreadable. Try again.';
   if(e.kind==='network')return 'Could not reach '+who+'. Check your connection'+(aiConf().provider==='compat'?', and that this service allows requests from a browser.':'.');

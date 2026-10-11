@@ -15,10 +15,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=26">
-<script src="config.js?v=26" defer></script>
+<link rel="stylesheet" href="styles.css?v=28">
+<script src="config.js?v=28" defer></script>
 <script src="vendor/supabase-2.116.0.js" defer></script>
-<script src="app.js?v=26" defer></script>
+<script src="app.js?v=28" defer></script>
 </head>
 <body class="locked">
 <div class="app">
@@ -64,6 +64,7 @@
     </nav>
 
     <section class="panel" role="tabpanel" id="panel-cycle" aria-labelledby="tab-cycle" data-panel="cycle">
+      <div class="mon" id="mon-cycle" aria-live="polite"></div>
       <div id="advice"></div>
       <div class="sec">
         <div class="sec-h"><h2>Money in and out</h2><span class="muted small" id="cycleLabel"></span></div>
@@ -72,6 +73,7 @@
     </section>
 
     <section class="panel" role="tabpanel" id="panel-bills" aria-labelledby="tab-bills" data-panel="bills" hidden>
+      <div class="mon" id="mon-bills" aria-live="polite"></div>
       <div class="sec">
         <div class="sec-h"><h2>Bills</h2><div class="row"><button class="ghost ib" id="catBtn" aria-label="Categories" title="Categories"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg></button><button class="ghost ib" id="resetBtn" aria-label="Reset to starting bills" title="Reset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 109-9 9.3 9.3 0 00-6.4 2.6L3 8"/><path d="M3 3v5h5"/></svg></button></div></div>
         <div id="resetConfirm" class="reco bad" hidden><p class="small">Erase your changes and restore the starting bills and categories?</p><div class="row"><button class="btn" id="resetYes">Yes, reset</button><button class="ghost" id="resetNo">Cancel</button></div></div>
@@ -81,6 +83,7 @@
     </section>
 
     <section class="panel" role="tabpanel" id="panel-inst" aria-labelledby="tab-inst" data-panel="inst" hidden>
+      <div class="mon" id="mon-inst" aria-live="polite"></div>
       <div class="sec">
         <div class="sumrow" id="instSum"></div>
       </div>
@@ -91,6 +94,7 @@
     </section>
 
     <section class="panel" role="tabpanel" id="panel-acct" aria-labelledby="tab-acct" data-panel="acct" hidden>
+      <div class="mon" id="mon-acct" aria-live="polite"></div>
       <div class="sec">
         <div><h2>Credit cards</h2><p class="muted small lead">Keep each card under 30% of its limit.</p></div>
         <div class="sumrow" id="acctSum"></div>
@@ -103,6 +107,7 @@
     </section>
 
     <section class="panel" role="tabpanel" id="panel-money" aria-labelledby="tab-money" data-panel="money" hidden>
+      <div class="mon" id="mon-money" aria-live="polite"></div>
       <div class="sec">
         <div><h2>Other money</h2><p class="muted small lead">Side income, refunds, bonuses. Counts in the cycle it arrives.</p></div>
         <div class="sumrow" id="incSum"></div>
@@ -114,6 +119,7 @@
     </section>
 
     <section class="panel" role="tabpanel" id="panel-borrow" aria-labelledby="tab-borrow" data-panel="borrow" hidden>
+      <div class="mon" id="mon-borrow" aria-live="polite"></div>
       <div class="sec">
         <div id="shortHead"></div>
         <div id="srcPick"></div>
@@ -136,6 +142,7 @@
     </section>
 
     <section class="panel" role="tabpanel" id="panel-ahead" aria-labelledby="tab-ahead" data-panel="ahead" hidden>
+      <div class="mon" id="mon-ahead" aria-live="polite"></div>
       <div class="sec">
         <div><h2>When money frees up</h2><p class="muted small lead">Installments and fixed bills, by pay cycle.</p></div>
         <div class="legend"><span><i class="k-loan"></i>Installments</span><span><i class="k-fixed"></i>Rent and bills</span><span><i class="k-free"></i>Free for cards and savings</span></div>
@@ -147,11 +154,13 @@
       <div class="sec">
         <div><h2>Should I take this loan?</h2><p class="muted small lead">Checks a loan against every payday and bill.</p></div>
         <form class="form flat" id="aiForm" novalidate>
-          <div class="field"><label for="aiAmt">Amount (₱)</label><input id="aiAmt" type="number" inputmode="decimal" min="0" step="0.01" placeholder="10000" required></div>
+          <div class="field wide"><label for="aiSrc">Creditor</label><select id="aiSrc"><option value="">My own terms</option></select></div>
+          <div class="field"><label for="aiAmt">Amount (₱)</label><input id="aiAmt" type="number" inputmode="decimal" min="0" step="0.01" placeholder="10000" required><span class="hint" id="aiAmtH"></span></div>
           <div class="field"><label for="aiType">Pay back</label><select id="aiType"><option value="inst">Installments</option><option value="once">One-time</option></select></div>
           <div class="field" id="aiTermF"><label for="aiTerm">Months</label><input id="aiTerm" type="number" inputmode="numeric" min="1" max="60" placeholder="6"></div>
           <div class="field"><label for="aiRate" id="aiRateL">Interest %/month</label><input id="aiRate" type="number" inputmode="decimal" min="0" step="0.01" placeholder="2.5"></div>
           <div class="field" id="aiAddonF"><label for="aiAddon">Rate type</label><select id="aiAddon"><option value="1">Add-on (flat)</option><option value="0">Diminishing</option></select></div>
+          <div class="field"><label for="aiFee">Upfront fee %</label><input id="aiFee" type="number" inputmode="decimal" min="0" max="99" step="0.01" placeholder="0"></div>
           <div class="field"><label for="aiDue" id="aiDueL">First due date</label><input id="aiDue" type="date"></div>
           <div class="field wide"><label for="aiWhy">For <span class="muted">(optional)</span></label><input id="aiWhy" maxlength="120" placeholder="e.g. this cycle's shortfall"></div>
           <div class="acts"><span class="muted small" id="aiNote"></span><button class="btn" id="aiGo">Check</button></div>
@@ -185,9 +194,11 @@
             <option value="claude-haiku-5-5">Haiku 5.5 · cheapest · &lt;$0.01</option>
           </select></div>
           <div class="field wide" id="aiModelTF" hidden><label for="aiModelT">Model</label><input id="aiModelT" list="aiModels" autocomplete="off" spellcheck="false"><datalist id="aiModels"><option value="gpt-5-mini"><option value="gpt-5"><option value="gpt-5-nano"></datalist><span class="hint">Type any model your key can use.</span></div>
+          <div class="field wide"><label for="aiLimit">Daily token limit</label><input id="aiLimit" type="number" inputmode="numeric" min="0" step="1000" placeholder="No limit"><span class="hint">About 2,000 tokens a question. Resets every day; tab reviews pause at 70% so loan checks keep room.</span></div>
           <div class="acts"><span></span><button class="danger ib" id="aiClear" aria-label="Remove this AI key" title="Remove key"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13.5a4 4 0 005.6 0l2.9-2.9a4 4 0 00-5.6-5.6l-1.1 1.1"/><path d="M14 10.5a4 4 0 00-5.6 0l-2.9 2.9a4 4 0 005.6 5.6l1.1-1.1"/><path d="M4 4l16 16"/></svg></button></div>
         </div>
         <span class="sync" id="aiState">Not connected</span>
+        <div class="usage" id="aiUsage"></div>
         <p class="muted small">Set a spend limit with your provider. Bill names and amounts go to the provider; card digits and email never do.</p>
       </div>
     </section>
