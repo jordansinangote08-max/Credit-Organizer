@@ -15,10 +15,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=38">
-<script src="config.js?v=38" defer></script>
+<link rel="stylesheet" href="styles.css?v=39">
+<script src="config.js?v=39" defer></script>
 <script src="vendor/supabase-2.116.0.js" defer></script>
-<script src="app.js?v=38" defer></script>
+<script src="app.js?v=39" defer></script>
 </head>
 <body class="locked">
 <div class="app">
@@ -205,6 +205,14 @@
     </section>
   </main>
 </div>
+<dialog id="aheadDlg" class="dlg" aria-labelledby="aheadTitle"><div class="dlg-in">
+  <div class="dlg-h"><h2 id="aheadTitle">Pay ahead</h2><button class="x" data-aheadclose="1" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="reco ahead">
+    <div id="aheadList"></div>
+    <div class="bufrow"><label for="buffer">Buffer</label><div class="bufin"><span>₱</span><input id="buffer" type="number" inputmode="decimal" min="0" step="100" autocomplete="off"></div><span class="note">kept aside every cycle</span></div>
+    <p class="note">Paying early frees next month; it doesn't cut interest.</p>
+  </div>
+</div></dialog>
 <dialog id="billDlg" class="dlg" aria-labelledby="billTitle"><div class="dlg-in">
   <div class="dlg-h"><h2 id="billTitle">New bill</h2><button class="x" data-billclose="1" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
   <div id="billBody"></div>
