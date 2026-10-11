@@ -472,3 +472,24 @@ input[type=date],input[type=month]{cursor:pointer}
 
 /* fields line up at the top when a neighbour has a hint under it */
 .field{align-content:start}
+
+/* AI usage meter */
+.usage{display:grid;gap:6px;font-size:.85rem;color:var(--muted)}
+.usage:empty{display:none}
+.usage-t{display:flex;justify-content:space-between;gap:8px}
+
+/* tab monitor: the planner's checks, and an AI review on request */
+.mon{display:grid;gap:8px;padding:12px 14px;border-radius:16px;background:var(--glass);border:1px solid var(--glass-edge);box-shadow:var(--shadow);
+  -webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur)}
+.mon:empty{display:none}
+.mon-h{display:flex;align-items:center;gap:8px}
+.mon-h>svg{width:20px;height:20px;flex:none}
+.mon.ok .mon-h>svg{color:var(--ok)} .mon.warn .mon-h>svg{color:var(--warn)} .mon.bad .mon-h>svg{color:var(--bad)}
+.mon-t{font-weight:600;flex:1}
+.mon-h .ib{color:var(--accent)}
+.mon-l{list-style:none;margin:0;padding:0;display:grid;gap:4px;font-size:.9rem}
+.mon-l li{display:flex;gap:8px;align-items:flex-start}
+.mon-l li svg{width:16px;height:16px;flex:none;margin-top:3px}
+.mon-l li.ok svg{color:var(--ok)} .mon-l li.warn svg{color:var(--warn)} .mon-l li.bad svg{color:var(--bad)}
+.mon-ai:not(:empty){display:grid;gap:8px;padding:12px;border-radius:12px;background:var(--sunk)}
+.mon-ai ul{margin:0;padding-left:1.1rem;display:grid;gap:4px;font-size:.92rem}

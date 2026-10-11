@@ -26,9 +26,15 @@ Each category's bills sit together on a background of that category's color. **C
 
 A bill repeats every month on its due day. In its form, **Stops after** sets the last month it's due; leave it empty and it never stops. Untick **Repeats every month** for a one-time bill, which takes an exact due date and only counts in the pay cycle that date falls in. One-time bills in a later cycle are listed under *Coming in a later cycle*; bills that have stopped, or one-time bills whose date has passed, are kept under *Ended* until you remove them. Installments and credit cards don't have these options: installments end by payments left, and card amounts come from each statement.
 
+## Every tab is monitored
+
+The top of each tab (This cycle, Bills, Installments, Accounts, Income, Borrow, Plan) lists what needs attention: money running out, bills past due or due soon, cards over 30% or 50% of their limit, missing last 4 digits, installments without payments left, expensive debt, entries from past cycles. The planner works these out itself as you go, free and instantly. With an AI key set, the ✨ button asks the AI to review that tab: it gets the tab's checks plus a snapshot of the whole planner, so its advice rests on the same numbers. A review is kept for the day until the numbers change, so looking again costs nothing.
+
+**Daily AI limit.** In the API tab, set how many tokens the AI may use per day (about 2,000 a question; empty means no limit). The meter shows today's use. When the limit is reached the AI stops until the next day. Loan checks come first: tab reviews pause at 70% of the limit, so there's always room to check a loan.
+
 ## AI: should I take this loan?
 
-The **AI** tab checks a loan before you take it: the amount, installments or a one-time payment, the interest, and when it's due. The planner first does the maths itself: it lays the loan's payments over your coming pay cycles next to every bill, installment, card and income you've entered, and works out the most you can borrow on those terms while every cycle keeps your buffer. That part is exact, free and needs no key.
+The **AI** tab checks a loan before you take it. Pick a creditor from the Borrow tab to fill in its interest, rate type, months and upfront fee (the check then shows what you receive after the fee, and warns if you ask for more than that creditor offers), or type your own terms: the amount, installments or a one-time payment, the interest, and when it's due. The planner first does the maths itself: it lays the loan's payments over your coming pay cycles next to every bill, installment, card and income you've entered, and works out the most you can borrow on those terms while every cycle keeps your buffer. That part is exact, free and needs no key.
 
 With an AI key in the **API** tab, the AI then reads a short summary of those numbers (about 2,000 characters: amounts, bill names, the cycle table; never card digits or your email) and explains the call in plain words, with tips. It's told to use the planner's numbers rather than redo them, and it answers in a fixed JSON format, so a question costs very little. Asking the same question again doesn't call the API. Pick the provider in the API tab; each keeps its own key and model:
 
