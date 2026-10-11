@@ -9,7 +9,7 @@ Plain static files, no build step. Open `index.html` or serve the folder (e.g. `
 - `app.js` – planner logic
 - `config.js` – Supabase connection (optional)
 - `supabase/schema.sql` – the table and access rules for cloud saving
-- `vendor/` – the Supabase client library (v2.116.0), served locally
+- `vendor/` – the Supabase client library (v2.116.0) and the Anthropic SDK (v0.133.0, bundled for the browser and loaded only when the AI tab asks a question), served locally
 - `manifest.webmanifest`, `icon*.{svg,png}` – install to home screen
 
 ## Payday
@@ -23,6 +23,12 @@ Each category's bills sit together on a background of that category's color. **C
 ## Repeating and one-time bills
 
 A bill repeats every month on its due day. In its form, **Stops after** sets the last month it's due; leave it empty and it never stops. Untick **Repeats every month** for a one-time bill, which takes an exact due date and only counts in the pay cycle that date falls in. One-time bills in a later cycle are listed under *Coming in a later cycle*; bills that have stopped, or one-time bills whose date has passed, are kept under *Ended* until you remove them. Installments and credit cards don't have these options: installments end by payments left, and card amounts come from each statement.
+
+## AI: should I take this loan?
+
+The **AI** tab checks a loan before you take it: the amount, installments or a one-time payment, the interest, and when it's due. The planner first does the maths itself: it lays the loan's payments over your coming pay cycles next to every bill, installment, card and income you've entered, and works out the most you can borrow on those terms while every cycle keeps your buffer. That part is exact, free and needs no key.
+
+With an Anthropic API key in the **API** tab, Claude then reads a short summary of those numbers (about 2,000 characters: amounts, bill names, the cycle table; never card digits or your email) and explains the call in plain words, with tips. It's told to use the planner's numbers rather than redo them, and it's asked with low effort and a fixed JSON answer format, so a question costs about $0.02 on Claude Opus 5.5 (the default), $0.01 on Sonnet 5.5, or well under a cent on Haiku 5.5. Asking the same question again doesn't call the API. The key is saved in your account and used straight from the device, so give it a monthly spend limit in the Anthropic Console.
 
 ## Saving
 

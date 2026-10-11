@@ -15,10 +15,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=22">
-<script src="config.js?v=22" defer></script>
+<link rel="stylesheet" href="styles.css?v=23">
+<script src="config.js?v=23" defer></script>
 <script src="vendor/supabase-2.116.0.js" defer></script>
-<script src="app.js?v=22" defer></script>
+<script src="app.js?v=23" defer></script>
 </head>
 <body class="locked">
 <div class="app">
@@ -59,7 +59,8 @@
       <button class="tab" role="tab" id="tab-money" aria-controls="panel-money" data-tab="money" aria-selected="false" tabindex="-1">Other money</button>
       <button class="tab" role="tab" id="tab-borrow" aria-controls="panel-borrow" data-tab="borrow" aria-selected="false" tabindex="-1">If short</button>
       <button class="tab" role="tab" id="tab-ahead" aria-controls="panel-ahead" data-tab="ahead" aria-selected="false" tabindex="-1">Plan ahead</button>
-      <button class="tab" role="tab" id="tab-bbsync" aria-controls="panel-bbsync" data-tab="bbsync" aria-selected="false" tabindex="-1">BillBuddy</button>
+      <button class="tab" role="tab" id="tab-ai" aria-controls="panel-ai" data-tab="ai" aria-selected="false" tabindex="-1">AI</button>
+      <button class="tab" role="tab" id="tab-bbsync" aria-controls="panel-bbsync" data-tab="bbsync" aria-selected="false" tabindex="-1">API</button>
     </nav>
 
     <section class="panel" role="tabpanel" id="panel-cycle" aria-labelledby="tab-cycle" data-panel="cycle">
@@ -143,9 +144,26 @@
       </div>
     </section>
 
+    <section class="panel" role="tabpanel" id="panel-ai" aria-labelledby="tab-ai" data-panel="ai" hidden>
+      <div class="sec">
+        <div><h2>Should I take this loan?</h2><p class="muted small lead">Checks a loan against your salary, paydays, bills, installments, cards and other money, pay cycle by pay cycle.</p></div>
+        <form class="form flat" id="aiForm" novalidate>
+          <div class="field"><label for="aiAmt">Amount to borrow (₱)</label><input id="aiAmt" type="number" inputmode="decimal" min="0" step="0.01" placeholder="10000" required></div>
+          <div class="field"><label for="aiType">How you pay it back</label><select id="aiType"><option value="inst">Installments</option><option value="once">One-time payment</option></select></div>
+          <div class="field" id="aiTermF"><label for="aiTerm">Months</label><input id="aiTerm" type="number" inputmode="numeric" min="1" max="60" placeholder="6"></div>
+          <div class="field"><label for="aiRate" id="aiRateL">Interest %/month</label><input id="aiRate" type="number" inputmode="decimal" min="0" step="0.01" placeholder="2.5"></div>
+          <div class="field" id="aiAddonF"><label for="aiAddon">Rate type</label><select id="aiAddon"><option value="1">Add-on (flat)</option><option value="0">Diminishing</option></select></div>
+          <div class="field"><label for="aiDue" id="aiDueL">First due date</label><input id="aiDue" type="date"></div>
+          <div class="field wide"><label for="aiWhy">What it's for <span class="muted">(optional)</span></label><input id="aiWhy" maxlength="120" placeholder="e.g. to cover this cycle's shortfall"></div>
+          <div class="acts"><span class="muted small" id="aiNote"></span><button class="btn" id="aiGo">Check</button></div>
+        </form>
+        <div id="aiOut" aria-live="polite"></div>
+      </div>
+    </section>
+
     <section class="panel" role="tabpanel" id="panel-bbsync" aria-labelledby="tab-bbsync" data-panel="bbsync" hidden>
       <div class="sec">
-        <div><h2>BillBuddy</h2><p class="muted small lead">Fills your credit card amounts and due dates from BillBuddy, every minute. Cards are matched by bank name.</p></div>
+        <div><h2>BillBuddy</h2><p class="muted small lead">Fills your credit card amounts and due dates from BillBuddy, every minute. Cards are matched by their last 4 digits, then by bank name.</p></div>
         <div class="form flat">
           <div class="field wide"><label for="bbUrl">BillBuddy API link</label><input id="bbUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://your-billbuddy.vercel.app/api/bills"></div>
           <div class="field wide"><label for="bbKey">API key</label><input id="bbKey" type="password" autocomplete="off" spellcheck="false" placeholder="BILLS_API_KEY"></div>
@@ -153,6 +171,20 @@
         </div>
         <span class="sync" id="bbState">Not connected</span>
         <p class="muted small">The link and key are saved privately in your account, so every device you sign in on syncs with BillBuddy.</p>
+      </div>
+      <div class="sec">
+        <div><h2>AI (Claude)</h2><p class="muted small lead">Powers the AI tab. Paste an API key from console.anthropic.com. The planner does the maths itself; the AI only reads a short summary of it, so each question costs very little.</p></div>
+        <div class="form flat">
+          <div class="field wide"><label for="aiKey">Anthropic API key</label><input id="aiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…"></div>
+          <div class="field wide"><label for="aiModel">Model</label><select id="aiModel">
+            <option value="claude-opus-5-5">Claude Opus 5.5 – most careful (about $0.02 a question)</option>
+            <option value="claude-sonnet-5-5">Claude Sonnet 5.5 – balanced (about $0.01)</option>
+            <option value="claude-haiku-5-5">Claude Haiku 5.5 – cheapest (well under $0.01)</option>
+          </select></div>
+          <div class="acts"><button class="danger" id="aiClear">Disconnect</button></div>
+        </div>
+        <span class="sync" id="aiState">Not connected</span>
+        <p class="muted small">The key is saved privately in your account and used straight from this device, so set a monthly spend limit for it in the Anthropic Console. Asking sends your bill names and amounts to Anthropic; card digits and your email are never sent.</p>
       </div>
     </section>
   </main>
