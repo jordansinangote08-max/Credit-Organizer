@@ -193,9 +193,9 @@ const cycleKey=()=>{const d=cycleStart();return d.getFullYear()+'-'+(d.getMonth(
 const isPaid=i=>i.paidCycle===cycleKey();
 const isHiddenPaid=i=>isPaid(i)&&Date.now()-num(i.paidAt)>=DAY;
 function markPaid(i){i.paidAt=Date.now();i.paidCycle=cycleKey();if(i.kind==='loan'){i.prevLeft=num(i.left);i.left=Math.max(0,num(i.left)-1)}
-  if(i.bbKey)S.items.filter(y=>y.inBill===i.bbKey&&!isPaid(y)).forEach(markPaid)}
+  if(i.bbRef)S.items.filter(y=>y.inBill===i.bbRef&&!isPaid(y)).forEach(markPaid)}
 function undoPaid(i){if(i.kind==='loan'&&i.prevLeft!=null)i.left=i.prevLeft;delete i.paidAt;delete i.paidCycle;delete i.prevLeft
-  if(i.bbKey)S.items.filter(y=>y.inBill===i.bbKey&&isPaid(y)).forEach(undoPaid)}
+  if(i.bbRef)S.items.filter(y=>y.inBill===i.bbRef&&isPaid(y)).forEach(undoPaid)}
 function rollover(){
   const key=cycleKey();let changed=false;
   S.items=S.items.filter(i=>{
@@ -379,8 +379,8 @@ const ord=n=>{if(!n)return '?';const v=n%100;return n+((v>=11&&v<=13)?'th':({1:'
 // loan statement (inBill, the bill's BillBuddy key). Bills and This cycle show only that bill; the Installments
 // tab and the cycle-by-cycle maths count the plans instead, each with its own payments left.
 const billed=i=>!!(i.inCard||i.inBill);
-const hasParts=i=>!!(i.bbKey&&S.items.some(y=>y.inBill===i.bbKey));
-const partOf=i=>i.inBill&&S.items.find(y=>y.bbKey===i.inBill&&!y.inBill);
+const hasParts=i=>!!(i.bbRef&&S.items.some(y=>y.inBill===i.bbRef));
+const partOf=i=>i.inBill&&S.items.find(y=>y.bbRef===i.inBill&&!y.inBill);
 const lenderName=i=>partOf(i)?lenderName(partOf(i)):i.inCard?(S.accounts.find(a=>a.key===i.inCard)?.name||'Card')+' installments':String(i.lender||'').trim()||String(i.name||'').replace(/\s+(?:[A-Za-z]|#?\d+|\([^)]*\))$/,'').trim()||'Installment';
 const lenderKey=i=>lenderName(i).toLowerCase().replace(/[^a-z0-9]/g,'').replace(/loans?$/,'')||'x';
 function renderInst(){
@@ -399,7 +399,7 @@ function renderInst(){
       return `<div class="sub">
         <div class="sub-h"><span class="sub-n">${i.inCard?esc(i.name):'Installment '+(n+1)}${last4Of(i)?`<span class="l4">•••• ${esc(last4Of(i))}</span>`:''}</span><span class="pay">${peso(pay)}<span class="muted small">/mo</span></span></div>
         ${pct!=null?`<div class="bar" role="img" aria-label="${total-left} of ${total} paid"><i style="width:${pct}%"></i></div>`:''}
-        <div class="sub-f"><div class="facts"><span><b>${left}${total?'/'+total:''}</b> left</span><span><b>${peso(pay*left)}</b> to go</span><span>Ends <b>${ym(end)}</b></span></div>
+        <div class="sub-f"><div class="facts">${!total&&i.bbTerm?`<span>Payment <b>${i.bbTerm}</b></span><span class="muted">months not on the statement</span>`:`<span><b>${left}${total?'/'+total:''}</b> left</span><span><b>${peso(pay*left)}</b> to go</span><span>Ends <b>${ym(end)}</b></span>`}</div>
         <div class="acts">${billed(i)?'':`${isPaid(i)?`<span class="pill ok">Paid</span>${!isHiddenPaid(i)?undoBtn(`data-iundo="${i.id}"`,i.name):''}`:''}${last4Of(i)?'':`<button class="pill warn ask4" data-iedit4="${i.id}">Add last 4</button>`}${editBtn(`data-iedit="${i.id}"`,i.name)}${left>0&&!isPaid(i)?paidBtn(`data-ipaid="${i.id}"`,i.name):''}`}${billed(i)?editBtn(`data-iedit="${i.id}"`,i.name):''}</div></div>
       </div>`;
     }).join('');
@@ -676,7 +676,7 @@ $('#billDlg').addEventListener('click',e=>{
   const t=e.target.closest('button');if(!t)return;
   if(t.dataset.billclose){$('#billDlg').close();return}
   if(t.dataset.done){billKeep=true;$('#billDlg').close();return}
-  if(t.dataset.del){const g=S.items.find(i=>i.id==t.dataset.del);S.items=S.items.filter(i=>i!==g&&!(g&&g.bbKey&&i.inBill===g.bbKey));  // with the loans listed on it
+  if(t.dataset.del){const g=S.items.find(i=>i.id==t.dataset.del);S.items=S.items.filter(i=>i!==g&&!(g&&g.bbRef&&i.inBill===g.bbRef));  // with the loans listed on it
     billKeep=true;$('#billDlg').close()}
 });
 function newBill(kind){
@@ -919,7 +919,9 @@ function applyBB(bills){
   if(changed){ensureLinks();save();if(editingId==null)renderItems();render()}
   aiSortBills();aiPlacePlans();
   const t=new Date();
-  bbState('ok',`Synced ${bills.length} bill${bills.length===1?'':'s'} at ${t.getHours()%12||12}:${String(t.getMinutes()).padStart(2,'0')} ${t.getHours()<12?'AM':'PM'}`);
+  const np=bills.reduce((s,b)=>s+bbPlans(b).length,0),fed=bills.some(b=>bbList(b));
+  bbState('ok',`Synced ${bills.length} bill${bills.length===1?'':'s'}${np?`, ${np} installment${np===1?'':'s'}`:''} at ${t.getHours()%12||12}:${String(t.getMinutes()).padStart(2,'0')} ${t.getHours()<12?'AM':'PM'}`
+    +(bills.length&&!fed?'. BillBuddy sent no installment details: update its /api/bills.':''));
 }
 // What a BillBuddy bill brings besides its amount and due date. A card fills in its account's credit limit and
 // statement day when those are empty, and the installment plans its statement lists become installments
@@ -929,21 +931,23 @@ function applyBB(bills){
 // breakdown sets its payments left and total. Returns true when anything changed.
 // BillBuddy sends each plan as payment `term` of `of` for `amount` (newer feeds repeat these as paid_count,
 // term_count, monthly_amount and description); a plan whose term the statement cut off is skipped.
-const bbPlans=b=>(Array.isArray(b.installments)?b.installments:[]).map(x=>({desc:String(x.description||x.label||'Installment'),
+const bbList=b=>{let l=b.installments;if(typeof l==='string')try{l=JSON.parse(l)}catch(e){l=null}return Array.isArray(l)?l:null};
+// `total` is 0 when the statement cut the term off (EastWest's "006 OF 01"): a card still lists it, by payment number
+const bbPlans=b=>(bbList(b)||[]).map(x=>({desc:String(x.description||x.label||'Installment'),
   paid:Math.round(num(x.paid_count??x.term)),total:Math.round(num(x.term_count??x.of)),amt:Math.round(num(x.monthly_amount??x.amount)*100)/100}))
-  .filter(x=>x.amt>0&&x.total>=2&&x.paid>=1&&x.paid<=x.total);
+  .filter(x=>x.amt>0&&x.paid>=1&&(!x.total||x.total>=2&&x.paid<=x.total));
 const planName=x=>x.desc.toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());
 // payments left counting this statement's, unless it is already paid
 const planLeft=(x,paidNow)=>Math.max(0,x.total-x.paid+(paidNow?0:1));
 function adoptBB(it,b,due){
   let ch=false;const set=(o,k,v)=>{if(v!=null&&o[k]!==v){o[k]=v;ch=true}};
-  const plans=bbPlans(b);
+  let plans=bbPlans(b);
   const paidNow=isPaid(it)||it.bbPaidDue===b.due_date; // this statement is already paid
   if(it.kind==='card'){
     const a=acctOf(it);if(!a)return ch;
     if(!(num(a.limit)>0)&&num(b.credit_limit)>0)set(a,'limit',num(b.credit_limit));
     const sd=parseD(b.statement_date);if(!a.stmt&&sd)set(a,'stmt',sd.getDate());
-    if(!Array.isArray(b.installments))return ch;    // an older feed: leave the card's installments alone
+    if(!bbList(b))return ch;                        // an older feed: leave the card's installments alone
     const seen=new Set();
     plans.forEach(x=>{
       const k=a.key+'|'+squash(x.desc)+'|'+x.total;
@@ -953,29 +957,32 @@ function adoptBB(it,b,due){
         if(home){i=home;i.bbInst=k}
         else{i={id:uid++,name:planName(x),kind:'loan',inCard:a.key,bbInst:k,amount:null,day:due.getDate(),left:null,total:null,rate:null};S.items.push(i)}
         ch=true}
-      set(i,'inCard',a.key);set(i,'amount',x.amt);set(i,'day',due.getDate());set(i,'total',x.total);set(i,'left',planLeft(x,paidNow));
+      set(i,'inCard',a.key);set(i,'amount',x.amt);set(i,'day',due.getDate());
+      if(x.total){set(i,'total',x.total);set(i,'left',planLeft(x,paidNow));if(i.bbTerm){delete i.bbTerm;ch=true}}else set(i,'bbTerm',x.paid);
     });
     // a plan the newest statement no longer lists after its last payment is finished
     const before=S.items.length;
     S.items=S.items.filter(i=>!(i.inCard===a.key&&i.bbInst&&!seen.has(i.bbInst)&&num(i.left)<=1));
     if(S.items.length!==before)ch=true;
-  }else if(it.kind==='loan'&&plans.length&&(plans.length>1||hasParts(it))&&it.bbKey){
+  }else if(it.kind==='loan'&&(plans=plans.filter(x=>x.total)).length&&(plans.length>1||hasParts(it))){
     // several loans on one statement (UnionBank's two personal loans): each is its own installment under this
     // bill, or the one you entered yourself (see planHome); the bill stays one bill in Bills and This cycle
+    // the bill's own key for its installments: BillBuddy's account key when it sent one, else one of ours
+    if(!it.bbRef){it.bbRef=it.bbKey||genKey();ch=true}
     const seen=new Set();let most=0,longest=0;
     plans.forEach(x=>{
-      const k='L'+it.bbKey+'|'+squash(x.desc)+'|'+x.total;
+      const k='L'+it.bbRef+'|'+squash(x.desc)+'|'+x.total;
       seen.add(k);
       let i=S.items.find(y=>y.bbInst===k);
       if(!i){const home=planHome(k,x,b,null);if(home==='wait')return;
         if(home){i=home;i.bbInst=k}
-        else{i={id:uid++,name:planName(x),kind:'loan',inBill:it.bbKey,bbInst:k,amount:null,day:due.getDate(),left:null,total:null,rate:null};S.items.push(i)}
+        else{i={id:uid++,name:planName(x),kind:'loan',inBill:it.bbRef,bbInst:k,amount:null,day:due.getDate(),left:null,total:null,rate:null};S.items.push(i)}
         ch=true}
       const left=planLeft(x,paidNow);most=Math.max(most,left);longest=Math.max(longest,x.total);
-      set(i,'inBill',it.bbKey);set(i,'amount',x.amt);set(i,'day',due.getDate());set(i,'total',x.total);set(i,'left',left);
+      set(i,'inBill',it.bbRef);set(i,'amount',x.amt);set(i,'day',due.getDate());set(i,'total',x.total);set(i,'left',left);
     });
     const before=S.items.length;
-    S.items=S.items.filter(i=>!(i.inBill===it.bbKey&&i.bbInst&&!seen.has(i.bbInst)&&num(i.left)<=1));
+    S.items=S.items.filter(i=>!(i.inBill===it.bbRef&&i.bbInst&&!seen.has(i.bbInst)&&num(i.left)<=1));
     if(S.items.length!==before)ch=true;
     if(most)set(it,'left',most);if(longest)set(it,'total',longest);
   }else if(it.kind==='loan'&&plans.length){
