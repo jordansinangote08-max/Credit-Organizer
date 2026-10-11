@@ -18,7 +18,7 @@ Under the salary, **Payday** sets your pay schedule: once a month on one day, tw
 
 ## Bills and categories
 
-**Add bill**, or the pencil on a bill, opens a small window with its form. Edits save as you type; a new bill is kept only when you tap **Add** (closing the window any other way leaves it out). Adding or editing an installment opens the same window from the Installments tab.
+**Add bill**, or the pencil on a bill, opens a small window with its form. Edits save as you type; a new bill is kept only when you tap **Add** (closing the window any other way leaves it out). Adding or editing an installment opens the same window from the Installments tab. Adding or editing a card, and adding other money or a creditor, open the same kind of window. Due days and statement days are picked on a calendar: the field shows the next date, and the day you pick repeats every month.
 
 Each category's bills sit together on a background of that category's color. **Categories** (on the Bills tab) opens a small window: add a category, or pick one to rename it, change its color, choose what it counts as (bills you must pay, essentials, installments, credit cards, or can be cut) or delete it. A category that still has bills asks where to move them. To move a bill, tap Edit on it and pick its category.
 

@@ -281,6 +281,12 @@ function renderTimeline(C){
 
 // ---------- bills ----------
 let editingId=null;
+// A day of the month (due day, statement day) is picked on a calendar: the field shows the next date it
+// falls on, and picking any date keeps its day. dayFrom() reads it back.
+function dayField(id,k,label,date,hint){
+  return `<div class="field"><label for="${id}">${label}</label><input id="${id}" data-k="${k}" data-day="1" type="date" value="${date?iso(date):''}">${hint?`<span class="hint">${hint}</span>`:''}</div>`;
+}
+const dayFrom=el=>{const d=parseD(el.value);return d?d.getDate():null};
 const catOptions=sel=>S.cats.map(c=>`<option value="${esc(c.key)}" ${c.key===sel?'selected':''}>${esc(c.name)}</option>`).join('');
 function itemForm(i,isNew){
   return `<div class="form flat" data-id="${i.id}">
@@ -288,7 +294,7 @@ function itemForm(i,isNew){
     <div class="field wide"><label for="k${i.id}">Category</label><select id="k${i.id}" data-k="cat">${catOptions(catOf(i)?.key)}</select></div>
     <div class="field"><label for="a${i.id}">${i.kind==='card'?'Statement amount':repeats(i)&&i.once?'Amount':'Monthly amount'}</label><input id="a${i.id}" data-k="amount" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" value="${i.amount??''}"></div>
     ${repeats(i)&&i.once?`<div class="field"><label for="dt${i.id}">Due date</label><input id="dt${i.id}" data-k="date" type="date" value="${esc(i.date||'')}"></div>`
-      :`<div class="field"><label for="d${i.id}">Due day</label><input id="d${i.id}" data-k="day" type="number" inputmode="numeric" min="1" max="31" value="${i.day??''}"></div>`}
+      :dayField('d'+i.id,'day',i.bbDue?'Due date':'Next due date',i.day||i.bbDue?dueOf(i,cycleStart()):null,i.bbDue?'':'Same day every month.')}
     ${repeats(i)?`<label class="check wide"><input type="checkbox" id="rp${i.id}" data-k="repeat" ${i.once?'':'checked'}><span>Repeats every month</span></label>
     ${i.once?'':`<div class="field wide"><label for="u${i.id}">Stops after</label><input id="u${i.id}" data-k="until" type="month" placeholder="YYYY-MM" pattern="[0-9]{4}-[0-9]{2}" value="${esc(i.until||'')}" aria-describedby="uh${i.id}"><span class="hint" id="uh${i.id}">Leave empty if it never stops.</span></div>`}`:''}
     ${i.kind==='loan'?`<div class="field"><label for="l${i.id}">Payments left</label><input id="l${i.id}" data-k="left" type="number" inputmode="numeric" min="0" value="${i.left??''}"></div><div class="field"><label for="t${i.id}">Total payments</label><input id="t${i.id}" data-k="total" type="number" inputmode="numeric" min="0" value="${i.total??''}"></div>`:''}
@@ -468,15 +474,17 @@ function renderBorrow(C){
     <p class="small">Costs <b class="num">${peso(parts.reduce((s,x)=>s+x.cost,0))}</b> in interest and fees.${newMonthly>0?` Adds ${peso(newMonthly)} a month; ${newMonthly>nf?'<b style="color:var(--bad)">next month would be short too.</b>':'next month should still fit.'}`:''}</p>
     ${rem>0.004?`<p class="small" style="color:var(--bad)">Still ${peso(rem)} short after every creditor.</p>`:''}</div>`;
 }
-function renderSrcList(){
-  $('#srcList').innerHTML=S.sources.map(s=>`<div class="form" data-sid="${s.id}">
-    <div class="field wide"><label for="sn${s.id}">Creditor</label><input id="sn${s.id}" data-k="name" value="${esc(s.name)}"></div>
+function srcFields(s){return `
+
+    <div class="field wide"><label for="sn${s.id}">Creditor</label><input id="sn${s.id}" data-k="name" placeholder="e.g. SSS Salary Loan" value="${esc(s.name)}"></div>
     <div class="field"><label for="sa${s.id}">Available (₱)</label><input id="sa${s.id}" data-k="avail" type="number" min="0" step="0.01" value="${s.avail??''}"></div>
     <div class="field"><label for="sr${s.id}">Interest %/mo</label><input id="sr${s.id}" data-k="rate" type="number" min="0" step="0.01" value="${s.rate??''}"></div>
     <div class="field"><label for="sy${s.id}">Rate type</label><select id="sy${s.id}" data-k="addon"><option value="0" ${s.addon?'':'selected'}>Diminishing</option><option value="1" ${s.addon?'selected':''}>Add-on</option></select></div>
     <div class="field"><label for="sf${s.id}">Upfront fee %</label><input id="sf${s.id}" data-k="fee" type="number" min="0" step="0.01" value="${s.fee??''}"></div>
     <div class="field"><label for="st${s.id}">Term (months)</label><input id="st${s.id}" data-k="term" type="number" min="1" value="${s.term??''}"></div>
-    <div class="field"><label for="sx${s.id}">Other terms</label><input id="sx${s.id}" data-k="terms" placeholder="3,6,12" value="${esc(s.terms||'')}"></div>
+    <div class="field"><label for="sx${s.id}">Other terms</label><input id="sx${s.id}" data-k="terms" placeholder="3,6,12" value="${esc(s.terms||'')}"></div>`}
+function renderSrcList(){
+  $('#srcList').innerHTML=S.sources.map(s=>`<div class="form" data-sid="${s.id}">${srcFields(s)}
     <div class="acts">${delBtn(`data-sdel="${s.id}"`,"Remove "+(s.name||"creditor"))}</div></div>`).join('');
 }
 
@@ -508,20 +516,20 @@ function nextOn(day){
 }
 const usedOf=a=>{const b=billOf(a);return b&&b.kind==='card'&&!isPaid(b)?num(b.amount):0};
 const ucls=p=>p>50?'bad':p>30?'warn':'';
-function acctForm(a){
-  return `<div class="form" data-aid="${a.id}">
-    <div class="field wide"><label for="an${a.id}">Card name</label><input id="an${a.id}" data-k="name" value="${esc(a.name)}"></div>
+function acctForm(a,isNew){
+  const b=billOf(a);
+  return `<div class="form flat" data-aid="${a.id}">
+    <div class="field wide"><label for="an${a.id}">Card name</label><input id="an${a.id}" data-k="name" placeholder="e.g. BPI Gold" value="${esc(a.name)}"></div>
     <div class="field"><label for="a4${a.id}">Last 4 digits</label><input id="a4${a.id}" data-k="last4" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="1234" autocomplete="off" value="${esc(a.last4||'')}"><span class="hint">Matches BillBuddy bills.</span></div>
     <div class="field"><label for="al${a.id}">Credit limit (₱)</label><input id="al${a.id}" data-k="limit" type="number" min="0" step="0.01" value="${a.limit??''}"></div>
-    <div class="field"><label for="as${a.id}">Statement day</label><input id="as${a.id}" data-k="stmt" type="number" min="1" max="31" value="${a.stmt??''}"></div>
-    <div class="field"><label for="ad${a.id}">Payment due day</label><input id="ad${a.id}" data-k="due" type="number" min="1" max="31" value="${billOf(a)?.day??''}"></div>
-    <div class="acts">${delBtn(`data-adel="${a.id}"`,"Remove "+(a.name||"card"))}<button class="btn" data-adone="1">Done</button></div>
+    ${dayField('as'+a.id,'stmt','Next statement',a.stmt?nextOn(num(a.stmt)):null)}
+    ${dayField('ad'+a.id,'due','Next payment due',b&&(b.day||b.bbDue)?dueOf(b,cycleStart()):null)}
+    <div class="acts">${isNew?'<span></span>':delBtn(`data-adel="${a.id}"`,"Remove "+(a.name||"card"))}<button class="btn" data-adone="1">${isNew?'Add':'Done'}</button></div>
   </div>`;
 }
 function renderAccounts(){
   let lim=0,used=0;
   const html=S.accounts.map(a=>{
-    if(a.id===acctEditing)return acctForm(a);
     const L=num(a.limit),U=usedOf(a),p=L>0?U/L*100:null;
     if(L>0){lim+=L;used+=U}
     const bill=billOf(a);
@@ -547,7 +555,7 @@ function renderAccounts(){
 // Only the open tab is redrawn as you type; the others are marked and redrawn when you open them.
 const JOBS={
   cycle:C=>{renderAdvice(C);renderTimeline(C)}, inst:()=>renderInst(), borrow:C=>renderBorrow(C), ahead:C=>renderAhead(C),
-  acct:()=>{if(acctEditing==null)renderAccounts()}, bills:()=>renderItems(), money:()=>renderIncome(), src:()=>renderSrcList()
+  acct:()=>renderAccounts(), bills:()=>renderItems(), money:()=>renderIncome(), src:()=>renderSrcList()
 };
 const JOB_PANEL={src:'borrow'};
 const stale=new Set();
@@ -590,6 +598,7 @@ $('#billBody').addEventListener('input',e=>{
     commit();refreshBill();const f=$('#rp'+it.id);f&&f.focus();return}
   if(k==='last4'){const v=e.target.value.replace(/\D/g,'').slice(0,4);if(v!==e.target.value)e.target.value=v;
     const a=it.kind==='card'&&acctOf(it);if(a)a.last4=v;else if(v)it.bbLast4=v;else delete it.bbLast4;commit();renderAccounts();return}
+  if(e.target.dataset.day){it.day=dayFrom(e.target);delete it.bbDue;commit();return}
   if(k==='until'||k==='date'){if(e.target.value)it[k]=e.target.value;else delete it[k];commit();return}
   it[k]=k==='name'?e.target.value:(e.target.value===''?null:num(e.target.value));
   if(k==='name'){const a=acctOf(it);if(a)a.name=it.name}
@@ -615,6 +624,7 @@ function deleteCat(c,to){
   if(to){S.items.forEach(i=>{if(i.cat===c.key){i.cat=to.key;setKind(i,to.kind)}})}
   S.cats=S.cats.filter(x=>x!==c);catEditing=null;catDeleting=false;ensureLinks();save();renderAll();renderCats();
 }
+document.addEventListener('click',e=>{const t=e.target;if(t.matches?.('input[type=date],input[type=month]')&&t.showPicker){try{t.showPicker()}catch(_){}}});
 // ---------- the bill window ----------
 // Adding or editing a bill opens a small window. Edits save as you type. A new bill is kept only
 // when you tap Add; closing the window any other way (×, Esc, tapping outside) leaves it out.
@@ -688,34 +698,73 @@ $('#incList').addEventListener('input',e=>{
   renderIncSum();commit();
 });
 $('#incList').addEventListener('click',e=>{const id=e.target.closest('button')?.dataset.incdel;if(!id)return;S.income=S.income.filter(o=>o.id!=id);save();renderIncome();render()});
-$('#incAdd').addEventListener('click',()=>{const x={id:uid++,label:'',amount:null,date:iso(new Date())};S.income.push(x);save();renderIncome();render();
-  const row=document.querySelector(`.inc[data-iid="${x.id}"] input`);row&&row.focus()});
+$('#incAdd').addEventListener('click',()=>{const x={id:uid++,label:'',amount:null,date:iso(new Date())};S.income.push(x);openSheet('inc',x,true,'#il'+x.id)});
 
-$('#srcList').addEventListener('input',e=>{
+function srcInput(e){
   const row=e.target.closest('.form');if(!row)return;const s=S.sources.find(x=>x.id==row.dataset.sid),k=e.target.dataset.k;if(!s||!k)return;
   s[k]=k==='name'||k==='terms'?e.target.value:k==='addon'?e.target.value==='1':(e.target.value===''?null:num(e.target.value));commit();
-});
+}
+$('#srcList').addEventListener('input',srcInput);
 $('#srcList').addEventListener('click',e=>{const id=e.target.closest('button')?.dataset.sdel;if(!id)return;S.sources=S.sources.filter(s=>s.id!=id);save();renderSrcList();render()});
-$('#srcAdd').addEventListener('click',()=>{const s={id:uid++,name:'New creditor',avail:null,rate:null,fee:0,term:12};S.sources.push(s);save();renderSrcList();render();const f=$('#sn'+s.id);f&&(f.focus(),f.select())});
+$('#srcAdd').addEventListener('click',()=>{const s={id:uid++,name:'',avail:null,rate:null,fee:0,term:12};S.sources.push(s);openSheet('src',s,true,'#sn'+s.id)});
 
 $('#resetBtn').addEventListener('click',()=>{$('#resetConfirm').hidden=false});
 $('#resetNo').addEventListener('click',()=>{$('#resetConfirm').hidden=true});
 $('#resetYes').addEventListener('click',()=>{const bb=S.bb;S=clone(DEFAULTS);if(bb)S.bb=bb;prepare();editingId=null;save();syncInputs();$('#resetConfirm').hidden=true;renderAll()});
-$('#acctList').addEventListener('input',e=>{
+function acctInput(e){
   const row=e.target.closest('.form');if(!row)return;const a=S.accounts.find(x=>x.id==row.dataset.aid),k=e.target.dataset.k;if(!a||!k)return;
   if(k==='last4'){const v=e.target.value.replace(/\D/g,'').slice(0,4);if(v!==e.target.value)e.target.value=v;a.last4=v}
-  else if(k==='due'){const b=billOf(a);if(b){b.day=e.target.value===''?null:num(e.target.value);delete b.bbDue}}
+  else if(k==='due'){const b=billOf(a);if(b){b.day=dayFrom(e.target);delete b.bbDue}}
+  else if(k==='stmt')a.stmt=dayFrom(e.target)
   else{a[k]=k==='name'?e.target.value:(e.target.value===''?null:num(e.target.value));if(k==='name'){const b=billOf(a);if(b)b.name=a.name}}
   commit();
-});
+}
 $('#acctList').addEventListener('click',e=>{
   const t=e.target.closest('button');if(!t)return;
-  if(t.dataset.aedit){acctEditing=+t.dataset.aedit;renderAccounts();const f=$('#al'+acctEditing);f&&f.focus();return}
-  if(t.dataset.aedit4){acctEditing=+t.dataset.aedit4;renderAccounts();const f=$('#a4'+acctEditing);f&&f.focus();return}
-  if(t.dataset.adone){acctEditing=null;renderAccounts();renderItems();return}
-  if(t.dataset.adel){const a=S.accounts.find(x=>x.id==t.dataset.adel);const b=a&&billOf(a);if(b){delete b.acct;b.noAcct=true}S.accounts=S.accounts.filter(x=>x.id!=t.dataset.adel);acctEditing=null;save();renderAccounts();renderItems()}
+  const a=S.accounts.find(x=>x.id==(t.dataset.aedit||t.dataset.aedit4));if(!a)return;
+  openSheet('acct',a,false,t.dataset.aedit4?'#a4'+a.id:'#al'+a.id);
 });
-$('#acctAdd').addEventListener('click',()=>{const a={id:uid++,key:genKey(),name:'New card',last4:'',limit:null,stmt:null};S.accounts.push(a);S.items.push({id:uid++,name:a.name,kind:'card',amount:null,day:clampPd(),acct:a.key});renderItems();render();acctEditing=a.id;save();renderAccounts();const f=$('#an'+a.id);f&&(f.focus(),f.select())});
+// ---------- one window for cards, other money and creditors ----------
+// Works like the bill window: edits save as you type, and a new entry is kept only when you tap Add.
+let sheet=null;
+const SHEET={
+  acct:{title:n=>n?'New card':'Edit card',body:(o,n)=>acctForm(o,n),list:()=>S.accounts,
+    drop:o=>{S.items=S.items.filter(i=>i.acct!==o.key);S.accounts=S.accounts.filter(x=>x!==o)},
+    tidy:o=>{if(!o.name.trim()){o.name='New card';const b=billOf(o);if(b)b.name=o.name}}},
+  inc:{title:n=>'Add money',body:(o)=>`<div class="form flat" data-iid="${o.id}">
+      <div class="field wide"><label for="il${o.id}">What is it</label><input id="il${o.id}" data-k="label" placeholder="e.g. Freelance job" value="${esc(o.label||'')}"></div>
+      <div class="field"><label for="ia${o.id}">Amount (₱)</label><input id="ia${o.id}" data-k="amount" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" value="${o.amount??''}"></div>
+      <div class="field"><label for="id${o.id}">Arrives on</label><input id="id${o.id}" data-k="date" type="date" value="${esc(o.date||'')}"></div>
+      <div class="acts"><span></span><button class="btn" data-sheetdone="1">Add</button></div></div>`,
+    list:()=>S.income,drop:o=>{S.income=S.income.filter(x=>x!==o)},tidy:o=>{if(!o.label.trim())o.label='Other money'}},
+  src:{title:n=>'New creditor',body:(o)=>`<div class="form flat" data-sid="${o.id}">${srcFields(o)}<div class="acts"><span></span><button class="btn" data-sheetdone="1">Add</button></div></div>`,
+    list:()=>S.sources,drop:o=>{S.sources=S.sources.filter(x=>x!==o)},tidy:o=>{if(!o.name.trim())o.name='Creditor'}}
+};
+function openSheet(type,obj,isNew,focus){
+  sheet={type,obj,isNew,keep:false};
+  $('#sheetTitle').textContent=SHEET[type].title(isNew);$('#sheetBody').innerHTML=SHEET[type].body(obj,isNew);
+  const d=$('#sheetDlg');if(!d.open)d.showModal();const f=focus&&$(focus);f&&f.focus();
+}
+$('#sheetBody').addEventListener('input',e=>{
+  if(!sheet)return;
+  if(sheet.type==='acct')return acctInput(e);
+  if(sheet.type==='src')return srcInput(e);
+  const x=sheet.obj,k=e.target.dataset.k;if(!k)return;
+  x[k]=k==='amount'?(e.target.value===''?null:num(e.target.value)):e.target.value;commit();
+});
+$('#sheetDlg').addEventListener('click',e=>{
+  if(e.target===e.currentTarget){e.currentTarget.close();return}
+  const t=e.target.closest('button');if(!t||!sheet)return;
+  if(t.dataset.sheetclose){$('#sheetDlg').close();return}
+  if(t.dataset.sheetdone||t.dataset.adone){sheet.keep=true;$('#sheetDlg').close();return}
+  if(t.dataset.adel){const a=sheet.obj,b=billOf(a);if(b){delete b.acct;b.noAcct=true}S.accounts=S.accounts.filter(x=>x!==a);sheet.keep=true;$('#sheetDlg').close()}
+});
+$('#sheetDlg').addEventListener('close',()=>{
+  if(!sheet)return;const T=SHEET[sheet.type],o=sheet.obj;
+  if(sheet.isNew&&!sheet.keep)T.drop(o);else if(T.list().includes(o))T.tidy(o);
+  sheet=null;$('#sheetBody').innerHTML='';ensureLinks();save();renderAll();
+});
+$('#acctAdd').addEventListener('click',()=>{const a={id:uid++,key:genKey(),name:'',last4:'',limit:null,stmt:null};S.accounts.push(a);S.items.push({id:uid++,name:'',kind:'card',amount:null,day:clampPd(),acct:a.key});ensureLinks();openSheet('acct',a,true,'#an'+a.id)});
 function selectTab(name){
   document.querySelectorAll('.tab').forEach(x=>{const on=x.dataset.tab===name;x.setAttribute('aria-selected',on);x.tabIndex=on?0:-1;
     if(on&&x.parentElement.scrollWidth>x.parentElement.clientWidth)x.parentElement.scrollTo({left:x.offsetLeft-x.parentElement.clientWidth/2+x.offsetWidth/2,behavior:'smooth'})});
