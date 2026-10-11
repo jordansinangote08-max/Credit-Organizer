@@ -301,6 +301,7 @@ function itemForm(i,isNew){
       :dayField('d'+i.id,'day',i.bbDue?'Due date':'Next due date',i.day||i.bbDue?dueOf(i,cycleStart()):null,i.bbDue?'':'Same day every month.')}
     ${repeats(i)?`<label class="check wide"><input type="checkbox" id="rp${i.id}" data-k="repeat" ${i.once?'':'checked'}><span>Repeats every month</span></label>
     ${i.once?'':`<div class="field wide"><label for="u${i.id}">Stops after</label><input id="u${i.id}" data-k="until" type="month" placeholder="YYYY-MM" pattern="[0-9]{4}-[0-9]{2}" value="${esc(i.until||'')}" aria-describedby="uh${i.id}"><span class="hint" id="uh${i.id}">Leave empty if it never stops.</span></div>`}`:''}
+    ${i.kind==='loan'?`<div class="field wide"><label for="lend${i.id}">Lender</label><input id="lend${i.id}" data-k="lender" list="lenders" autocomplete="off" placeholder="${esc(lenderName(i))}" value="${esc(i.lender||'')}"><datalist id="lenders">${[...new Set(S.items.filter(x=>x.kind==='loan'&&x!==i).map(lenderName))].map(n=>`<option value="${esc(n)}">`).join('')}</datalist><span class="hint">Installments from the same lender are grouped.</span></div>`:''}
     ${i.kind==='loan'?`<div class="field"><label for="l${i.id}">Payments left</label><input id="l${i.id}" data-k="left" type="number" inputmode="numeric" min="0" value="${i.left??''}"></div><div class="field"><label for="t${i.id}">Total payments</label><input id="t${i.id}" data-k="total" type="number" inputmode="numeric" min="0" value="${i.total??''}"></div>`:''}
     ${i.kind==='card'||i.kind==='loan'?`<div class="field"><label for="f4${i.id}">Last 4 digits</label><input id="f4${i.id}" data-k="last4" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="1234" autocomplete="off" value="${esc(last4Of(i))}"><span class="hint">Matches BillBuddy bills.</span></div>`:''}
     ${i.kind==='card'||i.kind==='loan'?`<div class="field"><label for="r${i.id}">Interest %/month</label><input id="r${i.id}" data-k="rate" type="number" inputmode="decimal" step="0.01" min="0" value="${i.rate??''}"></div>`:''}
@@ -368,24 +369,37 @@ function closeCatEdit(){const c=S.cats.find(x=>x.key===catEditing);if(c&&!c.name
 
 // ---------- installments ----------
 const ord=n=>{if(!n)return '?';const v=n%100;return n+((v>=11&&v<=13)?'th':({1:'st',2:'nd',3:'rd'}[n%10]||'th'))};
+// Installments are grouped by lender: "UnionBank Loan A" and "UnionBank Loan B" sit under UnionBank Loan as
+// Installment 1 and 2. The lender is the Lender field if set (BillBuddy fills it with the bank), otherwise the
+// name without a trailing letter or number.
+const lenderName=i=>String(i.lender||'').trim()||String(i.name||'').replace(/\s+(?:[A-Za-z]|#?\d+|\([^)]*\))$/,'').trim()||'Installment';
+const lenderKey=i=>lenderName(i).toLowerCase().replace(/[^a-z0-9]/g,'').replace(/loans?$/,'')||'x';
 function renderInst(){
-  const start=cycleStart();
-  const loans=S.items.filter(i=>i.kind==='loan');
-  const addM=(d,m)=>new Date(d.getFullYear(),d.getMonth()+m,Math.min(d.getDate(),dim(new Date(d.getFullYear(),d.getMonth()+m,1).getFullYear(),new Date(d.getFullYear(),d.getMonth()+m,1).getMonth())));
+  const start=cycleStart(),endOf=i=>{const left=Math.max(0,Math.round(num(i.left)));if(!left)return null;
+    const n=dueDate(dayOf(i),start),m=new Date(n.getFullYear(),n.getMonth()+(isPaid(i)?left:left-1),1);return new Date(m.getFullYear(),m.getMonth(),Math.min(dayOf(i),dim(m.getFullYear(),m.getMonth())))};
+  const ym=d=>d?MON[d.getMonth()]+' '+d.getFullYear():'—';
+  const groups=new Map();
+  S.items.filter(i=>i.kind==='loan').sort((a,b)=>dayOf(a)-dayOf(b)||String(a.name).localeCompare(b.name)).forEach(i=>{const k=lenderKey(i);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(i)});
   let monthly=0,remaining=0,last=null;
-  const html=loans.map(i=>{
-    const left=Math.max(0,Math.round(num(i.left))),pay=num(i.amount),total=Math.round(num(i.total))||null;
-    const next=dueDate(dayOf(i),start),end=left>0?addM(next,isPaid(i)?left:left-1):null;
-    if(left>0){monthly+=pay;remaining+=pay*left;if(!last||end>last)last=end}
-    const done=total?Math.max(0,total-left):null;
-    return `<div class="loan">
-      <div class="loan-h"><div><h3>${esc(i.name)}${last4Of(i)?`<span class="l4">•••• ${esc(last4Of(i))}</span>`:''}</h3><span class="muted small">${i.rate!=null&&i.rate!==''?num(i.rate)+'%'+(i.addon?' add-on':'')+'/mo · ':''}due every ${ord(num(i.day))}</span></div><span class="pay">${peso(pay)}<span class="muted small">/mo</span></span></div>
-      ${total?`<div class="bar" role="img" aria-label="${done} of ${total} paid"><i style="width:${Math.round(done/total*100)}%"></i></div>`:''}
-      <div class="facts">${total?`<span><b>${done}/${total}</b> paid</span>`:''}<span><b>${left}</b> left</span><span><b>${peso(pay*left)}</b> to go</span><span>Ends <b>${end?MON[end.getMonth()]+' '+end.getFullYear():'—'}</b></span></div>
-      <div class="acts">${isPaid(i)?`<span class="pill ok">Paid</span>${!isHiddenPaid(i)?undoBtn(`data-iundo="${i.id}"`,i.name):''}`:''}${last4Of(i)?'':`<button class="pill warn ask4" data-iedit4="${i.id}">Add last 4</button>`}${editBtn(`data-iedit="${i.id}"`,i.name)}${left>0&&!isPaid(i)?paidBtn(`data-ipaid="${i.id}"`,i.name):''}</div>
-    </div>`;
+  const html=[...groups.values()].map(list=>{
+    let gm=0,gr=0,gl=null;
+    const rows=list.map((i,n)=>{
+      const left=Math.max(0,Math.round(num(i.left))),pay=num(i.amount),total=Math.round(num(i.total))||null,end=endOf(i);
+      if(left>0){gm+=pay;gr+=pay*left;if(!gl||end>gl)gl=end}
+      const pct=total?Math.round(Math.max(0,total-left)/total*100):null;
+      return `<div class="sub">
+        <div class="sub-h"><span class="sub-n">Installment ${n+1}${last4Of(i)?`<span class="l4">•••• ${esc(last4Of(i))}</span>`:''}</span><span class="pay">${peso(pay)}<span class="muted small">/mo</span></span></div>
+        ${pct!=null?`<div class="bar" role="img" aria-label="${total-left} of ${total} paid"><i style="width:${pct}%"></i></div>`:''}
+        <div class="sub-f"><div class="facts"><span><b>${left}${total?'/'+total:''}</b> left</span><span><b>${peso(pay*left)}</b> to go</span><span>Ends <b>${ym(end)}</b></span></div>
+        <div class="acts">${isPaid(i)?`<span class="pill ok">Paid</span>${!isHiddenPaid(i)?undoBtn(`data-iundo="${i.id}"`,i.name):''}`:''}${last4Of(i)?'':`<button class="pill warn ask4" data-iedit4="${i.id}">Add last 4</button>`}${editBtn(`data-iedit="${i.id}"`,i.name)}${left>0&&!isPaid(i)?paidBtn(`data-ipaid="${i.id}"`,i.name):''}</div></div>
+      </div>`;
+    }).join('');
+    monthly+=gm;remaining+=gr;if(gl&&(!last||gl>last))last=gl;
+    const r=list[0];
+    return `<div class="lgrp"><div class="lgrp-h"><h3>${esc(lenderName(r))}</h3>
+      <span class="muted small"><b>${peso(gm)}</b>/mo · <b>${peso(gr)}</b> to go · until ${ym(gl)}${list.length>1?' · '+list.length+' installments':''}</span></div>${rows}</div>`;
   }).join('');
-  $('#instSum').innerHTML=`<div><span class="label">Per month</span><span class="v">${peso(monthly)}</span></div><div><span class="label">Still to pay</span><span class="v">${peso(remaining)}</span></div><div><span class="label">All done by</span><span class="v">${last?MON[last.getMonth()]+' '+last.getFullYear():'—'}</span></div>`;
+  $('#instSum').innerHTML=`<div><span class="label">Per month</span><span class="v">${peso(monthly)}</span></div><div><span class="label">Still to pay</span><span class="v">${peso(remaining)}</span></div><div><span class="label">All done by</span><span class="v">${ym(last)}</span></div>`;
   $('#instList').innerHTML=html||'<p class="empty">No installments yet.</p>';
 }
 
@@ -604,8 +618,9 @@ $('#billBody').addEventListener('input',e=>{
     const a=it.kind==='card'&&acctOf(it);if(a)a.last4=v;else if(v)it.bbLast4=v;else delete it.bbLast4;commit();renderAccounts();return}
   if(e.target.dataset.day){it.day=dayFrom(e.target);delete it.bbDue;commit();return}
   if(k==='until'||k==='date'){if(e.target.value)it[k]=e.target.value;else delete it[k];commit();return}
+  if(k==='lender'){const v=e.target.value.trim();if(v)it.lender=v;else delete it.lender;commit();return}
   it[k]=k==='name'?e.target.value:(e.target.value===''?null:num(e.target.value));
-  if(k==='name'){const a=acctOf(it);if(a)a.name=it.name}
+  if(k==='name'){const a=acctOf(it);if(a)a.name=it.name;const f=$('#lend'+it.id);if(f)f.placeholder=lenderName(it)}
   if(k==='day')delete it.bbDue;
   commit();
 });
@@ -861,6 +876,7 @@ async function syncBillBuddy(){
     }
     if(!it){
       it={id:uid++,name:b.bank+BB_SUFFIX[kind],kind,amount:null,day:null,rate:kind==='card'?3:null};
+      if(kind==='loan')it.lender=b.bank+' Loan';
       if(kind==='loan')Object.assign(it,{left:null,total:null});
       S.items.push(it);ensureLinks();changed=true;
     }
@@ -1091,7 +1107,7 @@ function aiSnapshot(){
   return {today:todayIso(),pay_schedule:sched,salary_per_payday:r2(num(S.salary)),buffer_per_cycle:r2(Math.max(0,num(S.buffer))),
     this_cycle:{start:d(C.start),end:d(C.end),money_in:r2(C.avail),bills:r2(C.total),paid_so_far:r2(C.paidAmt),short_by:C.gap>0?r2(C.gap):0,extra:C.surplus>0?r2(C.surplus):0},
     bills:C.lines.map(l=>({name:l.i.name,category:catOf(l.i)?.name,type:l.i.kind,amount:r2(l.need),due:d(l.date),paid:isPaid(l.i)||undefined})),
-    installments:S.items.filter(i=>i.kind==='loan').map(i=>({name:i.name,monthly:r2(num(i.amount)),payments_left:i.left??null,total_payments:i.total??undefined,rate_pct_month:i.rate??undefined,rate_type:i.addon?'add-on':undefined,due_day:dayOf(i),last4_set:!!last4Of(i)})),
+    installments:S.items.filter(i=>i.kind==='loan').map(i=>({name:i.name,lender:lenderName(i),monthly:r2(num(i.amount)),payments_left:i.left??null,total_payments:i.total??undefined,rate_pct_month:i.rate??undefined,rate_type:i.addon?'add-on':undefined,due_day:dayOf(i),last4_set:!!last4Of(i)})),
     cards:S.accounts.map(a=>{const b=billOf(a),L=num(a.limit);return {name:a.name,statement:r2(num(b?.amount)),limit:L||undefined,usage_pct:L?r2(usedOf(a)/L*100):undefined,due:b&&(b.day||b.bbDue)?d(dueOf(b,C.start)):undefined,statement_day:a.stmt||undefined,last4_set:!!a.last4}}),
     income:S.income.map(x=>({label:x.label,amount:r2(num(x.amount)),date:x.date||undefined,counts:incTag(x).t})),
     creditors:S.sources.map(x=>({name:x.name,rate_pct_month:known(x)?num(x.rate):undefined,rate_type:x.addon?'add-on':'diminishing',fee_pct:num(x.fee)||undefined,term_months:num(x.term)||undefined,available:num(x.avail)||undefined})),

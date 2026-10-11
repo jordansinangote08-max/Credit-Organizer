@@ -22,6 +22,10 @@ Under the salary, **Payday** sets your pay schedule: once a month on one day, tw
 
 Each category's bills sit together on a background of that category's color. **Categories** (on the Bills tab) opens a small window: add a category, or pick one to rename it, change its color, choose what it counts as (bills you must pay, essentials, installments, credit cards, or can be cut) or delete it. A category that still has bills asks where to move them. To move a bill, tap Edit on it and pick its category.
 
+## Installments by lender
+
+The Installments tab groups installments by lender: each lender is a card showing its total per month, what's left to pay and when it's all done, with each installment inside as Installment 1, 2… showing payments left (like 4/6), the amount still to go and the month it ends. The lender is the **Lender** field in the installment's form (it suggests the lenders you already have); left empty, it's the name without a trailing letter or number, so "UnionBank Loan A" and "UnionBank Loan B" both sit under UnionBank Loan. Loans that BillBuddy adds are filed under their bank.
+
 ## Repeating and one-time bills
 
 A bill repeats every month on its due day. In its form, **Stops after** sets the last month it's due; leave it empty and it never stops. Untick **Repeats every month** for a one-time bill, which takes an exact due date and only counts in the pay cycle that date falls in. One-time bills in a later cycle are listed under *Coming in a later cycle*; bills that have stopped, or one-time bills whose date has passed, are kept under *Ended* until you remove them. Installments and credit cards don't have these options: installments end by payments left, and card amounts come from each statement.
