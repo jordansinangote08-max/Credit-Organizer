@@ -388,6 +388,8 @@ function planOf(i){
   if(total)return Math.min(total,Math.max(1,total-left+(isPaid(i)?0:1)))+'/'+total;
   return i.bbTerm?i.bbTerm+'/?':'';
 }
+// the statement's name without the payment count it repeats ("(03/12)", "005 OF 006"): the row shows it as 3/12
+const planLabel=i=>{const t=String(i.name||'');return planOf(i)?t.replace(/\s*[(\[]?\s*\d{1,3}\s*(?:\/|\bof\b)\s*\d{1,3}\s*[)\]]?/gi,' ').replace(/\s{2,}/g,' ').trim()||t:t};
 const lenderName=i=>partOf(i)?lenderName(partOf(i)):i.inCard?(S.accounts.find(a=>a.key===i.inCard)?.name||'Card')+' installments':String(i.lender||'').trim()||String(i.name||'').replace(/\s+(?:[A-Za-z]|#?\d+|\([^)]*\))$/,'').trim()||'Installment';
 const lenderKey=i=>lenderName(i).toLowerCase().replace(/[^a-z0-9]/g,'').replace(/loans?$/,'')||'x';
 function renderInst(){
@@ -404,7 +406,7 @@ function renderInst(){
       if(left>0){gm+=pay;gr+=pay*left;if(!gl||end>gl)gl=end}
       const pct=total?Math.round(Math.max(0,total-left)/total*100):null;
       const of=planOf(i);
-      const nm=billed(i)||i.bbInst||(i.name&&i.name!==lenderName(i))?i.name:'Installment '+(n+1);
+      const nm=billed(i)||i.bbInst||(i.name&&i.name!==lenderName(i))?planLabel(i):'Installment '+(n+1);
       return `<div class="sub">
         <div class="sub-h"><span class="sub-n">${of?`<span class="plan-of" aria-label="payment ${of.replace('/',' of ')}">${of}</span>`:''}${esc(nm)}${last4Of(i)?`<span class="l4">•••• ${esc(last4Of(i))}</span>`:''}</span><span class="pay">${peso(pay)}<span class="muted small">/mo</span></span></div>
         ${pct!=null?`<div class="bar" role="img" aria-label="${total-left} of ${total} paid"><i style="width:${pct}%"></i></div>`:''}
@@ -568,7 +570,7 @@ function cardPlans(a,bill){
   const plans=S.items.filter(i=>i.inCard===a.key).sort((x,y)=>String(planOf(x)).localeCompare(planOf(y),undefined,{numeric:true}));
   if(!plans.length)return '';
   const sum=plans.reduce((t,i)=>t+num(i.amount),0),total=num(bill&&bill.amount);
-  return `<div class="cplans">${plans.map(i=>`<div class="cplan"><span class="plan-of">${planOf(i)||'—'}</span><span class="cplan-n">${esc(i.name)}</span><span class="num">${peso(num(i.amount))}</span></div>`).join('')}
+  return `<div class="cplans">${plans.map(i=>`<div class="cplan"><span class="plan-of">${planOf(i)||'—'}</span><span class="cplan-n">${esc(planLabel(i))}</span><span class="num">${peso(num(i.amount))}</span></div>`).join('')}
     <div class="cplan foot"><span>Installments this period</span><span class="num">${peso(sum)}</span></div>
     ${total?`<div class="cplan foot"><span>Rest of the bill</span><span class="num">${peso(Math.max(0,total-sum))}</span></div><div class="cplan tot"><span>Statement total</span><span class="num">${peso(total)}</span></div>`:''}</div>`;
 }
