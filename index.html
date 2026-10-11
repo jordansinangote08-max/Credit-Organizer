@@ -15,10 +15,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=24">
-<script src="config.js?v=24" defer></script>
+<link rel="stylesheet" href="styles.css?v=25">
+<script src="config.js?v=25" defer></script>
 <script src="vendor/supabase-2.116.0.js" defer></script>
-<script src="app.js?v=24" defer></script>
+<script src="app.js?v=25" defer></script>
 </head>
 <body class="locked">
 <div class="app">
@@ -172,22 +172,31 @@
         <p class="muted small">Saved privately in your account.</p>
       </div>
       <div class="sec">
-        <div><h2>AI (Claude)</h2><p class="muted small lead">Key from console.anthropic.com. The planner does the maths; the AI only explains it, so it costs little.</p></div>
+        <div><h2>AI</h2><p class="muted small lead">The planner does the maths; the AI only explains it, so it costs little.</p></div>
         <div class="form flat">
-          <div class="field wide"><label for="aiKey">Anthropic API key</label><input id="aiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…"></div>
-          <div class="field wide"><label for="aiModel">Model</label><select id="aiModel">
+          <div class="field wide"><label for="aiProv">Provider</label><select id="aiProv">
+            <option value="anthropic">Claude (Anthropic)</option><option value="openai">ChatGPT (OpenAI)</option><option value="compat">Other (OpenAI-compatible)</option>
+          </select></div>
+          <div class="field wide" id="aiBaseF" hidden><label for="aiBase">API address</label><input id="aiBase" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://…/v1"></div>
+          <div class="field wide"><label for="aiKey">API key</label><input id="aiKey" type="password" autocomplete="off" spellcheck="false"><span class="hint" id="aiHelp"></span></div>
+          <div class="field wide" id="aiModelF"><label for="aiModel">Model</label><select id="aiModel">
             <option value="claude-opus-5-5">Opus 5.5 · most careful · ~$0.02</option>
             <option value="claude-sonnet-5-5">Sonnet 5.5 · balanced · ~$0.01</option>
             <option value="claude-haiku-5-5">Haiku 5.5 · cheapest · &lt;$0.01</option>
           </select></div>
-          <div class="acts"><button class="danger ib" id="aiClear" aria-label="Remove AI key" title="Remove key"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13.5a4 4 0 005.6 0l2.9-2.9a4 4 0 00-5.6-5.6l-1.1 1.1"/><path d="M14 10.5a4 4 0 00-5.6 0l-2.9 2.9a4 4 0 005.6 5.6l1.1-1.1"/><path d="M4 4l16 16"/></svg></button></div>
+          <div class="field wide" id="aiModelTF" hidden><label for="aiModelT">Model</label><input id="aiModelT" list="aiModels" autocomplete="off" spellcheck="false"><datalist id="aiModels"><option value="gpt-5-mini"><option value="gpt-5"><option value="gpt-5-nano"></datalist><span class="hint">Type any model your key can use.</span></div>
+          <div class="acts"><span></span><button class="danger ib" id="aiClear" aria-label="Remove this AI key" title="Remove key"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13.5a4 4 0 005.6 0l2.9-2.9a4 4 0 00-5.6-5.6l-1.1 1.1"/><path d="M14 10.5a4 4 0 00-5.6 0l-2.9 2.9a4 4 0 005.6 5.6l1.1-1.1"/><path d="M4 4l16 16"/></svg></button></div>
         </div>
         <span class="sync" id="aiState">Not connected</span>
-        <p class="muted small">Set a spend limit in the Anthropic Console. Bill names and amounts go to Anthropic; card digits and email never do.</p>
+        <p class="muted small">Set a spend limit with your provider. Bill names and amounts go to the provider; card digits and email never do.</p>
       </div>
     </section>
   </main>
 </div>
+<dialog id="billDlg" class="dlg" aria-labelledby="billTitle"><div class="dlg-in">
+  <div class="dlg-h"><h2 id="billTitle">New bill</h2><button class="x" data-billclose="1" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div id="billBody"></div>
+</div></dialog>
 <dialog id="catDlg" class="dlg" aria-labelledby="catTitle"><div class="dlg-in">
   <div class="dlg-h"><h2 id="catTitle">Categories</h2><button class="x" data-catclose="1" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
   <div id="catBody"></div>
