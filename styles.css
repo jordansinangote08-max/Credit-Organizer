@@ -432,3 +432,15 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 .payday select{font:inherit;font-size:.9rem;color:var(--ink);background:var(--surface);border:1px solid var(--field);border-radius:10px;padding:5px 8px}
 .payday select:focus{border-color:var(--accent);box-shadow:var(--ring);outline:none}
 @media (pointer:coarse){.payday select{font-size:16px;min-height:var(--tap)}}
+
+/* AI tab */
+.aiv,.aibox{display:grid;gap:10px}
+.aiv-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.aiv h3{font-size:1.05rem}
+.aibox{padding:16px;border-radius:16px;background:var(--sunk)}
+.aibox ul{margin:0;padding-left:1.1rem;display:grid;gap:6px;font-size:.95rem}
+.aih{font-weight:600}
+.cyc{display:grid;gap:2px;margin-top:6px}
+.cycrow{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1.4fr) minmax(0,1fr);gap:8px;padding:3px 0;color:var(--ink)}
+.cycrow span:not(:first-child){text-align:right}
+.cycrow.neg span:last-child{color:var(--bad);font-weight:600}

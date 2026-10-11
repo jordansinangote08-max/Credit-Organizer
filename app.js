@@ -682,7 +682,7 @@ $('.tabs').addEventListener('keydown',e=>{
 // ---------- boot ----------
 function adopt(next){
   if(!next||!Array.isArray(next.items)||next.ver!==DEFAULTS.ver)return;
-  S=next;prepare();rollover();editingId=null;syncInputs();renderAll();fillBB();
+  S=next;prepare();rollover();editingId=null;syncInputs();renderAll();fillBB();fillAI();
 }
 prepare();rollover();syncInputs();renderAll();
 // ---------- BillBuddy ----------
@@ -802,6 +802,147 @@ $('#bbClear').addEventListener('click',()=>{
 setInterval(syncBillBuddy,60000);
 setInterval(()=>{if(rollover())save();if(editingId==null&&!document.activeElement?.closest?.('.form'))renderItems();render()},60000);
 
+// ---------- AI: should I take this loan? ----------
+// The planner does the arithmetic itself: it lays the new loan's payments over the coming pay cycles
+// next to everything else you owe, and works out the largest amount that keeps every cycle covered.
+// That answer is exact, free and instant. If an Anthropic API key is set (API tab), Claude then reads a
+// short summary of those numbers and explains the call; it is told to use them rather than redo them.
+const AI_SDK='vendor/anthropic-sdk-0.133.0.js';
+const AI_PRICE={'claude-opus-5-5':[4,20],'claude-sonnet-5-5':[2,10],'claude-haiku-5-5':[0.1,0.5]}; // $ per million tokens in / out
+const aiConf=()=>S.ai||{};
+const aiModel=()=>AI_PRICE[aiConf().model]?aiConf().model:'claude-opus-5-5';
+const aiState=(cls,txt)=>{const el=$('#aiState');el.className='sync '+cls;el.textContent=txt};
+function fillAI(){const c=aiConf();$('#aiKey').value=c.key||'';$('#aiModel').value=aiModel();aiState(c.key?'ok':'off',c.key?'Ready':'Not connected');aiNote()}
+function aiNote(){$('#aiNote').textContent=aiConf().key?'Then asks '+$('#aiModel').selectedOptions[0].text.split(' –')[0]:'Add an AI key in the API tab for an explanation'}
+$('#aiKey').addEventListener('change',()=>{const key=$('#aiKey').value.trim();if(key)S.ai={...aiConf(),key,model:aiModel()};else delete S.ai;save();fillAI()});
+$('#aiModel').addEventListener('change',()=>{S.ai={...aiConf(),model:$('#aiModel').value};save();aiNote()});
+$('#aiClear').addEventListener('click',()=>{delete S.ai;save();fillAI()});
+fillAI();
+
+// the money in, and everything due, in the pay cycle that starts on `start`
+const incomeIn=start=>{const end=shiftCycle(start,1);return S.income.reduce((s,x)=>{const d=parseD(x.date);return s+(d&&d>=start&&d<end?num(x.amount):0)},0)};
+const dueIn=start=>S.items.filter(i=>i.kind!=='loan'&&num(i.amount)>0&&inCycle(i,start)).reduce((s,i)=>s+num(i.amount),0)+loansIn(start);
+function loanPlan(f){
+  const r=f.rate/100;
+  if(f.type==='once')return [{d:f.due,amt:f.amt*(1+r)}];
+  const per=payFor({rate:f.rate,addon:f.addon},f.amt,f.term),out=[];
+  for(let k=0;k<f.term;k++){const m=new Date(f.due.getFullYear(),f.due.getMonth()+k,1);out.push({d:new Date(m.getFullYear(),m.getMonth(),Math.min(f.due.getDate(),dim(m.getFullYear(),m.getMonth()))),amt:per})}
+  return out;
+}
+function loanCheck(f){
+  const plan=loanPlan(f),last=plan[plan.length-1].d,buffer=Math.max(0,num(S.buffer)),start=cycleStart(),rows=[];
+  for(let j=0,c=start;j<40&&(j<3||c<=last);j++,c=shiftCycle(c,1)){
+    const end=shiftCycle(c,1),pay=plan.filter(p=>p.d>=c&&p.d<end).reduce((s,p)=>s+p.amt,0);
+    const money=num(S.salary)+incomeIn(c),bills=dueIn(c);
+    rows.push({start:c,end:new Date(end.getFullYear(),end.getMonth(),end.getDate()-1),money,bills,pay,before:money-bills,after:money-bills-pay});
+  }
+  // payments grow in step with the amount borrowed, so the safe amount is exact: the tightest cycle decides
+  let safe=Infinity;rows.forEach(x=>{if(x.pay>0)safe=Math.min(safe,Math.max(0,(x.before-buffer)/(x.pay/f.amt)))});
+  if(!isFinite(safe))safe=f.amt;
+  const worst=rows.reduce((a,x)=>x.pay>0&&x.after<a.after?x:a,{after:Infinity});
+  const total=plan.reduce((s,p)=>s+p.amt,0),covered=rows.filter(x=>x.pay>0).length;
+  const verdict=worst.after<-0.004?'no':worst.after<buffer-0.004?'careful':'yes';
+  const eff=f.type==='inst'?effRate({rate:f.rate,addon:f.addon,fee:0,term:f.term})*100:null;
+  return {f,plan,rows,buffer,safe:Math.floor(safe/100)*100,worst,total,interest:total-f.amt,eff,verdict,covered,shortNow:rows[0].before<0};
+}
+function readLoanForm(){
+  const amt=num($('#aiAmt').value),type=$('#aiType').value,due=parseD($('#aiDue').value),term=Math.round(num($('#aiTerm').value)),rate=num($('#aiRate').value);
+  if(!(amt>0))return 'Enter how much you want to borrow.';
+  if(type==='inst'&&!(term>=1&&term<=60))return 'Enter how many months, from 1 to 60.';
+  if(!due)return 'Pick the '+(type==='inst'?'first due date':'due date')+'.';
+  return {amt,type,due,term:type==='inst'?term:1,rate,addon:$('#aiAddon').value==='1',why:$('#aiWhy').value.trim().slice(0,120)};
+}
+function syncLoanForm(){const inst=$('#aiType').value==='inst';$('#aiTermF').hidden=!inst;$('#aiAddonF').hidden=!inst;
+  $('#aiRateL').textContent=inst?'Interest %/month':'Interest or fee (%)';$('#aiDueL').textContent=inst?'First due date':'Due date'}
+$('#aiType').addEventListener('change',syncLoanForm);syncLoanForm();
+const VERDICT={yes:['ok','You can afford it'],careful:['warn','Tight, but possible'],no:['bad','Not without falling short']};
+function renderLoanCheck(R){
+  const [cls,word]=VERDICT[R.verdict],f=R.f,per=f.type==='inst'?R.plan[0].amt:R.total;
+  return `<div class="reco ${cls==='bad'?'bad':'ok'} aiv"><div class="aiv-h"><span class="pill ${cls}">${word}</span><span class="muted small">Planner's check</span></div>
+    <h3>${f.type==='inst'?`${peso(per)} a month for ${f.term} month${f.term===1?'':'s'}`:`Pay back ${peso(R.total)} on ${fmtD(f.due)}`}</h3>
+    <ul><li><span>Interest and fees</span><span class="a">${peso(R.interest)}</span></li>
+      ${R.eff!=null?`<li><span>Real cost per month</span><span class="a">${R.eff.toFixed(2)}%</span></li>`:''}
+      <li><span>Tightest pay cycle${isFinite(R.worst.after)?' ('+fmtD(R.worst.start)+')':''}</span><span class="a">${isFinite(R.worst.after)?peso(R.worst.after)+' left':'—'}</span></li>
+      <li><span>Most you can safely borrow on these terms</span><span class="a"><b>${peso(R.safe)}</b></span></li></ul>
+    <p class="note">"Safely" keeps every pay cycle at least ${peso(R.buffer)} ahead (your buffer, set on This cycle). It counts this cycle's card bills again in later cycles as an estimate, and assumes the borrowed money is spent on what it's for.${R.shortNow?' You are already short this cycle before this loan.':''}</p>
+    <details class="paidlist"><summary>Pay cycle by pay cycle</summary><div class="cyc">${R.rows.map(x=>`<div class="cycrow${x.after<0?' neg':''}"><span>${fmtD(x.start)} – ${fmtD(x.end)}</span><span class="num">${peso(x.before)}${x.pay?` − ${peso(x.pay)}`:''}</span><span class="num">${peso(x.after)}</span></div>`).join('')}</div>
+    <p class="note">Left after bills, minus this loan's payment, then what's left.</p></details></div>`;
+}
+
+// ---------- asking Claude ----------
+let aiSdk=null;const aiMemo=new Map();
+function loadAISdk(){return aiSdk||=new Promise((ok,fail)=>{const t=document.createElement('script');t.src=AI_SDK;t.onload=()=>ok(window.AnthropicSDK);t.onerror=()=>{aiSdk=null;fail(new Error('load'))};document.head.appendChild(t)})}
+const AI_SYSTEM=`You advise one person in the Philippines on whether to take a loan, using a summary of their own budget planner.
+The planner has already done all the arithmetic. Trust its numbers; never recompute them or invent amounts. Amounts are in pesos.
+"left_after" is what remains in a pay cycle after every bill and the new loan's payment. The buffer is the cushion they want to keep each cycle.
+Decide: "yes" if every cycle stays at or above the buffer, "careful" if a cycle dips below the buffer but stays above zero, "no" if any cycle goes below zero or the loan is very expensive for what it's for.
+Write plainly for a non-expert, in short sentences. headline: one sentence. reasons: two to four short points naming the specific cycles, bills or debts that matter. tips: one to three practical suggestions, such as a smaller amount, more months, a cheaper source, or which bill makes it tight. safe_amount: the most they should borrow, normally the planner's figure.`;
+const AI_SCHEMA={type:'object',additionalProperties:false,required:['verdict','headline','reasons','safe_amount','tips'],properties:{
+  verdict:{type:'string',enum:['yes','careful','no']},headline:{type:'string'},reasons:{type:'array',items:{type:'string'}},
+  safe_amount:{type:'number'},tips:{type:'array',items:{type:'string'}}}};
+function aiSummary(R){
+  const f=R.f,r2=x=>Math.round(x*100)/100,d=x=>iso(x);
+  const sched=payFreq()==='week'?'every '+WD[num(S.payweekday)%7]:payFreq()==='twice'?`twice a month, days ${dayNum(S.payday,15)} and ${dayNum(S.payday2,30)}`:'monthly, day '+clampPd();
+  return {today:iso(new Date()),pay_schedule:sched,salary_per_payday:r2(num(S.salary)),buffer_per_cycle:r2(R.buffer),
+    new_loan:{amount:r2(f.amt),repayment:f.type==='inst'?'installments':'one-time',months:f.type==='inst'?f.term:undefined,
+      interest_pct:f.rate,rate_type:f.type==='inst'?(f.addon?'add-on':'diminishing'):undefined,first_due:d(f.due),purpose:f.why||undefined,
+      payment_each:r2(R.plan[0].amt),total_repay:r2(R.total),total_interest:r2(R.interest),real_monthly_rate_pct:R.eff!=null?r2(R.eff):undefined},
+    planner_check:{verdict:R.verdict,safe_amount:R.safe,tightest_cycle_left:isFinite(R.worst.after)?r2(R.worst.after):null,already_short_this_cycle:R.shortNow},
+    cycles:R.rows.map(x=>({start:d(x.start),money_in:r2(x.money),bills:r2(x.bills),new_loan_payment:r2(x.pay),left_after:r2(x.after)})),
+    installments:S.items.filter(i=>i.kind==='loan'&&num(i.amount)>0).map(i=>({name:i.name,monthly:r2(num(i.amount)),payments_left:num(i.left),rate_pct_month:i.rate??undefined})),
+    cards:S.accounts.map(a=>{const b=billOf(a);return {name:a.name,statement:r2(num(b?.amount)),limit:num(a.limit)||undefined}}),
+    other_bills:S.items.filter(i=>i.kind!=='loan'&&i.kind!=='card'&&num(i.amount)>0).map(i=>({name:i.name,amount:r2(num(i.amount)),type:catOf(i)?.name})),
+    creditors:S.sources.filter(x=>known(x)).map(x=>({name:x.name,rate_pct_month:num(x.rate),rate_type:x.addon?'add-on':'diminishing',available:num(x.avail)||undefined}))};
+}
+async function askAI(R){
+  const {key}=aiConf(),model=aiModel(),summary=JSON.stringify(aiSummary(R)),memoKey=model+summary;
+  if(aiMemo.has(memoKey))return aiMemo.get(memoKey); // the same question twice costs nothing
+  const SDK=await loadAISdk();
+  const client=new SDK.Anthropic({apiKey:key,dangerouslyAllowBrowser:true,maxRetries:1});
+  const req={model,max_tokens:4000,output_config:{effort:'low',format:SDK.jsonSchemaOutputFormat(AI_SCHEMA)},system:AI_SYSTEM,
+    messages:[{role:'user',content:'Should I take this loan? Planner summary:\n'+summary}]};
+  // Opus and Sonnet can retry a declined request on another model; Haiku has no server-side fallback
+  if(model!=='claude-haiku-5-5')Object.assign(req,{betas:['server-side-fallback-2026-07-01'],fallbacks:'default'});
+  const res=await client.beta.messages.parse(req);
+  if(res.stop_reason==='refusal')throw Object.assign(new Error('refusal'),{kind:'refusal'});
+  if(res.stop_reason==='max_tokens'||!res.parsed_output)throw Object.assign(new Error('incomplete'),{kind:'incomplete'});
+  const [pin,pout]=AI_PRICE[model],u=res.usage||{};
+  const out={a:res.parsed_output,cost:((u.input_tokens||0)*pin+(u.output_tokens||0)*pout)/1e6,model:res.model||model};
+  aiMemo.set(memoKey,out);return out;
+}
+function aiError(e){
+  const A=window.AnthropicSDK?.Anthropic;
+  if(e.message==='load')return 'Could not load the AI library. Check your connection.';
+  if(e.kind==='refusal')return 'Claude declined to answer this one. The planner\'s check above still applies.';
+  if(e.kind==='incomplete')return 'Claude\'s answer was cut off. Try again.';
+  if(A&&e instanceof A.AuthenticationError)return 'The API key was not accepted. Check it in the API tab.';
+  if(A&&e instanceof A.PermissionDeniedError)return 'This API key is not allowed to use that model.';
+  if(A&&e instanceof A.RateLimitError)return 'Too many requests or no credit left on the key. Try again later.';
+  if(A&&e instanceof A.BadRequestError)return 'The AI could not read the request: '+e.message;
+  if(A&&e instanceof A.APIConnectionError)return 'Could not reach Anthropic. Check your connection.';
+  if(A&&e instanceof A.APIError)return 'The AI service had a problem ('+e.status+'). Try again.';
+  return 'Something went wrong asking the AI.';
+}
+let aiRun=0;
+$('#aiForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const f=readLoanForm(),out=$('#aiOut');
+  if(typeof f==='string'){out.innerHTML=`<p class="t-bad small">${f}</p>`;return}
+  const R=loanCheck(f),run=++aiRun;
+  out.innerHTML=renderLoanCheck(R)+(aiConf().key?'<div class="aibox" id="aiAns"><p class="muted small">Asking Claude…</p></div>':'');
+  if(!aiConf().key)return;
+  const btn=$('#aiGo');btn.disabled=true;
+  try{
+    const {a,cost,model}=await askAI(R);if(run!==aiRun)return;
+    const [cls,word]=VERDICT[a.verdict]||VERDICT.careful;
+    $('#aiAns').innerHTML=`<div class="aiv-h"><span class="pill ${cls}">${word}</span><span class="muted small">Claude's view</span></div>
+      <p class="aih">${esc(a.headline)}</p>${a.reasons.length?`<ul>${a.reasons.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
+      ${a.tips.length?`<p class="label">What you could do</p><ul>${a.tips.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
+      <p class="note">${model} · this answer cost about $${cost<0.001?cost.toFixed(5):cost.toFixed(3)}</p>`;
+  }catch(err){if(run===aiRun)$('#aiAns').innerHTML=`<p class="t-bad small">${aiError(err)}</p>`}
+  finally{btn.disabled=false}
+});
+
 // ---------- cloud (Supabase) ----------
 // One row per user in public.planner_state (see supabase/schema.sql); Row Level Security keeps it private.
 // Connection details come from config.js. Without them the planner stays on this device only.
@@ -865,7 +1006,7 @@ function renderAuth(){
 }
 function signedOut(){
   cloudUser=null;cloudReady=false;clearTimeout(cloudTimer);cloudTimer=null;
-  S=clone(DEFAULTS);prepare();editingId=null;syncInputs();renderAll();fillBB();
+  S=clone(DEFAULTS);prepare();editingId=null;syncInputs();renderAll();fillBB();fillAI();aiMemo.clear();$('#aiOut').innerHTML='';
   setSync('','Sign in to open your planner');renderAuth();
 }
 function initCloud(){
