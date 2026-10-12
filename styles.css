@@ -636,3 +636,14 @@ body.drafting #draftBtn.on{background:var(--ink);color:var(--bg)}
 .lgrp .sub-f{flex-wrap:nowrap;align-items:center}
 .lgrp .sub .facts{flex:1;min-width:0}
 .lgrp .sub .acts{flex:none}
+
+/* Model AI: the model the service reported, with a live dot */
+.modelai{display:grid;gap:6px;padding:10px 12px;border-radius:12px;background:var(--sunk)}
+.mrowl{display:flex;align-items:center;gap:10px}
+.mlive{display:flex;align-items:flex-start;gap:8px;flex:1;min-width:0}
+.mtext{display:grid;gap:1px;min-width:0;overflow-wrap:anywhere}
+.mtext b{font-family:var(--mono);font-weight:600}
+.mdot{width:9px;height:9px;border-radius:50%;flex:none;margin-top:6px;background:var(--muted)}
+.mdot.live{background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 22%,transparent)}
+.mdot.down{background:var(--bad)}
+@media (prefers-reduced-motion:no-preference){.mdot.live{animation:mpulse 2.4s ease-in-out infinite}@keyframes mpulse{50%{box-shadow:0 0 0 6px color-mix(in srgb,var(--ok) 0%,transparent)}}}
