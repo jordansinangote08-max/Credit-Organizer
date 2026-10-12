@@ -1076,7 +1076,7 @@ async function aiPlacePlans(){
   const user='Statement plans:\n'+JSON.stringify(q.map((p,n)=>({plan:'p'+n,statement:p.on,description:p.x.desc,monthly:p.x.amt,payment:p.x.paid+' of '+p.x.total,could_be:p.c.map(y=>'i'+y.id)})))
     +'\nInstallments in the planner:\n'+JSON.stringify(cands.map(y=>({id:'i'+y.id,name:y.name,lender:lenderName(y),monthly:r2(y.amount),payments_left:y.left??null,total_payments:y.total??null})));
   let r=null;
-  try{r=await aiAsk({name:'plan_place',purpose:'place',light:true,system:PLACE_SYSTEM,schema:PLACE_SCHEMA,check:checkPlace,priority:'low',out:60+40*q.length,user})}
+  try{r=await aiAsk({name:'plan_place',purpose:'place',system:PLACE_SYSTEM,schema:PLACE_SCHEMA,check:checkPlace,priority:'low',out:60+40*q.length,user})}
   catch(e){console.warn('AI placing skipped:',e.kind||e.message)}
   q.forEach(p=>{placeBusy.delete(p.k);placeTried.add(p.k)});
   if(!r)return applyBB(bbLast);                // no answer: each plan is placed as new
@@ -1113,7 +1113,7 @@ async function aiSortBills(){
   todo.forEach(i=>aiSortTried.add(i.bbKey));
   const user='Sort these bills:\n'+JSON.stringify(todo.map(i=>({key:i.bbKey,name:i.name,amount:Math.round(num(i.amount)*100)/100})));
   try{
-    const r=await aiAsk({name:'bill_sort',purpose:'sort',light:true,system:SORT_SYSTEM,schema:SORT_SCHEMA,check:checkSort,priority:'low',out:200,user});
+    const r=await aiAsk({name:'bill_sort',purpose:'sort',system:SORT_SYSTEM,schema:SORT_SCHEMA,check:checkSort,priority:'low',out:200,user});
     changed=false;
     r.a.forEach(({key,kind})=>{const it=S.items.find(i=>i.bbKey===key);if(!it)return;it.bbAi=kind;delete it.bbUnsure;
       if(it.kind!==kind){setKind(it,kind);delete it.cat;changed=true}});
@@ -1153,44 +1153,23 @@ setInterval(()=>{if(rollover())save();if(editingId==null&&!document.activeElemen
 // ---------- AI: should I take this loan? ----------
 // The planner does the arithmetic itself: it lays the new loan's payments over the coming pay cycles
 // next to everything else you owe, and works out the largest amount that keeps every cycle covered.
-// That answer is exact, free and instant. If an Anthropic API key is set (API tab), Claude then reads a
-// short summary of those numbers and explains the call; it is told to use them rather than redo them.
-const AI_SDK='vendor/anthropic-sdk-0.133.0.js';
-const AI_PRICE={'claude-opus-5-5':[4,20],'claude-sonnet-5-5':[2,10],'claude-haiku-5-5':[0.1,0.5]}; // $ per million tokens in / out
-// Pick an AI provider in the API tab: Claude (Anthropic), ChatGPT (OpenAI), or any other service that speaks
-// OpenAI's chat format at its own address. Each keeps its own key and model.
-const AI_PROV={
-  anthropic:{name:'Claude',key:'sk-ant-…',help:'Key from console.anthropic.com.',model:'claude-haiku-5-5'},
-  openai:{name:'ChatGPT',key:'sk-…',help:'Key from platform.openai.com.',model:'gpt-5-mini'},
-  compat:{name:'AI',key:'Your key',help:'Any OpenAI-compatible API that allows browser requests.',model:''}
-};
-function aiAll(){
-  const a=S.ai;
-  if(a&&!a.provider&&a.key)S.ai={provider:'anthropic',anthropic:{key:a.key,model:a.model}}; // saved before providers existed
-  return S.ai||{provider:'anthropic'};
-}
-const aiProv=()=>AI_PROV[aiAll().provider]?aiAll().provider:'anthropic';
-function aiConf(){const p=aiProv(),c=aiAll()[p]||{};return {provider:p,key:c.key||'',base:c.base||'',model:p==='anthropic'?(AI_PRICE[c.model]?c.model:AI_PROV.anthropic.model):(c.model||AI_PROV[p].model)}}
-const aiReady=()=>{const c=aiConf();return !!(c.key&&c.model&&(c.provider!=='compat'||/^https:\/\//i.test(c.base)))};
-const aiModel=()=>aiConf().model;
-const aiName=()=>{const c=aiConf();return c.provider==='anthropic'?$('#aiModel').selectedOptions[0]?.text.split(' · ')[0]||'Claude':c.provider==='openai'?'ChatGPT ('+c.model+')':c.model||'AI'};
+// That answer is exact, free and instant. If an OpenAI key is set (API tab), gpt-6-luna then reads a short
+// summary of those numbers and explains the call; it is told to use them rather than redo them.
+// The AI is locked to one model: OpenAI's gpt-6-luna, for loan checks, tab reviews, sorting bills and placing
+// installments alike. Only the key is set in the API tab; there is no other provider or model to pick.
+const AI_MODEL='gpt-6-luna',AI_WHO='gpt-6-luna';
+const aiKey=()=>String(S.ai?.openai?.key||'');
+const aiConf=()=>({key:aiKey(),model:AI_MODEL});
+const aiReady=()=>!!aiKey();
+const aiName=()=>AI_WHO;
 const aiState=(cls,txt)=>{const el=$('#aiState');el.className='sync '+cls;el.textContent=txt};
-function aiSet(patch){const a=aiAll(),p=aiProv();S.ai={...a,provider:p,[p]:{...(a[p]||{}),...patch}};save()}
 function fillAI(){
-  const c=aiConf(),P=AI_PROV[c.provider];$('#aiLimit').value=aiLimit()||'';$('#aiSort').checked=!S.aiSortOff;paintUsage();
-  $('#aiProv').value=c.provider;$('#aiKey').value=c.key;$('#aiKey').placeholder=P.key;$('#aiHelp').textContent=P.help;
-  $('#aiBaseF').hidden=c.provider!=='compat';$('#aiBase').value=c.base;
-  $('#aiModelF').hidden=c.provider!=='anthropic';$('#aiModelTF').hidden=c.provider==='anthropic';
-  if(c.provider==='anthropic')$('#aiModel').value=c.model;else{$('#aiModelT').value=c.model;$('#aiModelT').placeholder=c.provider==='openai'?'gpt-5-mini':'e.g. a model name from your provider'}
-  aiState(aiReady()?'ok':'off',aiReady()?'Ready':'Not connected');aiNote();setTimeout(paintAllMon,0);
+  $('#aiLimit').value=aiLimit()||'';$('#aiSort').checked=!S.aiSortOff;paintUsage();$('#aiKey').value=aiKey();
+  aiState(aiReady()?'ok':'off',aiReady()?'Ready · '+AI_MODEL:'Not connected');aiNote();setTimeout(paintAllMon,0);
 }
-function aiNote(){$('#aiNote').textContent=aiReady()?'Then asks '+aiName():'Add a key in API for AI advice'}
-$('#aiProv').addEventListener('change',()=>{S.ai={...aiAll(),provider:$('#aiProv').value};save();fillAI()});
-$('#aiKey').addEventListener('change',()=>{aiSet({key:$('#aiKey').value.trim()});fillAI()});
-$('#aiModel').addEventListener('change',()=>{aiSet({model:$('#aiModel').value});fillAI()});
-$('#aiModelT').addEventListener('change',()=>{aiSet({model:$('#aiModelT').value.trim()});fillAI()});
-$('#aiBase').addEventListener('change',()=>{aiSet({base:$('#aiBase').value.trim().replace(/\/+$/,'')});fillAI()});
-$('#aiClear').addEventListener('click',()=>{const a=aiAll();delete a[aiProv()];S.ai=a;save();fillAI()});
+function aiNote(){$('#aiNote').textContent=aiReady()?'Then asks '+AI_WHO:'Add a key in API for AI advice'}
+$('#aiKey').addEventListener('change',()=>{const k=$('#aiKey').value.trim();S.ai=k?{openai:{key:k}}:{};save();fillAI()});
+$('#aiClear').addEventListener('click',()=>{S.ai={};save();fillAI()});
 $('#aiSort').addEventListener('change',()=>{if($('#aiSort').checked)delete S.aiSortOff;else S.aiSortOff=true;save();if(!S.aiSortOff)aiSortBills()});
 $('#aiLimit').addEventListener('change',()=>{const v=Math.round(num($('#aiLimit').value));if(v>0)S.aiLimit=v;else delete S.aiLimit;$('#aiLimit').value=v>0?v:'';save();paintUsage()});
 fillAI();
@@ -1377,9 +1356,8 @@ document.addEventListener('click',async e=>{
   }catch(err){delete box.dataset.busy;paintMon(tab);$('#mon-'+tab+' .mon-ai').innerHTML=`<p class="t-bad small">${aiError(err)}</p>`}
 });
 
-// ---------- asking Claude ----------
-let aiSdk=null;const aiMemo=new Map();
-function loadAISdk(){return aiSdk||=new Promise((ok,fail)=>{const t=document.createElement('script');t.src=AI_SDK;t.onload=()=>ok(window.AnthropicSDK);t.onerror=()=>{aiSdk=null;fail(new Error('load'))};document.head.appendChild(t)})}
+// ---------- asking the AI ----------
+const aiMemo=new Map();
 const AI_SYSTEM=`You advise one person in the Philippines on whether to take a loan, using a summary of their own budget planner.
 The planner has already done all the arithmetic. Trust its numbers; never recompute them or invent amounts. Amounts are in pesos.
 "left_after" is what remains in a pay cycle after every bill and the new loan's payment. The buffer is the cushion they want to keep each cycle.
@@ -1426,76 +1404,60 @@ function paintUsage(){
     (days.length?`<details class="paidlist"><summary>Earlier days</summary><ul>${days.map(d=>`<li><span>${fmtD(parseD(d))}</span><span class="num">${sum(log[d]).toLocaleString()} tokens</span></li>`).join('')}</ul></details>`:'');
 }
 const hashStr=t=>{let h=5381;for(let k=0;k<t.length;k++)h=(h*33^t.charCodeAt(k))>>>0;return h.toString(36)};
-// Sorting bills and placing installments are simple matching, so they always use the provider's lightest
-// model, whatever the API tab picks for loan checks and reviews.
-const AI_LIGHT={anthropic:'claude-haiku-5-5',openai:'gpt-5-nano'};
-const aiLightConf=()=>{const c=aiConf();return {...c,model:AI_LIGHT[c.provider]||c.model}};
 async function aiAsk(job){
-  const c=job.light?aiLightConf():aiConf(),memoKey=[c.provider,c.base,c.model,job.name,job.user].join('|');
+  const c=aiConf(),memoKey=[c.model,job.name,job.user].join('|');
   if(aiMemo.has(memoKey))return {...aiMemo.get(memoKey),cached:true}; // the same question twice costs nothing
   const L=aiLimit(),est=Math.ceil((job.system.length+job.user.length)/3.5)+job.out;
   if(L&&aiUsed()+est>(job.priority==='low'?L*LOW_SHARE:L))throw Object.assign(new Error('limit'),{kind:'limit',low:job.priority==='low'});
-  const out=c.provider==='anthropic'?await askClaude(c,job):await askOpenAIFormat(c,job).catch(e=>{
-    // a key that can't use the light model falls back to the one picked in the API tab
-    if(job.light&&e.kind==='http'&&[400,403,404].includes(e.status)&&c.model!==aiConf().model)return askOpenAIFormat(aiConf(),job);throw e});
+  const out=await askOpenAI(c,job);
   aiSpend(out.tokens||est,job.purpose);
   aiMemo.set(memoKey,out);return out;
 }
-async function askClaude(c,job){
-  const SDK=await loadAISdk();
-  const client=new SDK.Anthropic({apiKey:c.key,dangerouslyAllowBrowser:true,maxRetries:1});
-  const req={model:c.model,max_tokens:4000,output_config:{effort:'low',format:SDK.jsonSchemaOutputFormat(job.schema)},system:job.system,
-    messages:[{role:'user',content:job.user}]};
-  // Opus and Sonnet can retry a declined request on another model; Haiku has no server-side fallback
-  if(c.model!=='claude-haiku-5-5')Object.assign(req,{betas:['server-side-fallback-2026-07-01'],fallbacks:'default'});
-  const res=await client.beta.messages.parse(req);
-  if(res.stop_reason==='refusal')throw Object.assign(new Error('refusal'),{kind:'refusal'});
-  const a=res.stop_reason==='max_tokens'?null:job.check(res.parsed_output);
-  if(!a)throw Object.assign(new Error('incomplete'),{kind:'incomplete'});
-  const [pin,pout]=AI_PRICE[c.model],u=res.usage||{},tokens=(u.input_tokens||0)+(u.output_tokens||0);
-  return {a,model:res.model||c.model,tokens,cost:'~$'+(((u.input_tokens||0)*pin+(u.output_tokens||0)*pout)/1e6).toFixed(4)};
-}
-// OpenAI's chat completions format: ChatGPT gets a strict JSON schema; other services get plain JSON mode,
-// which more of them support, with the shape spelled out in the prompt and checked here
-async function askOpenAIFormat(c,job){
-  const openai=c.provider==='openai',url=(openai?'https://api.openai.com/v1':c.base)+'/chat/completions';
-  const body={model:c.model,messages:[{role:'system',content:job.system+(openai?'':'\nReply with only a JSON object with the keys '+job.schema.required.join(', ')+'.')},
-    {role:'user',content:job.user}],
-    response_format:openai?{type:'json_schema',json_schema:{name:job.name,strict:true,schema:job.schema}}:{type:'json_object'}};
-  if(openai){body.max_completion_tokens=4000;if(/^(gpt-5|o\d)/i.test(c.model))body.reasoning_effort='low'}else body.max_tokens=4000;
-  let r;
-  try{r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+c.key},body:JSON.stringify(body)})}
-  catch(e){throw Object.assign(new Error('network'),{kind:'network'})}
-  const j=await r.json().catch(()=>null);
-  if(!r.ok)throw Object.assign(new Error(j?.error?.message||'HTTP '+r.status),{kind:'http',status:r.status});
-  const ch=j?.choices?.[0],m=ch?.message;
-  if(m?.refusal)throw Object.assign(new Error('refusal'),{kind:'refusal'});
-  if(ch?.finish_reason==='length')throw Object.assign(new Error('incomplete'),{kind:'incomplete'});
-  let a;try{a=job.check(JSON.parse(String(m?.content||'').replace(/^```(?:json)?\s*|\s*```$/g,'')))}catch(e){a=null}
-  if(!a)throw Object.assign(new Error('incomplete'),{kind:'incomplete'});
-  const u=j.usage||{},tokens=(u.prompt_tokens||0)+(u.completion_tokens||0);
-  return {a,model:j.model||c.model,tokens,cost:tokens?tokens.toLocaleString()+' tokens':''};
+// OpenAI's chat completions with a strict JSON schema and low reasoning effort. If gpt-6-luna turns down one of
+// those settings, the same request is sent again without it (still gpt-6-luna; no other model is ever used).
+const lunaRefused={effort:false,schema:false}; // settings gpt-6-luna turned down, so later requests skip them
+async function askOpenAI(c,job){
+  const plainJson=()=>{body.response_format={type:'json_object'};body.messages[0].content=job.system+'\nReply with only a JSON object with the keys '+job.schema.required.join(', ')+'.'};
+  const body={model:c.model,max_completion_tokens:4000,reasoning_effort:'low',
+    messages:[{role:'system',content:job.system},{role:'user',content:job.user}],
+    response_format:{type:'json_schema',json_schema:{name:job.name,strict:true,schema:job.schema}}};
+  if(lunaRefused.effort)delete body.reasoning_effort;
+  if(lunaRefused.schema)plainJson();
+  for(let tries=0;;tries++){
+    let r;
+    try{r=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+c.key},body:JSON.stringify(body)})}
+    catch(e){throw Object.assign(new Error('network'),{kind:'network'})}
+    const j=await r.json().catch(()=>null),msg=String(j?.error?.message||'');
+    if(r.status===400&&tries<2){
+      if(body.reasoning_effort&&/reasoning/i.test(msg)){lunaRefused.effort=true;delete body.reasoning_effort;continue}
+      if(body.response_format.type==='json_schema'&&/response_format|json_schema|schema/i.test(msg)){lunaRefused.schema=true;plainJson();continue}
+    }
+    if(!r.ok)throw Object.assign(new Error(msg||'HTTP '+r.status),{kind:'http',status:r.status});
+    const ch=j?.choices?.[0],m=ch?.message;
+    if(m?.refusal)throw Object.assign(new Error('refusal'),{kind:'refusal'});
+    if(ch?.finish_reason==='length')throw Object.assign(new Error('incomplete'),{kind:'incomplete'});
+    let a;try{a=job.check(JSON.parse(String(m?.content||'').replace(/^```(?:json)?\s*|\s*```$/g,'')))}catch(e){a=null}
+    if(!a)throw Object.assign(new Error('incomplete'),{kind:'incomplete'});
+    const u=j.usage||{},tokens=(u.prompt_tokens||0)+(u.completion_tokens||0);
+    return {a,model:j.model||c.model,tokens,cost:tokens?tokens.toLocaleString()+' tokens':''};
+  }
 }
 const strList=x=>Array.isArray(x)?x.map(String).filter(Boolean).slice(0,5):[];
 const checkLoan=a=>a&&['yes','careful','no'].includes(a.verdict)&&typeof a.headline==='string'?{verdict:a.verdict,headline:a.headline,reasons:strList(a.reasons),safe_amount:num(a.safe_amount),tips:strList(a.tips)}:null;
 const askAI=R=>aiAsk({name:'loan_advice',purpose:'loan',system:AI_SYSTEM,schema:AI_SCHEMA,check:checkLoan,priority:'high',out:700,
   user:'Should I take this loan? Planner summary:\n'+JSON.stringify(aiSummary(R))});
 function aiError(e){
-  const A=window.AnthropicSDK?.Anthropic,who=aiConf().provider==='anthropic'?'Claude':aiConf().provider==='openai'?'ChatGPT':'The AI';
-  if(e.message==='load')return 'Could not load the AI library. Check your connection.';
   if(e.kind==='limit')return e.low?'Tab reviews pause at 70% of today\'s AI limit, so loan checks keep room. Resets tomorrow.':'Today\'s AI limit is used up. It resets tomorrow, or raise it in the API tab.';
-  if(e.kind==='refusal')return who+' declined to answer this one. The planner\'s check above still applies.';
-  if(e.kind==='incomplete')return who+'\'s answer was cut off or unreadable. Try again.';
-  if(e.kind==='network')return 'Could not reach '+who+'. Check your connection'+(aiConf().provider==='compat'?', and that this service allows requests from a browser.':'.');
-  const st=e.kind==='http'?e.status:A&&e instanceof A.APIError?e.status:null;
-  if(A&&e instanceof A.APIConnectionError)return 'Could not reach Anthropic. Check your connection.';
-  if(st===401)return 'The API key was not accepted. Check it in the API tab.';
-  if(st===403)return 'This API key is not allowed to use that model.';
-  if(st===404)return 'That model or address was not found. Check it in the API tab.';
+  if(e.kind==='refusal')return AI_WHO+' declined to answer this one. The planner\'s check above still applies.';
+  if(e.kind==='incomplete')return AI_WHO+'\'s answer was cut off or unreadable. Try again.';
+  if(e.kind==='network')return 'Could not reach OpenAI. Check your connection.';
+  const st=e.kind==='http'?e.status:null;
+  if(st===401)return 'The OpenAI key was not accepted. Check it in the API tab.';
+  if(st===403||st===404)return 'This OpenAI key cannot use '+AI_MODEL+'. Check that the model is enabled for your OpenAI project.';
   if(st===429)return 'Too many requests or no credit left on the key. Try again later.';
-  if(st===400)return 'The AI could not read the request: '+e.message;
-  if(st)return 'The AI service had a problem ('+st+'). Try again.';
-  return 'Something went wrong asking the AI.';
+  if(st===400)return AI_WHO+' could not read the request: '+e.message;
+  if(st)return 'OpenAI had a problem ('+st+'). Try again.';
+  return 'Something went wrong asking '+AI_WHO+'.';
 }
 let aiRun=0;
 $('#aiForm').addEventListener('submit',async e=>{
@@ -1507,7 +1469,7 @@ $('#aiForm').addEventListener('submit',async e=>{
   if(!aiReady())return;
   const btn=$('#aiGo');btn.disabled=true;
   try{
-    const who=AI_PROV[aiConf().provider].name,{a,cost,model}=await askAI(R);if(run!==aiRun)return;
+    const who=AI_WHO,{a,cost,model}=await askAI(R);if(run!==aiRun)return;
     const [cls,word]=VERDICT[a.verdict]||VERDICT.careful;
     $('#aiAns').innerHTML=`<div class="aiv-h"><span class="pill ${cls}">${word}</span><span class="muted small">${esc(who)}'s view</span></div>
       <p class="aih">${esc(a.headline)}</p>${a.reasons.length?`<ul>${a.reasons.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
