@@ -46,9 +46,11 @@ The **AI** tab checks a loan before you take it. Pick a creditor from the Borrow
 
 With an OpenAI key in the **API** tab, gpt-6-luna then reads a short summary of those numbers (about 2,000 characters: amounts, bill names, the cycle table; never card digits or your email) and explains the call in plain words, with tips. It's told to use the planner's numbers rather than redo them, and it answers in a fixed JSON format, so a question costs very little. Asking the same question again doesn't call the API. Pick the provider in the API tab; each keeps its own key and model:
 
-**One model only: gpt-6-luna.** Every AI feature (loan checks, tab reviews, sorting bills, placing installments) uses OpenAI's `gpt-6-luna` through chat completions with a strict JSON schema at low reasoning effort; there is no provider or model to pick, only the key. If OpenAI turns down one of those settings for this model, the request is sent once more without it, still to gpt-6-luna. The answer shows the tokens used.
+**One model: gpt-6-luna.** Every AI feature (loan checks, tab reviews, sorting bills, placing installments) uses `gpt-6-luna` through chat completions with a strict JSON schema at low reasoning effort. The key in the API tab decides how it's reached: an OpenRouter key (`sk-or-…`) goes through OpenRouter (`openai/gpt-6-luna`), any other key straight to OpenAI. No key is refused for how it looks; if it doesn't work, the service's own error is shown. If the service turns down one of the request settings, the request is sent once more without it, still to gpt-6-luna. The answer shows the tokens used.
 
-The key is saved in your account and used straight from the device, so give it a monthly spend limit at platform.openai.com.
+The key is saved in your account and used straight from the device, so give it a monthly spend limit with its provider.
+
+**Model AI** (API tab) shows only what the service reported: the model it confirmed for your key, from a free model lookup (no tokens) when the tab opens, on **Check now**, and at most every 10 minutes; and the model that sent the last answer, with when. The dot is green and says *Live* while the last check or answer worked, red and *Down* with the service's error when it failed, grey before anything was checked.
 
 ## Tap, fold, compact
 

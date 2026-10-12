@@ -855,6 +855,7 @@ function selectTab(name){
     if(on&&x.parentElement.scrollWidth>x.parentElement.clientWidth)x.parentElement.scrollTo({left:x.offsetLeft-x.parentElement.clientWidth/2+x.offsetWidth/2,behavior:'smooth'})});
   document.querySelectorAll('[data-panel]').forEach(p=>p.hidden=p.dataset.panel!==name);
   flushStale();
+  if(name==='bbsync')aiCheck();
   // when the tab bar is stuck to the top, bring the new panel's start into view
   const bar=$('.tabs'),top=bar.getBoundingClientRect().top;
   if(top<=parseFloat(getComputedStyle(bar).top)+1)bar.parentElement.scrollIntoView({block:'start'});
@@ -1155,21 +1156,77 @@ setInterval(()=>{if(rollover())save();if(editingId==null&&!document.activeElemen
 // next to everything else you owe, and works out the largest amount that keeps every cycle covered.
 // That answer is exact, free and instant. If an OpenAI key is set (API tab), gpt-6-luna then reads a short
 // summary of those numbers and explains the call; it is told to use them rather than redo them.
-// The AI is locked to one model: OpenAI's gpt-6-luna, for loan checks, tab reviews, sorting bills and placing
-// installments alike. Only the key is set in the API tab; there is no other provider or model to pick.
+// The AI is one model, gpt-6-luna, for loan checks, tab reviews, sorting bills and placing installments alike.
+// The key decides how it's reached: an OpenRouter key (sk-or-…) goes through OpenRouter, any other key straight to
+// OpenAI. No key is refused for how it looks; if it doesn't work, the service's own error is shown.
 const AI_MODEL='gpt-6-luna',AI_WHO='gpt-6-luna';
 const aiKey=()=>String(S.ai?.openai?.key||'');
-const aiConf=()=>({key:aiKey(),model:AI_MODEL});
+function aiConf(){
+  const key=aiKey(),or=/^sk-or-/.test(key);
+  return or?{key,via:'OpenRouter',base:'https://openrouter.ai/api/v1',model:'openai/'+AI_MODEL}
+           :{key,via:'OpenAI',base:'https://api.openai.com/v1',model:AI_MODEL};
+}
 const aiReady=()=>!!aiKey();
 const aiName=()=>AI_WHO;
 const aiState=(cls,txt)=>{const el=$('#aiState');el.className='sync '+cls;el.textContent=txt};
+
+// ---------- Model AI: what the service says, live ----------
+// The API tab names only what the service itself reported: the model it confirmed for this key (a free model
+// lookup, no tokens: when the tab opens, on Check now, and at most every 10 minutes) and the model that sent the
+// last answer. The dot is green while the last check or answer worked, red when it failed, grey before any.
+let aiLive=null;                                  // {ok, model, name, error, at}
+const aiLast=()=>S.aiLast||null;                  // {model, at}: the last real answer, kept with the planner
+async function aiCheck(force){
+  if(!aiReady()){aiLive=null;paintModel();return}
+  if(!force&&aiLive&&Date.now()-aiLive.at<10*60000){paintModel();return}
+  const c=aiConf(),auth={Authorization:'Bearer '+c.key};paintModel('checking');
+  try{
+    let r,j;
+    if(c.via==='OpenRouter'){
+      r=await fetch(c.base+'/key',{headers:auth});
+      if(!r.ok)throw new Error('OpenRouter did not accept the key (HTTP '+r.status+')');
+      r=await fetch(c.base+'/models/'+c.model+'/endpoints',{headers:auth});
+      if(!r.ok)throw new Error('OpenRouter has no model '+c.model+' (HTTP '+r.status+')');
+      j=(await r.json())?.data||{};
+      aiLive={ok:true,model:String(j.id||c.model),name:String(j.name||''),at:Date.now()};
+    }else{
+      r=await fetch(c.base+'/models/'+c.model,{headers:auth});
+      j=await r.json().catch(()=>null);
+      if(!r.ok)throw new Error('OpenAI answered HTTP '+r.status+(j?.error?.message?': '+j.error.message:''));
+      aiLive={ok:true,model:String(j?.id||c.model),name:'',at:Date.now()};
+    }
+  }catch(e){aiLive={ok:false,error:/fetch|network/i.test(e.message)?'could not reach '+c.via:e.message,at:Date.now()}}
+  paintModel();
+}
+// an answer or a failure counts as a check too
+function aiSeen(ok,model,error){
+  aiLive=ok?{ok:true,model,name:aiLive?.ok?aiLive.name:'',at:Date.now()}:{ok:false,error,at:Date.now()};
+  if(ok){S.aiLast={model,at:Date.now()}}
+  paintModel();
+}
+function paintModel(checking){
+  const el=$('#aiModelLive');if(!el)return;
+  const c=aiConf(),last=aiLast(),when=t=>{const m=Math.round((Date.now()-t)/60000);return m<1?'just now':m<60?m+' min ago':m<1440?Math.round(m/60)+'h ago':Math.round(m/1440)+'d ago'};
+  let dot='idle',head='Not connected',sub='Add a key above.';
+  if(aiReady()){
+    if(checking){dot='idle';head='Checking '+c.via+'…';sub=''}
+    else if(!aiLive){head='Not checked yet';sub=''}
+    else if(aiLive.ok){dot='live';head=aiLive.model;sub='Live · confirmed by '+c.via+' '+when(aiLive.at)}
+    else{dot='down';head='Unknown';sub='Down · '+aiLive.error}
+    if(last&&!checking)sub+=(sub?' · ':'')+'last answer from '+last.model+' '+when(last.at);
+  }
+  el.innerHTML=`<span class="mdot ${dot}" aria-hidden="true"></span><span class="mtext"><b>${esc(head)}</b>${sub?`<span class="muted small">${esc(sub)}</span>`:''}</span>`;
+  el.setAttribute('aria-label','Model AI: '+head+(sub?', '+sub:''));
+}
 function fillAI(){
   $('#aiLimit').value=aiLimit()||'';$('#aiSort').checked=!S.aiSortOff;paintUsage();$('#aiKey').value=aiKey();
-  aiState(aiReady()?'ok':'off',aiReady()?'Ready · '+AI_MODEL:'Not connected');aiNote();setTimeout(paintAllMon,0);
+  aiState(aiReady()?'ok':'off',aiReady()?'Key saved · '+aiConf().via:'Not connected');aiNote();setTimeout(paintAllMon,0);paintModel();
+  if(!$('#panel-bbsync').hidden)aiCheck();
 }
 function aiNote(){$('#aiNote').textContent=aiReady()?'Then asks '+AI_WHO:'Add a key in API for AI advice'}
-$('#aiKey').addEventListener('change',()=>{const k=$('#aiKey').value.trim();S.ai=k?{openai:{key:k}}:{};save();fillAI()});
-$('#aiClear').addEventListener('click',()=>{S.ai={};save();fillAI()});
+$('#aiKey').addEventListener('change',()=>{const k=$('#aiKey').value.trim();S.ai=k?{openai:{key:k}}:{};aiLive=null;save();fillAI()}); // fillAI checks the new key when this tab is open
+$('#aiClear').addEventListener('click',()=>{S.ai={};aiLive=null;save();fillAI()});
+$('#aiRecheck').addEventListener('click',()=>aiCheck(true));
 $('#aiSort').addEventListener('change',()=>{if($('#aiSort').checked)delete S.aiSortOff;else S.aiSortOff=true;save();if(!S.aiSortOff)aiSortBills()});
 $('#aiLimit').addEventListener('change',()=>{const v=Math.round(num($('#aiLimit').value));if(v>0)S.aiLimit=v;else delete S.aiLimit;$('#aiLimit').value=v>0?v:'';save();paintUsage()});
 fillAI();
@@ -1425,14 +1482,15 @@ async function askOpenAI(c,job){
   if(lunaRefused.schema)plainJson();
   for(let tries=0;;tries++){
     let r;
-    try{r=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+c.key},body:JSON.stringify(body)})}
-    catch(e){throw Object.assign(new Error('network'),{kind:'network'})}
+    try{r=await fetch(c.base+'/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+c.key},body:JSON.stringify(body)})}
+    catch(e){aiSeen(false,null,'could not reach '+c.via);throw Object.assign(new Error('network'),{kind:'network'})}
     const j=await r.json().catch(()=>null),msg=String(j?.error?.message||'');
     if(r.status===400&&tries<2){
       if(body.reasoning_effort&&/reasoning/i.test(msg)){lunaRefused.effort=true;delete body.reasoning_effort;continue}
       if(body.response_format.type==='json_schema'&&/response_format|json_schema|schema/i.test(msg)){lunaRefused.schema=true;plainJson();continue}
     }
-    if(!r.ok)throw Object.assign(new Error(msg||'HTTP '+r.status),{kind:'http',status:r.status});
+    if(!r.ok){if(r.status!==429)aiSeen(false,null,c.via+' answered HTTP '+r.status+(msg?': '+msg:''));throw Object.assign(new Error(msg||'HTTP '+r.status),{kind:'http',status:r.status})}
+    aiSeen(true,String(j?.model||c.model));
     const ch=j?.choices?.[0],m=ch?.message;
     if(m?.refusal)throw Object.assign(new Error('refusal'),{kind:'refusal'});
     if(ch?.finish_reason==='length')throw Object.assign(new Error('incomplete'),{kind:'incomplete'});
@@ -1450,13 +1508,13 @@ function aiError(e){
   if(e.kind==='limit')return e.low?'Tab reviews pause at 70% of today\'s AI limit, so loan checks keep room. Resets tomorrow.':'Today\'s AI limit is used up. It resets tomorrow, or raise it in the API tab.';
   if(e.kind==='refusal')return AI_WHO+' declined to answer this one. The planner\'s check above still applies.';
   if(e.kind==='incomplete')return AI_WHO+'\'s answer was cut off or unreadable. Try again.';
-  if(e.kind==='network')return 'Could not reach OpenAI. Check your connection.';
+  if(e.kind==='network')return 'Could not reach '+aiConf().via+'. Check your connection.';
   const st=e.kind==='http'?e.status:null;
-  if(st===401)return 'The OpenAI key was not accepted. Check it in the API tab.';
-  if(st===403||st===404)return 'This OpenAI key cannot use '+AI_MODEL+'. Check that the model is enabled for your OpenAI project.';
+  if(st===401)return 'The API key was not accepted. Check it in the API tab.';
+  if(st===403||st===404)return 'This key cannot use '+AI_MODEL+'. Check that the model is enabled for your account.';
   if(st===429)return 'Too many requests or no credit left on the key. Try again later.';
   if(st===400)return AI_WHO+' could not read the request: '+e.message;
-  if(st)return 'OpenAI had a problem ('+st+'). Try again.';
+  if(st)return aiConf().via+' had a problem ('+st+'). Try again.';
   return 'Something went wrong asking '+AI_WHO+'.';
 }
 let aiRun=0;
@@ -1590,8 +1648,8 @@ async function openDraft(){
 function closeDraft(){
   if(!draft)return;
   closeDialogs();
-  const used=S.aiUse,log=S.aiLog,main=draft.main;draft=null;
-  if(used)main.aiUse=used;if(log)main.aiLog=log;
+  const used=S.aiUse,log=S.aiLog,last=S.aiLast,main=draft.main;draft=null;
+  if(used)main.aiUse=used;if(log)main.aiLog=log;if(last)main.aiLast=last;
   document.body.classList.remove('drafting');
   adopt(main);renderAuth();
   save();syncBillBuddy();                                       // keeps the AI count, and picks up new bills
