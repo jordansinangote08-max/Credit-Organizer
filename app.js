@@ -29,6 +29,8 @@ const num=v=>{const n=parseFloat(v);return isFinite(n)?n:0};
 const cents=x=>Math.round(num(x)*100)/100;
 const peso=n=>{const v=Math.round(n*100)/100;return (v<0?'−₱':'₱')+Math.abs(v).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// CSP has no 'unsafe-inline': dynamic bar widths go through the DOM (allowed), never style="".
+const barW=root=>root.querySelectorAll('[data-w]').forEach(el=>{el.style.width=el.dataset.w});
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const fmtD=d=>MON[d.getMonth()]+' '+d.getDate();
@@ -417,7 +419,7 @@ function renderInst(){
       const nm=billed(i)||i.bbInst||(i.name&&i.name!==lenderName(i))?planLabel(i):'Installment '+(n+1);
       return `<div class="sub">
         <div class="sub-h"><span class="sub-n"><button class="openw" data-isched="${i.id}" aria-haspopup="dialog" title="Payment schedule">${of?`<span class="plan-of" aria-label="payment ${of.replace('/',' of ')}">${of}</span>`:''}${esc(nm)}${last4Of(i)?`<span class="l4">•••• ${esc(last4Of(i))}</span>`:''}</button></span><span class="pay">${peso(pay)}<span class="muted small">/mo</span></span></div>
-        ${pct!=null?`<div class="bar" role="img" aria-label="${total-left} of ${total} paid"><i style="width:${pct}%"></i></div>`:''}
+        ${pct!=null?`<div class="bar" role="img" aria-label="${total-left} of ${total} paid"><i data-w="${pct}%"></i></div>`:''}
         <div class="sub-f"><div class="facts">${total?`<span><b>${peso(pay*left)}</b> to go</span><span>Last payment <b>${ym(end)}</b></span>`:i.bbTerm?'<span>Months not on the statement</span>':`<span><b>${left}</b> left</span><span><b>${peso(pay*left)}</b> to go</span><span>Last payment <b>${ym(end)}</b></span>`}</div>
         <div class="acts">${billed(i)?'':`${isPaid(i)?`<span class="pill ok">Paid</span>${!isHiddenPaid(i)?undoBtn(`data-iundo="${i.id}"`,i.name):''}`:''}${last4Of(i)?'':`<button class="pill warn ask4" data-iedit4="${i.id}">Add last 4</button>`}${editBtn(`data-iedit="${i.id}"`,i.name)}${left>0&&!isPaid(i)?paidBtn(`data-ipaid="${i.id}"`,i.name):''}`}${billed(i)?editBtn(`data-iedit="${i.id}"`,i.name):''}</div></div>
       </div>`;
@@ -429,7 +431,7 @@ function renderInst(){
       <span class="muted small"><b>${peso(gm)}</b>/mo · <b>${peso(gr)}</b> to go · until ${ym(gl)}${list.length>1?' · '+list.length+' installments':''}${r.inCard?' · billed with the card':r.inBill?' · one bill':''}</span></div>${rows}</div>`;
   }).join('');
   $('#instSum').innerHTML=`<div><span class="label">Per month</span><span class="v">${peso(monthly)}</span></div><div><span class="label">Still to pay</span><span class="v">${peso(remaining)}</span></div><div><span class="label">All done by</span><span class="v">${ym(last)}</span></div>`;
-  $('#instList').innerHTML=html||'<p class="empty">No installments yet.</p>';
+  $('#instList').innerHTML=html||'<p class="empty">No installments yet.</p>';barW($('#instList'));
 }
 
 // ---------- other money ----------
@@ -487,22 +489,22 @@ function quote(s,need){
 }
 function renderBorrow(C){
   $('#shortHead').innerHTML=C.gap>0.004
-    ?`<h2>Cover ${peso(C.gap)}</h2><p class="muted small" style="margin-top:4px">Cheapest first.</p>`
-    :`<h2>You're not short</h2><p class="muted small" style="margin-top:4px">Every bill is covered.</p>`;
+    ?`<h2>Cover ${peso(C.gap)}</h2><p class="muted small mt4">Cheapest first.</p>`
+    :`<h2>You're not short</h2><p class="muted small mt4">Every bill is covered.</p>`;
   const need=Math.max(0,C.gap);
   const list=$('#credList'),box=$('#srcPick');
   if(need<=0.004){list.innerHTML='';box.innerHTML='';return}
   if(!S.sources.length){box.innerHTML='';list.innerHTML='<p class="empty">No creditors yet. Open Edit creditors to add one.</p>';return}
   const qs=S.sources.map(s=>quote(s,need)).sort((a,b)=>(a.known?0:1)-(b.known?0:1)||(a.e??0)-(b.e??0)||(b.net-a.net));
   const firstKnown=qs.findIndex(q=>q.known);
-  const pct=x=>(x*100).toFixed(2)+'%';
+  const pct=x=>x>9.99?'>999%/mo':(x*100).toFixed(2)+'%';
   list.innerHTML=qs.map((q,k)=>{
     if(!q.known)return `<div class="cred"><span class="rank">?</span><div><b>${esc(q.s.name)}</b><div class="meta">Add its interest rate in Edit creditors to see the cost.</div></div><div class="right"><span class="pill warn">No rate</span></div></div>`;
     const bad=q.e>0.03,best=k===firstKnown&&!bad;
     const alts=altTerms(q.s).filter(t=>t!==q.n);
     return `<div class="cred"><span class="rank">${k+1}</span><div><b>${esc(q.s.name)}</b>
       <div class="meta"><span>Borrow <b>${peso(q.B)}</b></span>${q.B-q.net>0.004?`<span>Receive <b>${peso(q.net)}</b></span>`:''}<span>${q.n===1?`Repay <b>${peso(q.p)}</b> next month`:`<b>${peso(q.p)}</b> × ${q.n} mo`}</span><span>${pct(q.e)}/mo real cost</span></div>
-      ${q.capped?`<div class="meta" style="color:var(--bad)">Limit covers only ${peso(q.net)}.</div>`:''}
+      ${q.capped?`<div class="meta tx-bad">Limit covers only ${peso(q.net)}.</div>`:''}
       ${alts.length?`<div class="meta">${alts.map(t=>{const p=payFor(q.s,q.B,t);return `${t} mo: <b>${peso(p)}</b>/mo, cost <b>${peso(cents(p)*t-q.net)}</b>`}).join(' · ')}</div>`:''}
     </div><div class="right"><span class="cost">${peso(q.cost)}<small>interest + fees</small></span><span class="pill ${best?'ok':bad?'bad':'warn'}">${best?'Cheapest':bad?'Expensive':'Okay'}</span></div></div>`;
   }).join('');
@@ -519,7 +521,7 @@ function renderBorrow(C){
   box.innerHTML=`<div class="reco ok"><h3>Best option</h3><ul>${parts.map(x=>`<li><span>${esc(x.q.s.name)} · borrow ${peso(x.B)}</span><span class="a">${x.q.n===1?'repay '+peso(x.p):peso(x.p)+' × '+x.q.n}</span></li>`).join('')}</ul>
     <p class="small">Costs <b class="num">${peso(cost)}</b> in interest and fees.</p>
     <p class="reco-total num">${peso(total)}</p>
-    ${rem>0.004?`<p class="small" style="color:var(--bad)">Still ${peso(rem)} short after every creditor.</p>`:''}</div>`;
+    ${rem>0.004?`<p class="small tx-bad">Still ${peso(rem)} short after every creditor.</p>`:''}</div>`;
 }
 function srcFields(s){return `
 
@@ -549,9 +551,9 @@ function renderAhead(C){
     const d=shiftCycle(C.start,m),fixed=fixedIn(d);
     const ln=loansIn(d);
     const free=Math.max(0,salary-ln-fixed),w=v=>(v/scale*100).toFixed(2)+'%';
-    rows+=`<div class="mrow"><span>${monthly?MON[d.getMonth()]+' '+String(d.getFullYear()).slice(2):fmtD(d)}</span><div class="track" role="img" aria-label="Installments ${peso(ln)}, rent and bills ${peso(fixed)}, free ${peso(free)}"><div class="seg loan" style="width:${w(ln)}"></div><div class="seg fixed" style="width:${w(fixed)}"></div><div class="seg free" style="width:${w(free)}"></div></div><span class="num" style="text-align:right">${peso(free)}</span></div>`;
+    rows+=`<div class="mrow"><span>${monthly?MON[d.getMonth()]+' '+String(d.getFullYear()).slice(2):fmtD(d)}</span><div class="track" role="img" aria-label="Installments ${peso(ln)}, rent and bills ${peso(fixed)}, free ${peso(free)}"><div class="seg loan" data-w="${w(ln)}"></div><div class="seg fixed" data-w="${w(fixed)}"></div><div class="seg free" data-w="${w(free)}"></div></div><span class="num tr">${peso(free)}</span></div>`;
   }
-  $('#monthList').innerHTML=loans.length?rows:'<p class="empty">No installments listed.</p>';
+  $('#monthList').innerHTML=loans.length?rows:'<p class="empty">No installments listed.</p>';barW($('#monthList'));
 }
 
 // ---------- accounts ----------
@@ -597,15 +599,15 @@ function renderAccounts(){
     return `<div class="acct" data-k="card">
       <div class="acct-h"><h3>${esc(a.name)}${a.last4?`<span class="l4">•••• ${esc(a.last4)}</span>`:`<button class="pill warn ask4" data-aedit4="${a.id}">Add last 4</button>`}</h3>
         <span class="lim">${L>0?peso(L):'—'}<small>credit limit</small></span></div>
-      ${p!==null?`<div class="ubar" role="img" aria-label="${p.toFixed(0)}% of limit used"><i class="${ucls(p)}" style="width:${Math.min(100,p).toFixed(1)}%"></i></div>`:''}
+      ${p!==null?`<div class="ubar" role="img" aria-label="${p.toFixed(0)}% of limit used"><i class="${ucls(p)}" data-w="${Math.min(100,p).toFixed(1)}%"></i></div>`:''}
       <div class="facts">${p!==null?`<span><b>${p.toFixed(0)}%</b> used</span>`:''}${facts.join('')}</div>
       ${cardPlans(a,bill)}
       <div class="acts">${editBtn(`data-aedit="${a.id}"`,a.name)}</div>
     </div>`;
   }).join('');
-  $('#acctList').innerHTML=html||'<p class="empty">No cards yet.</p>';
+  $('#acctList').innerHTML=html||'<p class="empty">No cards yet.</p>';barW($('#acctList'));
   const p=lim>0?used/lim*100:null;
-  $('#acctSum').innerHTML=`<div><span class="label">Total limit</span><span class="v">${peso(lim)}</span></div><div><span class="label">Total used</span><span class="v">${peso(used)}</span></div><div><span class="label">Overall usage</span><span class="v" style="color:${p===null?'inherit':p>50?'var(--bad)':p>30?'var(--warn)':'var(--ok)'}">${p===null?'—':p.toFixed(0)+'%'}</span></div>`;
+  $('#acctSum').innerHTML=`<div><span class="label">Total limit</span><span class="v">${peso(lim)}</span></div><div><span class="label">Total used</span><span class="v">${peso(used)}</span></div><div><span class="label">Overall usage</span><span class="v ${p===null?'':p>50?'tx-bad':p>30?'tx-warn':'tx-ok'}">${p===null?'—':p.toFixed(0)+'%'}</span></div>`;
 }
 
 // ---------- render ----------
@@ -1253,8 +1255,8 @@ function fillAI(){
   if(!$('#panel-bbsync').hidden)aiCheck();
 }
 function aiNote(){$('#aiNote').textContent=aiReady()?'Then asks '+AI_WHO:'Add a key in API for AI advice'}
-$('#aiKey').addEventListener('change',()=>{const k=$('#aiKey').value.trim();S.ai=k?{openai:{key:k}}:{};aiLive=null;save();fillAI()}); // fillAI checks the new key when this tab is open
-$('#aiClear').addEventListener('click',()=>{S.ai={};aiLive=null;save();fillAI()});
+$('#aiKey').addEventListener('change',()=>{const k=$('#aiKey').value.trim();S.ai=k?{openai:{key:k}}:{};aiLive=null;aiMemo.clear();save();fillAI()}); // fillAI checks the new key when this tab is open
+$('#aiClear').addEventListener('click',()=>{S.ai={};aiLive=null;aiMemo.clear();save();fillAI()});
 $('#aiRecheck').addEventListener('click',()=>aiCheck(true));
 $('#aiSort').addEventListener('change',()=>{if($('#aiSort').checked)delete S.aiSortOff;else S.aiSortOff=true;save();if(!S.aiSortOff)aiSortBills()});
 $('#aiLimit').addEventListener('change',()=>{const v=Math.round(num($('#aiLimit').value));if(v>0)S.aiLimit=v;else delete S.aiLimit;$('#aiLimit').value=v>0?v:'';save();paintUsage()});
@@ -1323,7 +1325,7 @@ function renderLoanCheck(R){
     <h3>${f.type==='inst'?`${peso(per)} a month for ${f.term} month${f.term===1?'':'s'}`:`Pay back ${peso(R.total)} on ${fmtD(f.due)}`}</h3>
     ${R.overLimit?`<p class="small t-bad">More than ${esc(f.src)} offers (${peso(f.avail)}).</p>`:''}
     <ul>${R.fee>0?`<li><span>You receive</span><span class="a">${peso(R.net)}</span></li>`:''}<li><span>Interest${R.fee>0?' and fee':''}</span><span class="a">${peso(R.interest)}</span></li>
-      ${R.eff!=null?`<li><span>Real rate /mo</span><span class="a">${R.eff.toFixed(2)}%</span></li>`:''}
+      ${R.eff!=null?`<li><span>Real rate /mo</span><span class="a">${R.eff>9.99?'>999%/mo':R.eff.toFixed(2)+'%'}</span></li>`:''}
       <li><span>Tightest cycle${isFinite(R.worst.after)?' ('+fmtD(R.worst.start)+')':''}</span><span class="a">${isFinite(R.worst.after)?peso(R.worst.after)+' left':'—'}</span></li>
       <li><span>Safe to borrow</span><span class="a"><b>${peso(R.safe)}</b></span></li></ul>
     <p class="note">Safe = every cycle keeps your ${peso(R.buffer)} buffer. Card bills are estimated from this cycle.${R.shortNow?' You\'re already short this cycle.':''}</p>
@@ -1495,9 +1497,10 @@ function paintUsage(){
   const log=S.aiLog||{},today=log[todayIso()]||{},days=Object.keys(log).sort().reverse().filter(d=>d!==todayIso()).slice(0,6);
   const sum=o=>Object.values(o).reduce((s,v)=>s+num(v),0);
   const names=USE_NAME||{};el.innerHTML=`<div class="usage-t"><span>Today</span><span class="num">${u.toLocaleString()}${L?' / '+L.toLocaleString():''} tokens</span></div>`+
-    (L?`<div class="ubar" role="img" aria-label="${Math.min(100,u/L*100).toFixed(0)}% of today's limit used"><i class="${u>=L?'bad':u>=L*LOW_SHARE?'warn':''}" style="width:${Math.min(100,u/L*100).toFixed(1)}%"></i></div>`:'')+
+    (L?`<div class="ubar" role="img" aria-label="${Math.min(100,u/L*100).toFixed(0)}% of today's limit used"><i class="${u>=L?'bad':u>=L*LOW_SHARE?'warn':''}" data-w="${Math.min(100,u/L*100).toFixed(1)}%"></i></div>`:'')+
     (Object.keys(today).length?`<div class="usage-p">${Object.entries(today).map(([k,v])=>`<span>${names[k]||k} <b class="num">${num(v).toLocaleString()}</b></span>`).join('')}</div>`:'')+
     (days.length?`<details class="paidlist"><summary>Earlier days</summary><ul>${days.map(d=>{const dt=parseD(d);return `<li><span>${dt?fmtD(dt):esc(d)}</span><span class="num">${sum(log[d]).toLocaleString()} tokens</span></li>`}).join('')}</ul></details>`:'');
+  barW(el);
 }
 const hashStr=t=>{let h=5381;for(let k=0;k<t.length;k++)h=(h*33^t.charCodeAt(k))>>>0;return h.toString(36)};
 async function aiAsk(job){
@@ -1513,6 +1516,8 @@ async function aiAsk(job){
 // OpenAI's chat completions with a strict JSON schema and low reasoning effort. If gpt-6-luna turns down one of
 // those settings, the same request is sent again without it (still gpt-6-luna; no other model is ever used).
 const lunaRefused={effort:false,schema:false}; // settings gpt-6-luna turned down, so later requests skip them
+if('serviceWorker' in navigator)addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{})}); // offline app shell; network-first so checkUpdate() still rules releases
+const sleep=ms=>new Promise(r=>setTimeout(r,ms)); // one short backoff for a transient AI failure
 async function askOpenAI(c,job){
   const plainJson=()=>{body.response_format={type:'json_object'};body.messages[0].content=job.system+'\nReply with only a JSON object with the keys '+job.schema.required.join(', ')+'.'};
   const body={model:c.model,max_completion_tokens:4000,reasoning_effort:'low',
@@ -1520,16 +1525,16 @@ async function askOpenAI(c,job){
     response_format:{type:'json_schema',json_schema:{name:job.name,strict:true,schema:job.schema}}};
   if(lunaRefused.effort)delete body.reasoning_effort;
   if(lunaRefused.schema)plainJson();
-  for(let tries=0;;tries++){
+  for(let tries=0,waits=0;;tries++){
     let r;
     try{r=await fetch(c.base+'/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+c.key},body:JSON.stringify(body),signal:AbortSignal.timeout(30000)})}
-    catch(e){aiSeen(false,null,'could not reach '+c.via);throw Object.assign(new Error('network'),{kind:'network'})}
+    catch(e){if(waits<1){waits++;await sleep(1500);continue}aiSeen(false,null,'could not reach '+c.via);throw Object.assign(new Error('network'),{kind:'network'})}
     const j=await r.json().catch(()=>null),msg=String(j?.error?.message||'');
     if(r.status===400&&tries<2){
       if(body.reasoning_effort&&/reasoning/i.test(msg)){lunaRefused.effort=true;delete body.reasoning_effort;continue}
       if(body.response_format.type==='json_schema'&&/response_format|json_schema|schema/i.test(msg)){lunaRefused.schema=true;plainJson();continue}
     }
-    if(!r.ok){if(r.status!==429)aiSeen(false,null,c.via+' answered HTTP '+r.status+(msg?': '+msg:''));throw Object.assign(new Error(msg||'HTTP '+r.status),{kind:'http',status:r.status})}
+    if(!r.ok){if((r.status===429||r.status>=500)&&waits<1){waits++;await sleep(1500);continue}if(r.status!==429)aiSeen(false,null,c.via+' answered HTTP '+r.status+(msg?': '+msg:''));throw Object.assign(new Error(msg||'HTTP '+r.status),{kind:'http',status:r.status})}
     aiSeen(true,String(j?.model||c.model));
     const ch=j?.choices?.[0],m=ch?.message;
     if(m?.refusal)throw Object.assign(new Error('refusal'),{kind:'refusal'});
@@ -1713,13 +1718,13 @@ $('#draftBtn').addEventListener('click',()=>draft?closeDraft():openDraft());
 // ---------- updates ----------
 // A tab left open keeps running the code it loaded with. When a newer version is published, reload, so an
 // old copy never syncs BillBuddy with outdated rules and saves that to the account.
-const APP_V=(/[?&]v=(\w+)/.exec(document.currentScript?.getAttribute('src')||'')||[])[1];
+const APP_V=window.APP_VERSION; // single version constant (config.js); checkUpdate compares against version.json
 async function checkUpdate(){
   if(!APP_V)return;
   try{
-    const html=await (await fetch(location.pathname,{cache:'no-store',signal:AbortSignal.timeout(25000)})).text();
-    const v=(/app\.js\?v=(\w+)/.exec(html)||[])[1];
-    if(!v||v===APP_V||cloudTimer||pushing||draft||document.querySelector('dialog[open]')||document.activeElement?.matches?.('input,select'))return;
+    const j=await (await fetch('version.json',{cache:'no-store',signal:AbortSignal.timeout(25000)})).json();
+    const v=j&&j.v;
+    if(!v||String(v)===String(APP_V)||cloudTimer||pushing||draft||document.querySelector('dialog[open]')||document.activeElement?.matches?.('input,select'))return;
     location.reload();
   }catch(e){}
 }
