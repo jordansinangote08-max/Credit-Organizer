@@ -457,6 +457,7 @@ function effRate(s,nOver){
   while(pvAt(hi)>N&&hi<1e12)hi*=2; // widen the bracket: extreme fees can exceed 100%/mo
   for(let k=0;k<80;k++){const m=(lo+hi)/2;if(pvAt(m)>N)lo=m;else hi=m}
   return (lo+hi)/2;
+  return (lo+hi)/2;
 }
 const altTerms=s=>String(s.terms||'').split(/[^0-9]+/).map(x=>parseInt(x,10)).filter(x=>x>0);
 const known=s=>!(s.rate===null||s.rate===''||s.rate===undefined);
@@ -1156,12 +1157,12 @@ setInterval(()=>{if(rollover())save();if(editingId==null&&!document.activeElemen
 // ---------- AI: should I take this loan? ----------
 // The planner does the arithmetic itself: it lays the new loan's payments over the coming pay cycles
 // next to everything else you owe, and works out the largest amount that keeps every cycle covered.
-// That answer is exact, free and instant. If an OpenAI key is set (API tab), gpt-4o-mini then reads a short
+// That answer is exact, free and instant. If an OpenAI key is set (API tab), gpt-6-luna then reads a short
 // summary of those numbers and explains the call; it is told to use them rather than redo them.
-// The AI is one model, gpt-4o-mini, for loan checks, tab reviews, sorting bills and placing installments alike.
+// The AI is one model, gpt-6-luna, for loan checks, tab reviews, sorting bills and placing installments alike.
 // The key decides how it's reached: an OpenRouter key (sk-or-…) goes through OpenRouter, any other key straight to
 // OpenAI. No key is refused for how it looks; if it doesn't work, the service's own error is shown.
-const AI_MODEL='gpt-4o-mini',AI_WHO='gpt-4o-mini';
+const AI_MODEL='gpt-6-luna',AI_WHO='gpt-6-luna';
 const aiKey=()=>String(S.ai?.openai?.key||'');
 function aiConf(){
   const key=aiKey(),or=/^sk-or-/.test(key);
@@ -1472,24 +1473,24 @@ async function aiAsk(job){
   aiSpend(out.tokens||est,job.purpose);
   aiMemo.set(memoKey,out);return out;
 }
-// OpenAI's chat completions with a strict JSON schema. If the model turns down one of
-// those settings, the same request is sent again without it (no other model is ever used).
-const modelRefused={effort:false,schema:false}; // settings the model turned down, so later requests skip them
+// OpenAI's chat completions with a strict JSON schema and low reasoning effort. If gpt-6-luna turns down one of
+// those settings, the same request is sent again without it (still gpt-6-luna; no other model is ever used).
+const lunaRefused={effort:false,schema:false}; // settings gpt-6-luna turned down, so later requests skip them
 async function askOpenAI(c,job){
   const plainJson=()=>{body.response_format={type:'json_object'};body.messages[0].content=job.system+'\nReply with only a JSON object with the keys '+job.schema.required.join(', ')+'.'};
-  const body={model:c.model,max_completion_tokens:4000,
+  const body={model:c.model,max_completion_tokens:4000,reasoning_effort:'low',
     messages:[{role:'system',content:job.system},{role:'user',content:job.user}],
     response_format:{type:'json_schema',json_schema:{name:job.name,strict:true,schema:job.schema}}};
-  if(modelRefused.effort)delete body.reasoning_effort;
-  if(modelRefused.schema)plainJson();
+  if(lunaRefused.effort)delete body.reasoning_effort;
+  if(lunaRefused.schema)plainJson();
   for(let tries=0;;tries++){
     let r;
     try{r=await fetch(c.base+'/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+c.key},body:JSON.stringify(body)})}
     catch(e){aiSeen(false,null,'could not reach '+c.via);throw Object.assign(new Error('network'),{kind:'network'})}
     const j=await r.json().catch(()=>null),msg=String(j?.error?.message||'');
     if(r.status===400&&tries<2){
-      if(body.reasoning_effort&&/reasoning/i.test(msg)){modelRefused.effort=true;delete body.reasoning_effort;continue}
-      if(body.response_format.type==='json_schema'&&/response_format|json_schema|schema/i.test(msg)){modelRefused.schema=true;plainJson();continue}
+      if(body.reasoning_effort&&/reasoning/i.test(msg)){lunaRefused.effort=true;delete body.reasoning_effort;continue}
+      if(body.response_format.type==='json_schema'&&/response_format|json_schema|schema/i.test(msg)){lunaRefused.schema=true;plainJson();continue}
     }
     if(!r.ok){if(r.status!==429)aiSeen(false,null,c.via+' answered HTTP '+r.status+(msg?': '+msg:''));throw Object.assign(new Error(msg||'HTTP '+r.status),{kind:'http',status:r.status})}
     aiSeen(true,String(j?.model||c.model));
