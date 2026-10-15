@@ -895,7 +895,7 @@ function bbToday(){
   return p.year+'-'+p.month+'-'+p.day;
 }
 function bbCutoff(){
-  return new Date(Date.parse(bbToday()+'T00:00:00Z')-86400000).toISOString().slice(0,10);
+  return bbToday();
 }
 let bbExpiryTimer=null;
 function scheduleBBExpiry(){

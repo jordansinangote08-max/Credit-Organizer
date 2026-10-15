@@ -42,7 +42,7 @@ class SyncTest(unittest.TestCase):
         self.page = self.context.new_page()
         self.errors = []
         self.page.on('pageerror', lambda error: self.errors.append(str(error)))
-        self.page.clock.install(time=datetime(2026, 10, 14, 16, 0, tzinfo=timezone.utc))
+        self.page.clock.install(time=datetime(2026, 10, 13, 16, 0, tzinfo=timezone.utc))
         self.page.goto(f'http://127.0.0.1:{self.server.server_port}/')
         self.page.wait_for_function("typeof applyBB === 'function'")
         self.page.evaluate("S=clone(DEFAULTS); S.items=[]; S.accounts=[]; prepare()")
@@ -288,14 +288,14 @@ class SyncTest(unittest.TestCase):
         }''')
         self.assertEqual(self.page.evaluate('S.items.find(i=>i.bbDue).amount'), 0)
 
-    def test_october_15_bill_expires_after_october_16_at_manila_midnight(self):
+    def test_october_15_bill_expires_at_start_of_october_16_manila(self):
         self.page.evaluate('''() => {
           cloudReady=true;draft={};
           S.items.push({id:uid++,name:'Manual rent',kind:'bill',amount:50,day:15});
           applyBB([{bank:'EastWest',type:'credit_card',account_key:'eastwest',amount:13274.10,
             due_date:'2026-10-15',installments:[{label:'Laptop',term:3,of:12,amount:100}]}]);
         }''')
-        self.page.clock.set_system_time(datetime(2026, 10, 16, 15, 59, 59, tzinfo=timezone.utc))
+        self.page.clock.set_system_time(datetime(2026, 10, 15, 15, 59, 59, tzinfo=timezone.utc))
         self.page.evaluate('scheduleBBExpiry()')
         self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).length'), 1)
         self.assertEqual(self.page.evaluate('bbCutoff()'), '2026-10-15')

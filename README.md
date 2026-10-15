@@ -86,8 +86,8 @@ How it syncs:
 - BillBuddy's link and key are saved in your account too, so every signed-in device syncs with it.
 
 **Bill expiration.** BillBuddy and the planner use Manila days for imported
-statements: a bill due October 15 remains through October 16 and disappears
-at **00:00 on October 17 in Manila**. A timer removes expired imports at Manila
+statements: a bill due October 15 remains through October 15 and disappears
+at **00:00 on October 16 in Manila**. A timer removes expired imports at Manila
 midnight even when the feed is offline. The planner also checks on sync,
 account load, every visible minute, and when the app resumes. Expired imported
 statements are also removed from
