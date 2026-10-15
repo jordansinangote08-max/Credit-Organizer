@@ -33,9 +33,18 @@ const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','De
 const WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const fmtD=d=>MON[d.getMonth()]+' '+d.getDate();
 const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-const parseD=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s||'');return m?new Date(+m[1],+m[2]-1,+m[3]):null};
+const parseD=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s||'');if(!m)return null;const d=new Date(+m[1],+m[2]-1,+m[3]);return d.getFullYear()===+m[1]&&d.getMonth()===+m[2]-1&&d.getDate()===+m[3]?d:null};
+// Input limits must be checked before autosaving; HTML min/max alone do not stop typing.
+function validInput(el){
+  if(el.type==='number'&&el.value!==''){
+    const n=Number(el.value),min=el.min===''?-Infinity:Number(el.min),max=el.max===''?Infinity:Number(el.max);
+    const okay=Number.isFinite(n)&&n>=min&&n<=max&&!el.validity.stepMismatch;
+    el.setCustomValidity(okay?'':'Enter a number within the shown limits.');return okay;
+  }
+  el.setCustomValidity('');return !el.validity?.badInput;
+}
 
-let uid=1,S=clone(DEFAULTS);
+let uid=1,S=clone(DEFAULTS),accountEpoch=0,stateEpoch=0;
 // Everything lives in Supabase. Earlier versions kept data in this browser: it moves to the
 // account on its first sign-in (if the account is still empty) and is then deleted here.
 const LEGACY_KEYS=[KEY,KEY+'.tab',KEY+'.billbuddy'];
@@ -136,6 +145,10 @@ function prepare(){
   S.income.forEach(x=>{x.id=uid++});
   if(!Array.isArray(S.accounts))S.accounts=[];
   S.accounts.forEach(a=>{a.id=uid++});
+  // Repair card plans detached by older account-removal code without losing their schedules.
+  S.items.filter(i=>i.inCard&&!S.accounts.some(a=>a.key===i.inCard)).forEach(i=>{
+    S.accounts.push({id:uid++,key:i.inCard,name:i.lender||'Retained card',last4:i.bbLast4||'',archived:true});
+  });
   if(S.buffer==null)S.buffer=2000;
   for(let k=Number(S.rev)||0;k<PATCHES.length;k++)PATCHES[k](S);
   S.rev=PATCHES.length;
@@ -148,7 +161,7 @@ function ensureLinks(){
   S.items.forEach(i=>{
     if(i.kind!=='card'||i.noAcct)return;
     if(i.acct&&S.accounts.some(a=>a.key===i.acct))return;
-    const a={id:uid++,key:genKey(),name:i.name,last4:'',limit:null,stmt:null};S.accounts.push(a);i.acct=a.key;
+    const a={id:uid++,key:genKey(),name:i.name,last4:'',limit:null,stmt:null};if(i._provisional)a._provisional=true;S.accounts.push(a);i.acct=a.key;
   });
   ensureCats();
 }
@@ -175,12 +188,18 @@ const last4Of=i=>(i.kind==='card'&&acctOf(i)?.last4)||i.bbLast4||'';
 
 // ---------- saving ----------
 // Saved to Supabase only (see the cloud section at the end); nothing is kept in the browser.
-let sb=null,cloudUser=null,cloudAt=null,cloudTimer=null,cloudReady=false,pushing=false,noWriter=false,draft=null; // draft: see the end
+let sb=null,cloudUser=null,cloudAt=null,cloudTimer=null,cloudReady=false,pushing=false,draft=null;
+let cloudFlight=null,cloudQueued=false,cloudFailures=0,cloudConflict=null,cloudDirty=false;
 function setSync(cls,txt){const el=$('#syncState');el.className='sync '+cls;el.textContent=txt}
-const snapshot=()=>JSON.stringify(S,(k,v)=>k==='id'?undefined:v);
+const snapshot=()=>{
+  const state={...S};
+  ['items','accounts','income','sources'].forEach(k=>{state[k]=(S[k]||[]).filter(x=>!x._provisional)});
+  return JSON.stringify(state,(k,v)=>k==='id'||k==='_provisional'?undefined:v);
+};
 function save(){
-  if(!cloudReady)return;
+  if(!cloudReady||cloudConflict)return;
   if(draft){setSync('draft','Draft · nothing is saved');return}
+  cloudDirty=true;
   clearTimeout(cloudTimer);setSync('busy','Saving…');
   cloudTimer=setTimeout(pushCloud,700);
 }
@@ -195,14 +214,14 @@ function markPaid(i){if(isPaid(i))return;i.paidAt=Date.now();i.paidCycle=cycleKe
   if(i.kind==='loan'){i.prevLeft=num(i.left);i.left=Math.max(0,num(i.left)-1)}
   if(i.bbRef)S.items.filter(y=>y.inBill===i.bbRef&&!isPaid(y)).forEach(markPaid);
   if(i.kind==='card')S.items.filter(y=>y.inCard===i.acct&&!isPaid(y)).forEach(markPaid)}
-function undoPaid(i){if(i.kind==='loan'&&i.prevLeft!=null)i.left=i.prevLeft;delete i.paidAt;delete i.paidCycle;delete i.prevLeft;delete i.bbPaidStatement;delete i.bbPaidDue;
+function undoPaid(i){if(i.kind==='loan'&&(i.prevLeft!=null||i.bbUnpaidLeft!=null))i.left=i.prevLeft??i.bbUnpaidLeft;delete i.paidAt;delete i.paidCycle;delete i.prevLeft;delete i.bbPaidStatement;delete i.bbPaidDue;
   if(i.bbRef)S.items.filter(y=>y.inBill===i.bbRef&&isPaid(y)).forEach(undoPaid);
   if(i.kind==='card')S.items.filter(y=>y.inCard===i.acct&&isPaid(y)).forEach(undoPaid)}
 function rollover(){
   const key=cycleKey();let changed=false;
   S.items=S.items.filter(i=>{
     if(!i.paidCycle||i.paidCycle===key)return true;
-    changed=true;delete i.paidAt;delete i.paidCycle;delete i.prevLeft;
+    changed=true;delete i.paidCycle;if(!i.bbStatement){delete i.paidAt;delete i.prevLeft}
     if(i.kind==='card'&&!i.bbStatement)i.amount=null;
     return !(i.kind==='loan'&&num(i.left)<=0&&!i.bbInst);
   });
@@ -216,7 +235,7 @@ function compute(){
   const inc=S.income.filter(x=>num(x.amount)>0).map(x=>({x,d:parseD(x.date)})).filter(o=>o.d&&o.d>=start&&o.d<next);
   const other=inc.reduce((s,o)=>s+num(o.x.amount),0);
   const avail=num(S.salary)+other;
-  const lines=S.items.filter(i=>!billed(i)&&num(i.amount)>0&&inCycle(i,start)).map(i=>{
+  const lines=S.items.filter(i=>!i._provisional&&!billed(i)&&payable(i)&&num(i.amount)>0&&inCycle(i,start)).map(i=>{
     const tier=i.kind==='essential'||i.kind==='bill'?1:i.kind==='loan'?2:i.kind==='card'?3:5;
     return {i,tier,date:dueOf(i,start),need:num(i.amount)};
   }).sort((a,b)=>a.tier-b.tier||a.date-b.date);
@@ -226,6 +245,7 @@ function compute(){
   const paidAmt=lines.filter(l=>isPaid(l.i)).reduce((s,l)=>s+l.need,0);
   return {start,next,end,inc,other,avail,lines,required,total,paidAmt,gap:required-avail,surplus:avail-total};
 }
+const payable=i=>i.kind!=='loan'||i.left==null||num(i.left)>0||paidInCycle(i);
 
 // ---------- hero ----------
 function renderStatus(C){
@@ -302,15 +322,15 @@ function itemForm(i,isNew){
   return `<div class="form flat" data-id="${i.id}">
     <div class="field wide"><label for="n${i.id}">Name</label><input id="n${i.id}" data-k="name" placeholder="${i.kind==='loan'?'e.g. Home Credit':'e.g. Meralco'}" value="${esc(i.name)}"></div>
     <div class="field wide"><label for="k${i.id}">Category</label><select id="k${i.id}" data-k="cat">${catOptions(catOf(i)?.key)}</select></div>
-    <div class="field"><label for="a${i.id}">${i.kind==='card'?'Statement amount':repeats(i)&&i.once?'Amount':'Monthly amount'}</label><input id="a${i.id}" data-k="amount" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" value="${i.amount??''}"></div>
+    <div class="field"><label for="a${i.id}">${i.kind==='card'?'Statement amount':repeats(i)&&i.once?'Amount':'Monthly amount'}</label><input id="a${i.id}" data-k="amount" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" value="${esc(i.amount??'')}"></div>
     ${repeats(i)&&i.once?`<div class="field"><label for="dt${i.id}">Due date</label><input id="dt${i.id}" data-k="date" type="date" value="${esc(i.date||'')}"></div>`
       :dayField('d'+i.id,'day',i.bbDue?'Due date':'Next due date',i.day||i.bbDue?dueOf(i,cycleStart()):null,i.bbDue?'':'Same day every month.')}
     ${repeats(i)?`<label class="check wide"><input type="checkbox" id="rp${i.id}" data-k="repeat" ${i.once?'':'checked'}><span>Repeats every month</span></label>
     ${i.once?'':`<div class="field wide"><label for="u${i.id}">Stops after</label><input id="u${i.id}" data-k="until" type="month" placeholder="YYYY-MM" pattern="[0-9]{4}-[0-9]{2}" value="${esc(i.until||'')}" aria-describedby="uh${i.id}"><span class="hint" id="uh${i.id}">Leave empty if it never stops.</span></div>`}`:''}
     ${i.kind==='loan'?`<div class="field wide"><label for="lend${i.id}">Lender</label><input id="lend${i.id}" data-k="lender" list="lenders" autocomplete="off" placeholder="${esc(lenderName(i))}" value="${esc(i.lender||'')}"><datalist id="lenders">${[...new Set(S.items.filter(x=>x.kind==='loan'&&x!==i).map(lenderName))].map(n=>`<option value="${esc(n)}">`).join('')}</datalist><span class="hint">Installments from the same lender are grouped.</span></div>`:''}
-    ${i.kind==='loan'?`<div class="field"><label for="l${i.id}">Payments left</label><input id="l${i.id}" data-k="left" type="number" inputmode="numeric" min="0" value="${i.left??''}"></div><div class="field"><label for="t${i.id}">Total payments</label><input id="t${i.id}" data-k="total" type="number" inputmode="numeric" min="0" value="${i.total??''}"></div>`:''}
+    ${i.kind==='loan'?`<div class="field"><label for="l${i.id}">Payments left</label><input id="l${i.id}" data-k="left" type="number" inputmode="numeric" min="0" value="${esc(i.left??'')}"></div><div class="field"><label for="t${i.id}">Total payments</label><input id="t${i.id}" data-k="total" type="number" inputmode="numeric" min="0" value="${esc(i.total??'')}"></div>`:''}
     ${i.kind==='card'||i.kind==='loan'?`<div class="field"><label for="f4${i.id}">Last 4 digits</label><input id="f4${i.id}" data-k="last4" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="1234" autocomplete="off" value="${esc(last4Of(i))}"><span class="hint">Matches BillBuddy bills.</span></div>`:''}
-    ${i.kind==='card'||i.kind==='loan'?`<div class="field"><label for="r${i.id}">Interest %/month</label><input id="r${i.id}" data-k="rate" type="number" inputmode="decimal" step="0.01" min="0" value="${i.rate??''}"></div>`:''}
+    ${i.kind==='card'||i.kind==='loan'?`<div class="field"><label for="r${i.id}">Interest %/month</label><input id="r${i.id}" data-k="rate" type="number" inputmode="decimal" step="0.01" min="0" value="${esc(i.rate??'')}"></div>`:''}
     <div class="acts">${isNew?'<span></span>':delBtn(`data-del="${i.id}"`,"Remove "+(i.name||"this bill"))}<button class="btn" data-done="1">${isNew?'Add':'Done'}</button></div>
   </div>`;
 }
@@ -446,7 +466,7 @@ function renderIncome(){
   S.income.sort((a,b)=>String(a.date||'9').localeCompare(String(b.date||'9')));
   $('#incList').innerHTML=S.income.map(x=>{const t=incTag(x);return `<div class="inc" data-iid="${x.id}">
     <input data-k="label" aria-label="What is it" placeholder="What is it?" value="${esc(x.label||'')}">
-    <input data-k="amount" aria-label="Amount" type="number" inputmode="decimal" step="0.01" min="0" placeholder="₱0.00" value="${x.amount??''}">
+    <input data-k="amount" aria-label="Amount" type="number" inputmode="decimal" step="0.01" min="0" placeholder="₱0.00" value="${esc(x.amount??'')}">
     <input data-k="date" aria-label="Date it arrives" type="date" value="${esc(x.date||'')}">
     <button class="x" data-incdel="${x.id}" aria-label="Remove ${esc(x.label||'this money')}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     <span class="tag ${t.c}" id="tag${x.id}">${t.t}</span></div>`}).join('')||'<p class="empty">No other money yet. Add one below.</p>';
@@ -472,7 +492,7 @@ function loanDates(l){
   return out;
 }
 const loansIn=(start,skipPaid)=>{const end=shiftCycle(start,1);return S.items.filter(l=>l.kind==='loan'&&!l.inCard&&!hasParts(l)&&num(l.amount)>0&&!(skipPaid&&paidInCycle(l)&&inCycle(l,start))).reduce((s,l)=>s+num(l.amount)*loanDates(l).filter(d=>d>=start&&d<end).length,0)};
-const fixedIn=start=>S.items.filter(i=>(i.kind==='essential'||i.kind==='bill')&&inCycle(i,start)).reduce((s,i)=>s+num(i.amount),0);
+const fixedIn=start=>S.items.filter(i=>!i._provisional&&(i.kind==='essential'||i.kind==='bill')&&inCycle(i,start)).reduce((s,i)=>s+Math.max(0,num(i.amount)),0);
 let needOverride=null;
 function quote(s,need){
   const f=Math.min(0.99,num(s.fee)/100),n=Math.max(1,Math.round(num(s.term)||1)),avail=num(s.avail);
@@ -518,11 +538,11 @@ function renderBorrow(C){
 function srcFields(s){return `
 
     <div class="field wide"><label for="sn${s.id}">Creditor</label><input id="sn${s.id}" data-k="name" placeholder="e.g. SSS Salary Loan" value="${esc(s.name)}"></div>
-    <div class="field"><label for="sa${s.id}">Available (₱)</label><input id="sa${s.id}" data-k="avail" type="number" min="0" step="0.01" value="${s.avail??''}"></div>
-    <div class="field"><label for="sr${s.id}">Interest %/mo</label><input id="sr${s.id}" data-k="rate" type="number" min="0" step="0.01" value="${s.rate??''}"></div>
+    <div class="field"><label for="sa${s.id}">Available (₱)</label><input id="sa${s.id}" data-k="avail" type="number" min="0" step="0.01" value="${esc(s.avail??'')}"></div>
+    <div class="field"><label for="sr${s.id}">Interest %/mo</label><input id="sr${s.id}" data-k="rate" type="number" min="0" step="0.01" value="${esc(s.rate??'')}"></div>
     <div class="field"><label for="sy${s.id}">Rate type</label><select id="sy${s.id}" data-k="addon"><option value="0" ${s.addon?'':'selected'}>Diminishing</option><option value="1" ${s.addon?'selected':''}>Add-on</option></select></div>
-    <div class="field"><label for="sf${s.id}">Upfront fee %</label><input id="sf${s.id}" data-k="fee" type="number" min="0" step="0.01" value="${s.fee??''}"></div>
-    <div class="field"><label for="st${s.id}">Term (months)</label><input id="st${s.id}" data-k="term" type="number" min="1" value="${s.term??''}"></div>
+    <div class="field"><label for="sf${s.id}">Upfront fee %</label><input id="sf${s.id}" data-k="fee" type="number" min="0" step="0.01" value="${esc(s.fee??'')}"></div>
+    <div class="field"><label for="st${s.id}">Term (months)</label><input id="st${s.id}" data-k="term" type="number" min="1" value="${esc(s.term??'')}"></div>
     <div class="field"><label for="sx${s.id}">Other terms</label><input id="sx${s.id}" data-k="terms" placeholder="3,6,12" value="${esc(s.terms||'')}"></div>`}
 function renderSrcList(){
   $('#srcList').innerHTML=S.sources.map(s=>`<div class="form" data-sid="${s.id}">${srcFields(s)}
@@ -559,9 +579,10 @@ const ucls=p=>p>50?'bad':p>30?'warn':'';
 function acctForm(a,isNew){
   const b=billOf(a);
   return `<div class="form flat" data-aid="${a.id}">
+    ${!isNew&&(b?.bbKey||S.items.some(i=>i.inCard===a.key))?'<p class="note">Removing this card keeps its installment history and hides this statement. A new statement will reconnect the card.</p>':''}
     <div class="field wide"><label for="an${a.id}">Card name</label><input id="an${a.id}" data-k="name" placeholder="e.g. BPI Gold" value="${esc(a.name)}"></div>
     <div class="field"><label for="a4${a.id}">Last 4 digits</label><input id="a4${a.id}" data-k="last4" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="1234" autocomplete="off" value="${esc(a.last4||'')}"><span class="hint">Matches BillBuddy bills.</span></div>
-    <div class="field"><label for="al${a.id}">Credit limit (₱)</label><input id="al${a.id}" data-k="limit" type="number" min="0" step="0.01" value="${a.limit??''}"></div>
+    <div class="field"><label for="al${a.id}">Credit limit (₱)</label><input id="al${a.id}" data-k="limit" type="number" min="0" step="0.01" value="${esc(a.limit??'')}"></div>
     ${dayField('as'+a.id,'stmt','Next statement',a.stmt?nextOn(num(a.stmt)):null)}
     ${dayField('ad'+a.id,'due','Next payment due',b&&(b.day||b.bbDue)?dueOf(b,cycleStart()):null)}
     <div class="acts">${isNew?'<span></span>':delBtn(`data-adel="${a.id}"`,"Remove "+(a.name||"card"))}<button class="btn" data-adone="1">${isNew?'Add':'Done'}</button></div>
@@ -569,7 +590,7 @@ function acctForm(a,isNew){
 }
 // The installments inside a card's statement, as BillBuddy lists them: each plan, what they come to, the total
 function cardPlans(a,bill){
-  const plans=S.items.filter(i=>i.inCard===a.key).sort((x,y)=>String(planOf(x)).localeCompare(planOf(y),undefined,{numeric:true}));
+  const plans=S.items.filter(i=>i.inCard===a.key&&!i.bbWaiting&&bill&&i.bbStatement===bill.bbStatement).sort((x,y)=>String(planOf(x)).localeCompare(planOf(y),undefined,{numeric:true}));
   if(!plans.length)return '';
   const sum=plans.reduce((t,i)=>t+num(i.amount),0),total=num(bill&&bill.amount);
   const fk='c:'+a.key;
@@ -579,9 +600,9 @@ function cardPlans(a,bill){
 }
 function renderAccounts(){
   let lim=0,used=0;
-  const html=S.accounts.map(a=>{
+  const html=S.accounts.filter(a=>!a.archived).map(a=>{
     const L=num(a.limit),U=usedOf(a),p=L>0?U/L*100:null;
-    if(L>0){lim+=L;used+=U}
+    used+=U;if(L>0)lim+=L;
     const bill=billOf(a);
     const facts=[];
     if(a.stmt)facts.push(`<span>Statement <b>${fmtD(nextOn(num(a.stmt)))}</b></span>`);
@@ -598,7 +619,8 @@ function renderAccounts(){
     </div>`;
   }).join('');
   $('#acctList').innerHTML=html||'<p class="empty">No cards yet.</p>';
-  const p=lim>0?used/lim*100:null;
+  const comparable=S.accounts.filter(a=>num(a.limit)>0).reduce((sum,a)=>sum+usedOf(a),0);
+  const p=lim>0?comparable/lim*100:null;
   $('#acctSum').innerHTML=`<div><span class="label">Total limit</span><span class="v">${peso(lim)}</span></div><div><span class="label">Total used</span><span class="v">${peso(used)}</span></div><div><span class="label">Overall usage</span><span class="v" style="color:${p===null?'inherit':p>50?'var(--bad)':p>30?'var(--warn)':'var(--ok)'}">${p===null?'—':p.toFixed(0)+'%'}</span></div>`;
 }
 
@@ -623,7 +645,8 @@ document.addEventListener('click',e=>{
   f.setAttribute('aria-expanded',!folded.has(k));box&&box.classList.toggle('folded',folded.has(k));
 });
 function infoWin(title,html){$('#infoTitle').textContent=title;$('#infoBody').innerHTML=html;const d=$('#infoDlg');if(!d.open)d.showModal()}
-$('#infoDlg').addEventListener('click',e=>{if(e.target.closest('[data-infoclose]'))$('#infoDlg').close()});
+$('#infoDlg').addEventListener('click',e=>{if(e.target.closest('[data-infoclose]')&&!cloudConflict)$('#infoDlg').close()});
+$('#infoDlg').addEventListener('cancel',e=>{if(cloudConflict)e.preventDefault()});
 const infoRows=rows=>`<ul class="ilist">${rows.map(([a,b,c])=>`<li${c?` class="${c}"`:''}><span>${a}</span><span class="num">${b}</span></li>`).join('')}</ul>`;
 // This cycle, line by line: what comes in, what each category of bills takes, and what's left
 function cycleInfo(){
@@ -656,7 +679,7 @@ window.addEventListener('beforeprint',()=>{const C=compute();Object.keys(JOBS).f
 const commit=()=>{save();render()};
 
 // ---------- events ----------
-['salary','payday','payday2','payweekday'].forEach(k=>{$('#'+k).addEventListener('input',e=>{S[k]=e.target.value===''?(k==='salary'?0:null):num(e.target.value);save();if(k==='salary')render();else renderAll()})});
+['salary','payday','payday2','payweekday'].forEach(k=>{$('#'+k).addEventListener('input',e=>{if(!validInput(e.target))return;S[k]=e.target.value===''?(k==='salary'?0:null):num(e.target.value);save();if(k==='salary')render();else renderAll()})});
 $('#payfreq').addEventListener('change',e=>{
   const was=payFreq();S.payfreq=e.target.value;
   // monthly and twice-a-month share the payday box: each keeps its own day, so switching back restores it
@@ -681,6 +704,8 @@ document.addEventListener('click',e=>{const g=e.target.closest('[data-goto]');if
 
 $('#billBody').addEventListener('input',e=>{
   const row=e.target.closest('.form');if(!row)return;const it=S.items.find(i=>i.id==row.dataset.id),k=e.target.dataset.k;if(!it||!k)return;
+  if(e.target.readOnly)return;
+  if(!validInput(e.target))return;
   if(k==='cat'){const c=S.cats.find(x=>x.key===e.target.value);if(!c)return;it.cat=c.key;setKind(it,c.kind);ensureLinks();commit();refreshBill();const f=$('#k'+it.id);f&&f.focus();return}
   if(k==='repeat'){
     if(e.target.checked){delete it.once;const d=parseD(it.date);if(d){it.day=d.getDate();delete it.date}}
@@ -722,7 +747,12 @@ document.addEventListener('click',e=>{const t=e.target;if(t.matches?.('input[typ
 let billNew=false,billKeep=false;
 function refreshBill(){const it=S.items.find(i=>i.id===editingId);if(!it)return;
   $('#billTitle').textContent=billNew?(it.kind==='loan'?'New installment':'New bill'):'Edit '+(it.kind==='loan'?'installment':'bill');
-  $('#billBody').innerHTML=itemForm(it,billNew)}
+  $('#billBody').innerHTML=itemForm(it,billNew);
+  if(it.bbDue||it.bbInst){
+    $('#billBody').querySelectorAll('[data-k="amount"],[data-k="day"],[data-k="left"],[data-k="total"]').forEach(el=>{el.readOnly=true;el.title='Updated by BillBuddy'});
+    const note=document.createElement('p');note.className='note';note.textContent='BillBuddy updates the amount, due date and payment count. Mark the bill paid to update progress.';$('#billBody .form').prepend(note);
+  }
+}
 function openBill(id,isNew){
   editingId=id;billNew=!!isNew;billKeep=false;refreshBill();
   const d=$('#billDlg');if(!d.open)d.showModal();
@@ -730,7 +760,7 @@ function openBill(id,isNew){
 }
 $('#billDlg').addEventListener('close',()=>{
   const it=S.items.find(i=>i.id===editingId);
-  if(it&&billNew&&!billKeep)S.items=S.items.filter(i=>i!==it);           // closed without Add
+  if(it&&billNew&&!billKeep){S.items=S.items.filter(i=>i!==it);S.accounts=S.accounts.filter(a=>!(a.key===it.acct&&a._provisional))}
   else if(it&&!String(it.name||'').trim())it.name=it.kind==='loan'?'New installment':'New bill';
   editingId=null;billNew=false;$('#billBody').innerHTML='';ensureLinks();save();renderAll();
 });
@@ -738,13 +768,13 @@ $('#billDlg').addEventListener('click',e=>{
   if(e.target===e.currentTarget){e.currentTarget.close();return} // tap outside the window
   const t=e.target.closest('button');if(!t)return;
   if(t.dataset.billclose){$('#billDlg').close();return}
-  if(t.dataset.done){billKeep=true;$('#billDlg').close();return}
+  if(t.dataset.done){if(![...$('#billBody').querySelectorAll('input')].every(el=>validInput(el)&&el.reportValidity()))return;const it=S.items.find(i=>i.id===editingId);if(it){delete it._provisional;const a=acctOf(it);if(a)delete a._provisional}billKeep=true;$('#billDlg').close();return}
   if(t.dataset.del){const g=S.items.find(i=>i.id==t.dataset.del);S.items=S.items.filter(i=>i!==g&&!(g&&g.bbRef&&i.inBill===g.bbRef));  // with the loans listed on it
     billKeep=true;$('#billDlg').close()}
 });
 function newBill(kind){
   const c=S.cats.find(x=>x.kind===kind)||S.cats.find(x=>x.kind==='bill')||S.cats[0];
-  const it={id:uid++,name:'',kind:c.kind,cat:c.key,amount:null,day:clampPd()};
+  const it={id:uid++,_provisional:true,name:'',kind:c.kind,cat:c.key,amount:null,day:clampPd()};
   if(c.kind==='loan')Object.assign(it,{left:null,total:null,rate:null});
   S.items.push(it);ensureLinks();openBill(it.id,true);
 }
@@ -784,29 +814,32 @@ $('#instList').addEventListener('click',e=>{
 $('#instAdd').addEventListener('click',()=>newBill('loan'));
 
 $('#incList').addEventListener('input',e=>{
+  if(!validInput(e.target))return;
   const row=e.target.closest('.inc');if(!row)return;const x=S.income.find(o=>o.id==row.dataset.iid),k=e.target.dataset.k;if(!x||!k)return;
   x[k]=k==='amount'?(e.target.value===''?null:num(e.target.value)):e.target.value;
   const t=incTag(x),tag=$('#tag'+x.id);if(tag){tag.textContent=t.t;tag.className='tag '+t.c}
   renderIncSum();commit();
 });
 $('#incList').addEventListener('click',e=>{const id=e.target.closest('button')?.dataset.incdel;if(!id)return;S.income=S.income.filter(o=>o.id!=id);save();renderIncome();render()});
-$('#incAdd').addEventListener('click',()=>{const x={id:uid++,label:'',amount:null,date:iso(new Date())};S.income.push(x);openSheet('inc',x,true,'#il'+x.id)});
+$('#incAdd').addEventListener('click',()=>{const x={id:uid++,_provisional:true,label:'',amount:null,date:iso(new Date())};S.income.push(x);openSheet('inc',x,true,'#il'+x.id)});
 
 function srcInput(e){
+  if(!validInput(e.target))return;
   const row=e.target.closest('.form');if(!row)return;const s=S.sources.find(x=>x.id==row.dataset.sid),k=e.target.dataset.k;if(!s||!k)return;
   s[k]=k==='name'||k==='terms'?e.target.value:k==='addon'?e.target.value==='1':(e.target.value===''?null:num(e.target.value));commit();
 }
 $('#srcList').addEventListener('input',srcInput);
 $('#srcList').addEventListener('click',e=>{const id=e.target.closest('button')?.dataset.sdel;if(!id)return;S.sources=S.sources.filter(s=>s.id!=id);save();renderSrcList();render()});
-$('#srcAdd').addEventListener('click',()=>{const s={id:uid++,name:'',avail:null,rate:null,fee:0,term:12};S.sources.push(s);openSheet('src',s,true,'#sn'+s.id)});
+$('#srcAdd').addEventListener('click',()=>{const s={id:uid++,_provisional:true,name:'',avail:null,rate:null,fee:0,term:12};S.sources.push(s);openSheet('src',s,true,'#sn'+s.id)});
 
 $('#resetBtn').addEventListener('click',()=>{$('#resetConfirm').hidden=false});
 $('#resetNo').addEventListener('click',()=>{$('#resetConfirm').hidden=true});
 $('#resetYes').addEventListener('click',()=>{const bb=S.bb;S=clone(DEFAULTS);if(bb)S.bb=bb;prepare();editingId=null;save();syncInputs();$('#resetConfirm').hidden=true;renderAll()});
 function acctInput(e){
+  if(!validInput(e.target))return;
   const row=e.target.closest('.form');if(!row)return;const a=S.accounts.find(x=>x.id==row.dataset.aid),k=e.target.dataset.k;if(!a||!k)return;
   if(k==='last4'){const v=e.target.value.replace(/\D/g,'').slice(0,4);if(v!==e.target.value)e.target.value=v;a.last4=v}
-  else if(k==='due'){const b=billOf(a);if(b){b.day=dayFrom(e.target);delete b.bbDue}}
+  else if(k==='due'){const b=billOf(a);if(b?.bbDue)return;if(b){b.day=dayFrom(e.target);delete b.bbDue}}
   else if(k==='stmt')a.stmt=dayFrom(e.target)
   else{a[k]=k==='name'?e.target.value:(e.target.value===''?null:num(e.target.value));if(k==='name'){const b=billOf(a);if(b)b.name=a.name}}
   commit();
@@ -825,7 +858,7 @@ const SHEET={
     tidy:o=>{if(!o.name.trim()){o.name='New card';const b=billOf(o);if(b)b.name=o.name}}},
   inc:{title:n=>'Add money',body:(o)=>`<div class="form flat" data-iid="${o.id}">
       <div class="field wide"><label for="il${o.id}">What is it</label><input id="il${o.id}" data-k="label" placeholder="e.g. Freelance job" value="${esc(o.label||'')}"></div>
-      <div class="field"><label for="ia${o.id}">Amount (₱)</label><input id="ia${o.id}" data-k="amount" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" value="${o.amount??''}"></div>
+      <div class="field"><label for="ia${o.id}">Amount (₱)</label><input id="ia${o.id}" data-k="amount" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00" value="${esc(o.amount??'')}"></div>
       <div class="field"><label for="id${o.id}">Arrives on</label><input id="id${o.id}" data-k="date" type="date" value="${esc(o.date||'')}"></div>
       <div class="acts"><span></span><button class="btn" data-sheetdone="1">Add</button></div></div>`,
     list:()=>S.income,drop:o=>{S.income=S.income.filter(x=>x!==o)},tidy:o=>{if(!o.label.trim())o.label='Other money'}},
@@ -835,10 +868,12 @@ const SHEET={
 function openSheet(type,obj,isNew,focus){
   sheet={type,obj,isNew,keep:false};
   $('#sheetTitle').textContent=SHEET[type].title(isNew);$('#sheetBody').innerHTML=SHEET[type].body(obj,isNew);
+  if(type==='acct'&&billOf(obj)?.bbDue){const due=$('#sheetBody [data-k="due"]');if(due){due.readOnly=true;due.title='Updated by BillBuddy'}}
   const d=$('#sheetDlg');if(!d.open)d.showModal();const f=focus&&$(focus);f&&f.focus();
 }
 $('#sheetBody').addEventListener('input',e=>{
   if(!sheet)return;
+  if(!validInput(e.target))return;
   if(sheet.type==='acct')return acctInput(e);
   if(sheet.type==='src')return srcInput(e);
   const x=sheet.obj,k=e.target.dataset.k;if(!k)return;
@@ -848,15 +883,19 @@ $('#sheetDlg').addEventListener('click',e=>{
   if(e.target===e.currentTarget){e.currentTarget.close();return}
   const t=e.target.closest('button');if(!t||!sheet)return;
   if(t.dataset.sheetclose){$('#sheetDlg').close();return}
-  if(t.dataset.sheetdone||t.dataset.adone){sheet.keep=true;$('#sheetDlg').close();return}
-  if(t.dataset.adel){const a=sheet.obj,b=billOf(a);if(b){delete b.acct;b.noAcct=true}S.accounts=S.accounts.filter(x=>x!==a);sheet.keep=true;$('#sheetDlg').close()}
+  if(t.dataset.sheetdone||t.dataset.adone){if(![...$('#sheetBody').querySelectorAll('input')].every(el=>validInput(el)&&el.reportValidity()))return;delete sheet.obj._provisional;if(sheet.type==='acct'){const b=billOf(sheet.obj);if(b)delete b._provisional}sheet.keep=true;$('#sheetDlg').close();return}
+  if(t.dataset.adel){const a=sheet.obj,b=billOf(a);
+    // A card with imported plans keeps its stable relationship as a retained account.
+    if(b?.bbKey||S.items.some(i=>i.inCard===a.key)){a.archived=true;if(b){a.archivedStatement=b.bbStatement||b.bbDue;retireBBStatement(b)}}
+    else{if(b){delete b.acct;b.noAcct=true}S.accounts=S.accounts.filter(x=>x!==a)}
+    sheet.keep=true;$('#sheetDlg').close()}
 });
 $('#sheetDlg').addEventListener('close',()=>{
   if(!sheet)return;const T=SHEET[sheet.type],o=sheet.obj;
   if(sheet.isNew&&!sheet.keep)T.drop(o);else if(T.list().includes(o))T.tidy(o);
   sheet=null;$('#sheetBody').innerHTML='';ensureLinks();save();renderAll();
 });
-$('#acctAdd').addEventListener('click',()=>{const a={id:uid++,key:genKey(),name:'',last4:'',limit:null,stmt:null};S.accounts.push(a);S.items.push({id:uid++,name:'',kind:'card',amount:null,day:clampPd(),acct:a.key});ensureLinks();openSheet('acct',a,true,'#an'+a.id)});
+$('#acctAdd').addEventListener('click',()=>{const a={id:uid++,_provisional:true,key:genKey(),name:'',last4:'',limit:null,stmt:null};S.accounts.push(a);S.items.push({id:uid++,_provisional:true,name:'',kind:'card',amount:null,day:clampPd(),acct:a.key});ensureLinks();openSheet('acct',a,true,'#an'+a.id)});
 function selectTab(name){
   document.querySelectorAll('.tab').forEach(x=>{const on=x.dataset.tab===name;x.setAttribute('aria-selected',on);x.tabIndex=on?0:-1;
     if(on&&x.parentElement.scrollWidth>x.parentElement.clientWidth)x.parentElement.scrollTo({left:x.offsetLeft-x.parentElement.clientWidth/2+x.offsetWidth/2,behavior:'smooth'})});
@@ -877,6 +916,8 @@ $('.tabs').addEventListener('keydown',e=>{
 // ---------- boot ----------
 function adopt(next){
   if(!next||!Array.isArray(next.items)||next.ver!==DEFAULTS.ver)return;
+  stateEpoch++;aiRun++;aiMemo?.clear();
+  document.querySelectorAll('.mon-ai').forEach(el=>{delete el.dataset.busy;el.innerHTML=''});$('#aiGo').disabled=false;
   S=next;prepare();const expired=pruneExpiredBB();rollover();editingId=null;syncInputs();renderAll();fillBB();fillAI();if(expired)save();
 }
 prepare();rollover();syncInputs();renderAll();
@@ -887,7 +928,7 @@ const bbConf=()=>S.bb||{};
 function fillBB(){const c=bbConf();$('#bbUrl').value=c.url||'';$('#bbKey').value=c.key||'';if(!c.url)bbState('off','Not connected')}
 const squash=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
 const bbState=(cls,txt)=>{const el=$('#bbState');el.className='sync '+cls;el.textContent=txt};
-let bbBusy=false,bbAgain=false;
+let bbBusy=false,bbAgain=false,bbFailures=0,bbRetryAt=0;
 // BillBuddy uses Manila calendar days, regardless of this device's timezone.
 const BB_DAY_FORMAT=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'});
 function bbCutoff(){
@@ -926,15 +967,17 @@ function bbPaymentState(it,b){
   const set=(key,value)=>{if(it[key]!==value){it[key]=value;changed=true}};
   if(!same){['paidAt','paidCycle','prevLeft'].forEach(key=>{if(key in it){delete it[key];changed=true}})}
   set('bbStatement',statement);set('bbStatementDue',b.due_date);set('bbWaiting',false);
-  if(paid)set('bbPaidStatement',statement);
+  if(paid){set('bbPaidStatement',statement);if(!it.paidAt)set('paidAt',Date.now())}
   return changed;
 }
 const planIdentity=value=>squash(String(value||'').replace(/\b\d{1,3}\s*(?:\/|of\s+)\s*\d{1,3}\b/gi,''));
-function existingBBPlan(key,x,owns){
-  const exact=S.items.find(i=>i.bbInst===key);if(exact)return exact;
-  const candidates=S.items.filter(i=>i.bbInst&&owns(i)&&num(i.total)===x.total&&near(i.amount,x.amt));
+function existingBBPlan(key,x,owns,claimed=new Set()){
+  const exact=S.items.find(i=>i.bbInst===key&&!claimed.has(i));if(exact){claimed.add(exact);return exact}
+  const candidates=S.items.filter(i=>i.bbInst&&!claimed.has(i)&&owns(i)&&num(i.total)===x.total&&near(i.amount,x.amt)&&(!i.bbPlanId||!x.planId||i.bbPlanId===x.planId));
   const named=candidates.filter(i=>planIdentity(i.name)===planIdentity(x.desc)),older=named.length?named:candidates;
-  if(older.length===1){older[0].bbInst=key;return older[0]}
+  const termMatch=older.filter(i=>num(i.left)===planLeft(x,isPaid(i)));
+  const match=termMatch.length===1?termMatch[0]:older.length===1?older[0]:null;
+  if(match){match.bbInst=key;claimed.add(match);return match}
   return null;
 }
 // BillBuddy's bill type -> the planner's. Newer feeds send `type` (credit_card, loan, utility, insurance,
@@ -958,7 +1001,7 @@ function refile(it,kind,bank){
   if(kind==='loan'){if(it.left===undefined)it.left=null;if(it.total===undefined)it.total=null}
 }
 async function syncBillBuddy(){
-  if(!cloudReady)return;
+  if(!cloudReady||cloudConflict||Date.now()<bbRetryAt)return;
   const {url,key}=bbConf();
   if(!url||!key){bbState('off','Not connected');return}
   if(bbBusy){bbAgain=true;return}bbBusy=true;
@@ -966,12 +1009,12 @@ async function syncBillBuddy(){
   try{
     const r=await fetch(url,{headers:{Authorization:'Bearer '+key},cache:'no-store',signal:controller.signal});
     if(!cloudReady||S!==state||bbConf().url!==url||bbConf().key!==key)return;
-    if(r.status===401){bbState('off','Wrong API key');return}
+    if(r.status===401){bbRetryAt=Infinity;bbState('off','Wrong API key. Update the key to reconnect.');return}
     if(!r.ok)throw new Error('BillBuddy HTTP '+r.status);
     const j=await r.json();if(!j.ok||!Array.isArray(j.bills)||!j.bills.every(b=>b&&typeof b==='object'&&typeof b.bank==='string'&&typeof b.due_date==='string'))throw new Error(j.error||'Invalid BillBuddy feed');
     if(!cloudReady||S!==state||bbConf().url!==url||bbConf().key!==key)return;
-    bbLast=j.bills;applyBB(j.bills,{reconcile:j.complete===true});
-  }catch(e){if(S===state&&bbConf().url===url&&bbConf().key===key){console.warn('BillBuddy sync failed',e);bbState('off','Could not reach BillBuddy. Check the link.')}return}
+    bbFailures=0;bbRetryAt=0;bbLast=j.bills;applyBB(j.bills,{reconcile:j.complete===true});
+  }catch(e){if(S===state&&bbConf().url===url&&bbConf().key===key){bbFailures++;bbRetryAt=Date.now()+Math.min(60000,3000*2**Math.min(bbFailures,5));console.warn('BillBuddy sync failed',e);bbState('off','Could not reach BillBuddy. Retrying shortly.')}return}
   finally{clearTimeout(timeout);bbBusy=false;if(bbAgain){bbAgain=false;setTimeout(syncBillBuddy,0)}}
 }
 let bbLast=[];
@@ -987,12 +1030,14 @@ function applyBB(bills,{reconcile=false}={}){
     const bank=squash(b.bank),due=parseD(b.due_date),amt=num(b.amount);
     if(!bank||!due||!(amt>0))return;
     const kind=bbKind(b),l4=String(b.last4||'').replace(/\D/g,'').slice(-4),key=b.account_key||null;
-    const ofBank=i=>squash(i.name).includes(bank),free=i=>!billed(i)&&!i.bbInst&&!claimed.has(i)&&(!i.bbKey||i.bbKey===key);
+    const archived=key&&S.accounts.find(a=>a.bbKey===key&&a.archived);
+    if(archived?.archivedStatement===String(b.statement_id||b.due_date))return;
+    const ofBank=i=>squash(i.name).includes(bank),free=i=>!i._provisional&&!billed(i)&&!i.bbInst&&!claimed.has(i)&&(!i.bbKey||i.bbKey===key);
     // same account as last time, then same last 4 digits (same type first, then any), then same bank and type
     // (several loans at one bank: the one with this amount, then this due day)
     let it=(key&&byKey.has(key)&&!claimed.has(byKey.get(key))&&byKey.get(key))
-      ||(l4&&S.items.find(i=>i.kind===kind&&free(i)&&last4Of(i)===l4))
-      ||(l4&&S.items.find(i=>free(i)&&last4Of(i)===l4))
+      ||(l4&&S.items.find(i=>i.kind===kind&&free(i)&&ofBank(i)&&last4Of(i)===l4))
+      ||(l4&&S.items.find(i=>free(i)&&ofBank(i)&&last4Of(i)===l4))
       ||(()=>{const c=S.items.filter(i=>i.kind===kind&&free(i)&&ofBank(i)&&!(l4&&last4Of(i)));
         return c.find(i=>near(i.amount,amt))||c.find(i=>num(i.day)===due.getDate())||(c.length===1?c[0]:null)})();
     // an earlier sync filed this statement under the wrong type (a loan as "UnionBank CC"): fix or drop that copy
@@ -1001,7 +1046,8 @@ function applyBB(bills,{reconcile=false}={}){
     // the last 4 digits decide which card it is: a card in Accounts with these digits and no bill
     // (its bill was removed, or an older sync gave the card a second account) gets this bill back,
     // under the name you gave the card
-    const mine=kind==='card'?S.accounts.find(a=>((key&&a.bbKey===key)||(l4&&a.last4===l4))&&!S.items.some(i=>i.acct===a.key)):null;
+    const mine=kind==='card'?S.accounts.find(a=>((key&&a.bbKey===key)||(l4&&a.last4===l4&&(!a.bbKey||!key)&&squash(a.name).includes(bank)))&&!S.items.some(i=>i.acct===a.key)):null;
+    if(mine){delete mine.archived;delete mine.archivedStatement}
     if(mine&&it&&it.kind==='card'){
       const dup=acctOf(it);it.acct=mine.key;it.name=mine.name;delete it.noAcct;changed=true;
       if(dup&&!num(dup.limit)&&!num(dup.stmt)&&!S.items.some(i=>i.acct===dup.key))S.accounts=S.accounts.filter(x=>x!==dup);
@@ -1031,6 +1077,7 @@ function applyBB(bills,{reconcile=false}={}){
     // remember the statement you marked paid, so it is not brought back after payday
     if(num(it.amount)===amt&&num(it.day)===due.getDate()&&it.bbDue===b.due_date)return;
     it.amount=amt;it.day=due.getDate();it.bbDue=b.due_date;changed=true;
+    if(editingId===it.id){refreshBill();bbState('ok','Statement updated from BillBuddy; source fields were refreshed.')}
   });
   // copies an older sync made before bill types were sent (e.g. a loan saved as "UnionBank CC"), even from an
   // earlier statement: filled in by BillBuddy, not matched this time, and the same amount as a bill of
@@ -1055,14 +1102,20 @@ function applyBB(bills,{reconcile=false}={}){
 // term_count, monthly_amount and description); a plan whose term the statement cut off is skipped.
 const bbList=b=>{let l=b.installments;if(typeof l==='string')try{l=JSON.parse(l)}catch(e){l=null}return Array.isArray(l)?l:null};
 // `total` is 0 when the statement cut the term off (EastWest's "006 OF 01"): a card still lists it, by payment number
-const bbPlans=b=>(bbList(b)||[]).map(x=>({desc:String(x.description||x.label||'Installment'),
+const bbPlans=b=>{const counts=new Map();return (bbList(b)||[]).map(x=>({desc:String(x.description||x.label||'Installment'),planId:String(x.plan_id||x.source_plan_id||''),
   paid:Math.round(num(x.paid_count??x.term)),total:Math.round(num(x.term_count??x.of)),amt:Math.round(num(x.monthly_amount??x.amount)*100)/100}))
-  .filter(x=>x.amt>0&&x.paid>=1&&(!x.total||x.total>=2&&x.paid<=x.total));
+  .filter(x=>x.amt>0&&x.paid>=1&&(!x.total||x.total>=2&&x.paid<=x.total)).map(x=>{
+    const due=parseD(b.due_date),origin=due?new Date(due.getFullYear(),due.getMonth()-x.paid+1,1):null;
+    x.origin=origin?iso(origin).slice(0,7):'';
+    const base=planIdentity(x.desc)+'|'+x.total+'|'+x.amt.toFixed(2)+'|'+x.origin,n=(counts.get(base)||0)+1;counts.set(base,n);
+    x.identity=x.planId?'id:'+x.planId:base+'|'+n;return x;
+  })};
 const planName=x=>x.desc.toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());
 // payments left counting this statement's, unless it is already paid
 const planLeft=(x,paidNow)=>Math.max(0,x.total-x.paid+(paidNow?0:1));
 function adoptBB(it,b,due){
   let ch=false;const set=(o,k,v)=>{if(v!=null&&o[k]!==v){o[k]=v;ch=true}};
+  const claimedPlans=new Set();
   let plans=bbPlans(b);
   const paidNow=isPaid(it)||it.bbPaidDue===b.due_date; // this statement is already paid
   if(it.kind==='card'){
@@ -1072,14 +1125,14 @@ function adoptBB(it,b,due){
     if(!bbList(b))return ch;                        // an older feed: leave the card's installments alone
     const seen=new Set();
     plans.forEach(x=>{
-      const k=a.key+'|'+planIdentity(x.desc)+'|'+x.total+'|'+x.amt.toFixed(2);
+      const k=a.key+'|'+x.identity;
       seen.add(k);
-      let i=existingBBPlan(k,x,y=>y.inCard===a.key);
+      let i=existingBBPlan(k,x,y=>y.inCard===a.key,claimedPlans);
       if(!i){const home=planHome(k,x,b,null);if(home==='wait')return;   // the AI is being asked where it goes
         if(home){i=home;i.bbInst=k}
         else{i={id:uid++,name:planName(x),kind:'loan',inCard:a.key,bbInst:k,amount:null,day:due.getDate(),left:null,total:null,rate:null};S.items.push(i)}
         ch=true}
-      set(i,'inCard',a.key);set(i,'amount',x.amt);set(i,'day',due.getDate());
+      claimedPlans.add(i);if(x.planId)set(i,'bbPlanId',x.planId);set(i,'bbOrigin',x.origin);set(i,'inCard',a.key);set(i,'amount',x.amt);set(i,'day',due.getDate());set(i,'bbUnpaidLeft',planLeft(x,false));
       if(bbPaymentState(i,b))ch=true;
       if(paidNow)set(i,'bbPaidStatement',i.bbStatement);
       if(x.total){set(i,'total',x.total);set(i,'left',planLeft(x,paidNow));if(i.bbTerm){delete i.bbTerm;ch=true}}else set(i,'bbTerm',x.paid);
@@ -1093,13 +1146,14 @@ function adoptBB(it,b,due){
     if(!it.bbRef){it.bbRef=it.bbKey||genKey();ch=true}
     const seen=new Set();let most=0,longest=0;
     plans.forEach(x=>{
-      const k='L'+it.bbRef+'|'+planIdentity(x.desc)+'|'+x.total+'|'+x.amt.toFixed(2);
+      const k='L'+it.bbRef+'|'+x.identity;
       seen.add(k);
-      let i=existingBBPlan(k,x,y=>y.inBill===it.bbRef);
+      let i=existingBBPlan(k,x,y=>y.inBill===it.bbRef,claimedPlans);
       if(!i){const home=planHome(k,x,b,null);if(home==='wait')return;
         if(home){i=home;i.bbInst=k}
         else{i={id:uid++,name:planName(x),kind:'loan',inBill:it.bbRef,bbInst:k,amount:null,day:due.getDate(),left:null,total:null,rate:null};S.items.push(i)}
         ch=true}
+      claimedPlans.add(i);if(x.planId)set(i,'bbPlanId',x.planId);set(i,'bbOrigin',x.origin);set(i,'bbUnpaidLeft',planLeft(x,false));
       const left=planLeft(x,paidNow);most=Math.max(most,left);longest=Math.max(longest,x.total);
       set(i,'inBill',it.bbRef);set(i,'amount',x.amt);set(i,'day',due.getDate());set(i,'total',x.total);set(i,'left',left);
       if(!i.lender)set(i,'lender',it.lender||it.name);
@@ -1107,7 +1161,7 @@ function adoptBB(it,b,due){
       if(paidNow)set(i,'bbPaidStatement',i.bbStatement);
     });
     S.items.filter(i=>i.inBill===it.bbRef&&i.bbInst&&!seen.has(i.bbInst)).forEach(i=>set(i,'bbWaiting',true));
-    set(it,'left',most);if(longest)set(it,'total',longest);
+    set(it,'left',most);set(it,'bbUnpaidLeft',Math.max(...plans.map(x=>planLeft(x,false))));if(longest)set(it,'total',longest);
   }
   return ch;
 }
@@ -1121,7 +1175,7 @@ const planWords=t=>String(t||'').toLowerCase().split(/[^a-z0-9]+/).filter(w=>w.l
 const placeQ=[],placeBusy=new Set(),placeTried=new Set();
 function planCands(x,b,extra){
   const ws=new Set([...planWords(x.desc),...planWords(b.bank)]);
-  return S.items.filter(y=>y.kind==='loan'&&!billed(y)&&!y.bbInst&&(y===extra||!y.bbKey)
+  return S.items.filter(y=>!y._provisional&&y.kind==='loan'&&!billed(y)&&!y.bbInst&&(y===extra||!y.bbKey)
     &&(Math.abs(num(y.amount)-x.amt)<=Math.max(1,x.amt*0.03)||planWords(y.name+' '+(y.lender||'')).some(w=>ws.has(w))));
 }
 function planHome(k,x,b,extra){
@@ -1130,7 +1184,7 @@ function planHome(k,x,b,extra){
   const c=planCands(x,b,extra);if(!c.length)return null;
   const exact=c.filter(y=>near(y.amount,x.amt));if(exact.length===1)return exact[0];
   if(S.aiSortOff||!aiReady()||placeTried.has(k))return null;
-  if(!placeQ.some(q=>q.k===k))placeQ.push({k,x,c,on:b.bank+' '+String(b.category||b.type||'').replace(/_/g,' ')+(b.last4?' ••••'+b.last4:'')});
+  if(!placeQ.some(q=>q.k===k))placeQ.push({k,x,c,on:b.bank+' '+String(b.category||b.type||'').replace(/_/g,' ')});
   return 'wait';
 }
 async function aiPlacePlans(){
@@ -1203,7 +1257,7 @@ function bbConnect(){
   if(!/^https:\/\//i.test(url)){bbState('off','The link must start with https://');return}
   if(!key){bbState('off','Enter the API key');return}
   if(url===c.url&&key===c.key)return;
-  S.bb={url,key};save();
+  S.bb={url,key};bbFailures=0;bbRetryAt=0;save();
   bbState('busy','Syncing…');syncBillBuddy();
 }
 ['bbUrl','bbKey'].forEach(id=>{const el=$('#'+id);
@@ -1246,23 +1300,25 @@ const aiLast=()=>S.aiLast||null;                  // {model, at}: the last real 
 async function aiCheck(force){
   if(!aiReady()){aiLive=null;paintModel();return}
   if(!force&&aiLive&&Date.now()-aiLive.at<10*60000){paintModel();return}
-  const c=aiConf(),auth={Authorization:'Bearer '+c.key};paintModel('checking');
+  const context=aiContext(),c=aiConf(),auth={Authorization:'Bearer '+c.key};paintModel('checking');
   try{
     let r,j;
     if(c.via==='OpenRouter'){
-      r=await fetch(c.base+'/key',{headers:auth});
+      r=await aiFetch(c.base+'/key',{headers:auth});
       if(!r.ok)throw new Error('OpenRouter did not accept the key (HTTP '+r.status+')');
-      r=await fetch(c.base+'/models/'+c.model+'/endpoints',{headers:auth});
+      r=await aiFetch(c.base+'/models/'+c.model+'/endpoints',{headers:auth});
       if(!r.ok)throw new Error('OpenRouter has no model '+c.model+' (HTTP '+r.status+')');
       j=(await r.json())?.data||{};
+      if(!sameAI(context))return;
       aiLive={ok:true,model:String(j.id||c.model),name:String(j.name||''),at:Date.now()};
     }else{
-      r=await fetch(c.base+'/models/'+c.model,{headers:auth});
+      r=await aiFetch(c.base+'/models/'+c.model,{headers:auth});
       j=await r.json().catch(()=>null);
       if(!r.ok)throw new Error('OpenAI answered HTTP '+r.status+(j?.error?.message?': '+j.error.message:''));
+      if(!sameAI(context))return;
       aiLive={ok:true,model:String(j?.id||c.model),name:'',at:Date.now()};
     }
-  }catch(e){aiLive={ok:false,error:/fetch|network/i.test(e.message)?'could not reach '+c.via:e.message,at:Date.now()}}
+  }catch(e){if(!sameAI(context))return;aiLive={ok:false,error:/fetch|network/i.test(e.message)?'could not reach '+c.via:e.message,at:Date.now()}}
   paintModel();
 }
 // an answer or a failure counts as a check too
@@ -1310,7 +1366,7 @@ function loanPlan(f){
 }
 function loanCheck(f){
   const plan=loanPlan(f),last=plan[plan.length-1].d,buffer=Math.max(0,num(S.buffer)),start=cycleStart(),rows=[];
-  for(let j=0,c=start;j<40&&(j<3||c<=last);j++,c=shiftCycle(c,1)){
+  for(let j=0,c=start;j<3||c<=last;j++,c=shiftCycle(c,1)){
     const end=shiftCycle(c,1),pay=plan.filter(p=>p.d>=c&&p.d<end).reduce((s,p)=>s+p.amt,0);
     const money=num(S.salary)+incomeIn(c),bills=dueIn(c);
     rows.push({start:c,end:new Date(end.getFullYear(),end.getMonth(),end.getDate()-1),money,bills,pay,before:money-bills,after:money-bills-pay});
@@ -1332,6 +1388,10 @@ function readLoanForm(){
   if(!(amt>0))return 'Enter how much you want to borrow.';
   if(type==='inst'&&!(term>=1&&term<=60))return 'Enter how many months, from 1 to 60.';
   if(!due)return 'Pick the '+(type==='inst'?'first due date':'due date')+'.';
+  const horizon=new Date();horizon.setFullYear(horizon.getFullYear()+5);
+  if(due>horizon)return 'Choose a first payment within the next five years so the planner can check the complete schedule.';
+  if(due<cycleStart())return 'Choose a first payment in this planning cycle or later.';
+  if(rate<0)return 'Interest cannot be negative.';
   const src=S.sources.find(x=>String(x.id)===$('#aiSrc').value);
   return {amt,type,due,term:type==='inst'?term:1,rate,addon:$('#aiAddon').value==='1',fee:num($('#aiFee').value),
     src:src?.name||'',avail:num(src?.avail),why:$('#aiWhy').value.trim().slice(0,120)};
@@ -1471,13 +1531,14 @@ function paintMon(tab){
 function paintAllMon(){Object.keys(TAB_NAME).forEach(t=>{if(!$('#panel-'+t).hidden)paintMon(t)});Object.keys(TAB_NAME).forEach(t=>{if($('#panel-'+t).hidden)stale.add(t==='borrow'?'borrow':t)})}
 document.addEventListener('click',async e=>{
   const b=e.target.closest('[data-review]');if(!b)return;
-  const tab=b.dataset.review,list=monitor(tab),user=reviewPrompt(tab,list),box=$('#mon-'+tab+' .mon-ai');
+  const context=aiContext(),tab=b.dataset.review,list=monitor(tab),user=reviewPrompt(tab,list),box=$('#mon-'+tab+' .mon-ai');
   box.dataset.busy='1';box.innerHTML='<p class="muted small">Reviewing…</p>';b.disabled=true;
   try{
     const r=await aiAsk({name:'tab_review',purpose:'review',system:REVIEW_SYSTEM,schema:REVIEW_SCHEMA,check:checkReview,priority:'low',out:600,user});
+    if(!sameAI(context))return;
     S.aiTab={...(S.aiTab||{}),[tab]:{day:todayIso(),h:hashStr(user),a:r.a,model:r.model,cost:r.cost}};save();
     delete box.dataset.busy;paintMon(tab);
-  }catch(err){delete box.dataset.busy;paintMon(tab);$('#mon-'+tab+' .mon-ai').innerHTML=`<p class="t-bad small">${aiError(err)}</p>`}
+  }catch(err){delete box.dataset.busy;if(!sameAI(context))return;paintMon(tab);$('#mon-'+tab+' .mon-ai').innerHTML=`<p class="t-bad small">${esc(aiError(err))}</p>`}
 });
 
 // ---------- asking the AI ----------
@@ -1528,41 +1589,63 @@ function paintUsage(){
     (days.length?`<details class="paidlist"><summary>Earlier days</summary><ul>${days.map(d=>`<li><span>${fmtD(parseD(d))}</span><span class="num">${sum(log[d]).toLocaleString()} tokens</span></li>`).join('')}</ul></details>`:'');
 }
 const hashStr=t=>{let h=5381;for(let k=0;k<t.length;k++)h=(h*33^t.charCodeAt(k))>>>0;return h.toString(36)};
+const aiReservations=new Map();
+function aiContext(){return {account:accountEpoch,state:stateEpoch,planner:S,key:aiKey()}}
+function sameAI(c){return c.account===accountEpoch&&c.state===stateEpoch&&c.planner===S&&c.key===aiKey()}
 async function aiAsk(job){
-  const c=aiConf(),memoKey=[c.model,job.name,job.user].join('|');
-  if(aiMemo.has(memoKey))return {...aiMemo.get(memoKey),cached:true}; // the same question twice costs nothing
-  const L=aiLimit(),est=Math.ceil((job.system.length+job.user.length)/3.5)+job.out;
-  if(L&&aiUsed()+est>(job.priority==='low'?L*LOW_SHARE:L))throw Object.assign(new Error('limit'),{kind:'limit',low:job.priority==='low'});
-  const out=await askOpenAI(c,job);
-  aiSpend(out.tokens||est,job.purpose);
-  aiMemo.set(memoKey,out);return out;
+  const c=aiConf(),context=aiContext(),memoKey=[accountEpoch,stateEpoch,c.key,c.model,job.name,job.user].join('|');
+  if(aiMemo.has(memoKey))return {...aiMemo.get(memoKey),cached:true};
+  const reservationKey=accountEpoch+'|'+todayIso(),L=aiLimit(),output=Math.max(128,Math.round(num(job.out)||700));
+  // UTF-8 bytes are a conservative upper bound for ordinary text tokenization.
+  const input=new TextEncoder().encode(JSON.stringify({system:job.system,user:job.user,schema:job.schema})).length+256;
+  const est=input+output,reserved=aiReservations.get(reservationKey)||0;
+  if(L&&aiUsed()+reserved+est>(job.priority==='low'?L*LOW_SHARE:L))throw Object.assign(new Error('limit'),{kind:'limit',low:job.priority==='low'});
+  aiReservations.set(reservationKey,reserved+est);
+  try{
+    const out=await askOpenAI(c,{...job,out:output},context);
+    // A draft may have closed while this request ran: account its real usage to the same account,
+    // but never apply an old answer to a different planner or newly signed-in person.
+    if(context.account===accountEpoch)aiSpend(out.tokens||est,job.purpose);
+    if(!sameAI(context))throw Object.assign(new Error('stale'),{kind:'stale'});
+    aiMemo.set(memoKey,out);return out;
+  }catch(error){if(error.tokens&&context.account===accountEpoch)aiSpend(error.tokens,job.purpose);throw error}
+  finally{aiReservations.set(reservationKey,Math.max(0,(aiReservations.get(reservationKey)||0)-est))}
+}
+async function aiFetch(url,options={}){
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),30000);
+  try{
+    const response=await fetch(url,{...options,signal:controller.signal});
+    const data=await response.json().catch(error=>{if(controller.signal.aborted)throw error;return null});
+    return {ok:response.ok,status:response.status,json:async()=>data};
+  }finally{clearTimeout(timeout)}
 }
 // OpenAI's chat completions with a strict JSON schema and low reasoning effort. If gpt-6-luna turns down one of
 // those settings, the same request is sent again without it (still gpt-6-luna; no other model is ever used).
 const lunaRefused={effort:false,schema:false}; // settings gpt-6-luna turned down, so later requests skip them
-async function askOpenAI(c,job){
+async function askOpenAI(c,job,context=aiContext()){
   const plainJson=()=>{body.response_format={type:'json_object'};body.messages[0].content=job.system+'\nReply with only a JSON object with the keys '+job.schema.required.join(', ')+'.'};
-  const body={model:c.model,max_completion_tokens:4000,reasoning_effort:'low',
+  const body={model:c.model,max_completion_tokens:job.out,reasoning_effort:'low',
     messages:[{role:'system',content:job.system},{role:'user',content:job.user}],
     response_format:{type:'json_schema',json_schema:{name:job.name,strict:true,schema:job.schema}}};
   if(lunaRefused.effort)delete body.reasoning_effort;
   if(lunaRefused.schema)plainJson();
   for(let tries=0;;tries++){
     let r;
-    try{r=await fetch(c.base+'/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+c.key},body:JSON.stringify(body)})}
-    catch(e){aiSeen(false,null,'could not reach '+c.via);throw Object.assign(new Error('network'),{kind:'network'})}
+    try{r=await aiFetch(c.base+'/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+c.key},body:JSON.stringify(body)})}
+    catch(e){if(sameAI(context))aiSeen(false,null,'could not reach '+c.via);throw Object.assign(new Error('network'),{kind:'network'})}
     const j=await r.json().catch(()=>null),msg=String(j?.error?.message||'');
     if(r.status===400&&tries<2){
       if(body.reasoning_effort&&/reasoning/i.test(msg)){lunaRefused.effort=true;delete body.reasoning_effort;continue}
       if(body.response_format.type==='json_schema'&&/response_format|json_schema|schema/i.test(msg)){lunaRefused.schema=true;plainJson();continue}
     }
-    if(!r.ok){if(r.status!==429)aiSeen(false,null,c.via+' answered HTTP '+r.status+(msg?': '+msg:''));throw Object.assign(new Error(msg||'HTTP '+r.status),{kind:'http',status:r.status})}
-    aiSeen(true,String(j?.model||c.model));
+    if(!r.ok){if(r.status!==429&&sameAI(context))aiSeen(false,null,c.via+' answered HTTP '+r.status+(msg?': '+msg:''));throw Object.assign(new Error(msg||'HTTP '+r.status),{kind:'http',status:r.status})}
+    if(sameAI(context))aiSeen(true,String(j?.model||c.model));
+    const billed=num(j?.usage?.prompt_tokens)+num(j?.usage?.completion_tokens);
     const ch=j?.choices?.[0],m=ch?.message;
-    if(m?.refusal)throw Object.assign(new Error('refusal'),{kind:'refusal'});
-    if(ch?.finish_reason==='length')throw Object.assign(new Error('incomplete'),{kind:'incomplete'});
+    if(m?.refusal)throw Object.assign(new Error('refusal'),{kind:'refusal',tokens:billed});
+    if(ch?.finish_reason==='length')throw Object.assign(new Error('incomplete'),{kind:'incomplete',tokens:billed});
     let a;try{a=job.check(JSON.parse(String(m?.content||'').replace(/^```(?:json)?\s*|\s*```$/g,'')))}catch(e){a=null}
-    if(!a)throw Object.assign(new Error('incomplete'),{kind:'incomplete'});
+    if(!a)throw Object.assign(new Error('incomplete'),{kind:'incomplete',tokens:billed});
     const u=j.usage||{},tokens=(u.prompt_tokens||0)+(u.completion_tokens||0);
     return {a,model:j.model||c.model,tokens,cost:tokens?tokens.toLocaleString()+' tokens':''};
   }
@@ -1572,6 +1655,7 @@ const checkLoan=a=>a&&['yes','careful','no'].includes(a.verdict)&&typeof a.headl
 const askAI=R=>aiAsk({name:'loan_advice',purpose:'loan',system:AI_SYSTEM,schema:AI_SCHEMA,check:checkLoan,priority:'high',out:700,
   user:'Should I take this loan? Planner summary:\n'+JSON.stringify(aiSummary(R))});
 function aiError(e){
+  if(e.kind==='stale')return 'Your planner changed. Ask again using the current planner.';
   if(e.kind==='limit')return e.low?'Tab reviews pause at 70% of today\'s AI limit, so loan checks keep room. Resets tomorrow.':'Today\'s AI limit is used up. It resets tomorrow, or raise it in the API tab.';
   if(e.kind==='refusal')return AI_WHO+' declined to answer this one. The planner\'s check above still applies.';
   if(e.kind==='incomplete')return AI_WHO+'\'s answer was cut off or unreadable. Try again.';
@@ -1600,7 +1684,7 @@ $('#aiForm').addEventListener('submit',async e=>{
       <p class="aih">${esc(a.headline)}</p>${a.reasons.length?`<ul>${a.reasons.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
       ${a.tips.length?`<p class="label">Tips</p><ul>${a.tips.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
       <p class="note">${esc(model)}${cost?' · '+esc(cost):''}</p>`;
-  }catch(err){if(run===aiRun)$('#aiAns').innerHTML=`<p class="t-bad small">${aiError(err)}</p>`}
+  }catch(err){if(run===aiRun)$('#aiAns').innerHTML=`<p class="t-bad small">${esc(aiError(err))}</p>`}
   finally{btn.disabled=false}
 });
 
@@ -1612,35 +1696,88 @@ const EMAIL_KEY=KEY+'.email'; // only the email address, to fill in the sign-in 
 // Every save carries a new random `writer`. The database rejects saves that don't (see supabase/schema.sql):
 // those come from a copy of the planner loaded before this rule, which would file bills with outdated rules.
 const newWriter=()=>Math.random().toString(36).slice(2)+Date.now().toString(36);
-async function pushCloud(){
-  cloudTimer=null;pushing=true;
-  const row={user_id:cloudUser.id,state:JSON.parse(snapshot())};if(!noWriter)row.writer=newWriter();
-  let {data,error}=await sb.from('planner_state').upsert(row).select('updated_at').single();
-  // the `writer` column isn't there until schema.sql is run again; save without it meanwhile
-  if(error&&!noWriter&&/writer/i.test(error.message||'')){noWriter=true;delete row.writer;({data,error}=await sb.from('planner_state').upsert(row).select('updated_at').single())}
-  pushing=false;
-  if(cloudTimer||!cloudReady)return; // a newer save is queued, or signed out meanwhile
-  if(error){console.warn('Supabase save failed',error);setSync('off','Not saved yet. Retrying…');cloudTimer=setTimeout(pushCloud,5000);return}
-  cloudAt=data.updated_at;setSync('ok','Saved to your account');
+function cloudContext(){return {user:cloudUser?.id,epoch:accountEpoch,state:S}}
+function sameAccount(c){return cloudReady&&cloudUser?.id===c.user&&accountEpoch===c.epoch}
+function sameCloud(c){return sameAccount(c)&&S===c.state}
+async function showCloudConflict(context){
+  const row=await pullCloud();if(!sameCloud(context))return;
+  cloudConflict={row,context};
+  setSync('off','Another device saved changes. Choose which planner to keep.');
+  infoWin('Choose your saved planner','<p>Another device changed your planner. Your changes are still here. Loading the saved planner replaces this screen; keeping this planner replaces the saved version.</p><div class="acts"><button class="ghost" data-cloud-choice="remote">Load saved planner</button><button class="btn" data-cloud-choice="local">Keep this planner</button></div>');
 }
+document.addEventListener('click',e=>{
+  const choice=e.target.closest('[data-cloud-choice]')?.dataset.cloudChoice;
+  if(!choice||!cloudConflict)return;
+  const {row,context}=cloudConflict;if(!sameCloud(context)){cloudConflict=null;return}
+  cloudConflict=null;cloudAt=row?.updated_at||null;$('#infoDlg').close();
+  if(choice==='remote'){cloudDirty=false;if(row?.state)adopt(row.state);setSync('ok','Loaded your saved planner')}
+  else save();
+});
+async function pushCloud(){
+  clearTimeout(cloudTimer);cloudTimer=null;
+  if(!cloudReady||!cloudUser||draft||cloudConflict)return;
+  if(cloudFlight){cloudQueued=true;return cloudFlight}
+  const context=cloudContext(),payload=JSON.parse(snapshot()),expected=cloudAt;
+  pushing=true;cloudQueued=false;
+  const work=async()=>{
+    let result;
+    try{result=await sb.rpc('save_planner_state',{p_state:payload,p_expected_at:expected,p_writer:newWriter()})}
+    catch(error){result={error}}
+    if(!sameAccount(context))return;
+    const {data,error}=result;
+    if(error){
+      if(error.code==='40001'){
+        clearTimeout(cloudTimer);cloudTimer=null;cloudQueued=false;
+        const currentContext=cloudContext();
+        try{await showCloudConflict(currentContext)}catch(e){
+          if(!sameCloud(currentContext))return;
+          setSync('off','Could not load the conflicting save. Your changes are still here.');cloudConflict={context:currentContext,row:null};
+          infoWin('Your changes are still here','<p>The saved planner could not be loaded. Keep this page open and retry when the connection returns.</p><button class="btn" data-cloud-retry="1">Retry loading saved planner</button>');
+        }
+      }else if(['42883','PGRST202','42501','P0001'].includes(error.code)){
+        setSync('off','Saving needs the latest Supabase setup. Your changes remain on this screen.');
+      }else{
+        cloudFailures++;setSync('off','Not saved yet. Retrying…');
+        clearTimeout(cloudTimer);cloudTimer=setTimeout(pushCloud,Math.min(60000,5000*2**Math.min(cloudFailures-1,4)));
+      }
+      return;
+    }
+    cloudAt=typeof data==='string'?data:data?.updated_at||data?.[0]?.updated_at;
+    if(!cloudAt){setSync('off','The save returned no version. Reload before editing further.');return}
+    cloudDirty=snapshot()!==JSON.stringify(payload);
+    cloudFailures=0;setSync('ok',cloudDirty||cloudQueued||cloudTimer?'Saving…':'Saved to your account');
+  };
+  const promise=work();cloudFlight=promise;
+  try{await promise}finally{
+    if(cloudFlight===promise){cloudFlight=null;pushing=false;
+      if(sameAccount(context)&&cloudQueued&&!draft&&!cloudConflict){cloudQueued=false;clearTimeout(cloudTimer);cloudTimer=setTimeout(pushCloud,0)}
+    }
+  }
+}
+document.addEventListener('click',async e=>{
+  if(!e.target.closest('[data-cloud-retry]')||!cloudConflict)return;
+  try{await showCloudConflict(cloudConflict.context)}catch(error){setSync('off','Still offline. Your changes are still here.')}
+});
 async function pullCloud(){
   const {data,error}=await sb.from('planner_state').select('state,updated_at').eq('user_id',cloudUser.id).maybeSingle();
   if(error)throw error;
   return data;
 }
 async function startCloud(user){
-  cloudUser=user;cloudReady=false;renderAuth();setSync('busy','Loading your planner…');
+  if(cloudUser&&cloudUser.id!==user.id)return;
+  const epoch=++accountEpoch;cloudUser=user;cloudReady=false;cloudAt=null;cloudConflict=null;cloudDirty=false;cloudQueued=false;cloudFlight=null;pushing=false;clearTimeout(cloudTimer);cloudTimer=null;renderAuth();setSync('busy','Loading your planner…');
   try{
     const row=await pullCloud();
-    if(cloudUser?.id!==user.id)return;
+    if(cloudUser?.id!==user.id||accountEpoch!==epoch)return;
     cloudReady=true;
     if(row&&row.state&&row.state.ver===DEFAULTS.ver){adopt(row.state);cloudAt=row.updated_at;setSync('ok','Saved to your account')}
     else{adopt(legacy||clone(DEFAULTS));save()} // a new account starts from this browser's old data, or the installments
     legacy=null;LEGACY_KEYS.forEach(k=>{try{localStorage.removeItem(k)}catch(e){}});
     renderAuth();syncBillBuddy();
   }catch(e){
+    if(cloudUser?.id!==user.id||accountEpoch!==epoch)return;
     console.warn('Supabase load failed',e);setSync('off','Could not reach your account. Trying again…');
-    setTimeout(()=>{if(cloudUser?.id===user.id&&!cloudReady)startCloud(user)},5000);
+    setTimeout(()=>{if(cloudUser?.id===user.id&&accountEpoch===epoch&&!cloudReady)startCloud(user)},5000);
   }
 }
 // pick up changes made on another device when you come back to this one
@@ -1649,11 +1786,13 @@ document.addEventListener('visibilitychange',async()=>{
   checkUpdate();
   if(cloudReady&&pruneExpiredBB()){save();renderAll()}
   syncBillBuddy();
-  if(!cloudReady||cloudTimer||pushing||draft)return;
+  if(!cloudReady||cloudDirty||cloudTimer||pushing||draft||cloudConflict)return;
+  const context=cloudContext();
   try{
     const row=await pullCloud();
+    if(!sameCloud(context)||draft||cloudConflict)return;
     // only a copy saved after ours, and only when no save of ours is waiting or on its way
-    if(!row||cloudTimer||pushing||row.state?.ver!==DEFAULTS.ver)return;
+    if(!row||cloudDirty||cloudTimer||pushing||row.state?.ver!==DEFAULTS.ver)return;
     if(cloudAt&&!(Date.parse(row.updated_at)>Date.parse(cloudAt)))return;
     if(document.activeElement?.matches?.('input,select'))return;
     adopt(row.state);cloudAt=row.updated_at;
@@ -1670,21 +1809,24 @@ function renderAuth(){
   $('#authWho').textContent=cloudUser?.email||'';$('#authWho').title=cloudUser?.email||'';
 }
 function signedOut(){
-  cloudUser=null;cloudReady=false;clearTimeout(cloudTimer);cloudTimer=null;draft=null;document.body.classList.remove('drafting');
+  accountEpoch++;stateEpoch++;aiRun++;cloudConflict=null;cloudDirty=false;cloudQueued=false;cloudFlight=null;pushing=false;cloudAt=null;cloudUser=null;cloudReady=false;clearTimeout(cloudTimer);cloudTimer=null;draft=null;document.body.classList.remove('drafting');
+  closeDialogs();sheet=null;billNew=false;billKeep=false;
   S=clone(DEFAULTS);prepare();editingId=null;syncInputs();renderAll();fillBB();fillAI();aiMemo.clear();$('#aiOut').innerHTML='';
   setSync('','Sign in to open your planner');renderAuth();
 }
 function initCloud(){
+  if(window.top!==window.self){setSync('off','Open Planner directly to sign in. Embedded sign-in is disabled.');renderAuth();return}
   if(!CFG.supabaseUrl||!CFG.supabaseAnonKey||!window.supabase){setSync('off','Cloud saving is not set up. Add your Supabase details to config.js.');renderAuth();return}
   // the sign-in is remembered on this device and renewed automatically, so a known device opens straight in
   sb=window.supabase.createClient(CFG.supabaseUrl,CFG.supabaseAnonKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
   setSync('busy','Signing you in…');
   try{$('#authEmail').value=localStorage.getItem(EMAIL_KEY)||''}catch(e){}
+  let authEvent=0;
   sb.auth.onAuthStateChange((ev,session)=>{
-    const u=session?.user||null;authKnown=true;
+    const event=++authEvent,u=session?.user||null;authKnown=true;
     // claim the user now so a second auth event can't start a second load; load outside the callback
-    if(u&&cloudUser?.id!==u.id){cloudUser=u;setTimeout(()=>startCloud(u),0)}
-    else if(!u)setTimeout(signedOut,0);
+    if(u&&cloudUser?.id!==u.id){cloudUser=u;setTimeout(()=>{if(event===authEvent&&cloudUser?.id===u.id)startCloud(u)},0)}
+    else if(!u){cloudUser=null;cloudReady=false;setTimeout(()=>{if(event===authEvent)signedOut()},0)}
   });
   renderAuth();
 }
@@ -1708,8 +1850,13 @@ initCloud();
 // its usage is carried back to the planner's daily count.
 async function openDraft(){
   if(!cloudReady||draft)return;
-  if(cloudTimer){clearTimeout(cloudTimer);await pushCloud()}   // a change still waiting to save is saved first
-  closeDialogs();
+  const context=cloudContext();closeDialogs();
+  // Dialog close handlers remove unconfirmed entries before the draft's main copy is taken.
+  await new Promise(resolve=>setTimeout(resolve,0));
+  if(!sameCloud(context)||draft)return;
+  if(cloudDirty||cloudTimer||pushing){clearTimeout(cloudTimer);await pushCloud()}
+  if(!cloudReady||cloudDirty||cloudTimer||pushing||cloudConflict)return;
+  stateEpoch++;aiRun++;
   draft={main:clone(S)};
   document.body.classList.add('drafting');renderAuth();
   setSync('draft','Draft · nothing is saved');
@@ -1735,8 +1882,11 @@ async function checkUpdate(){
   try{
     const html=await (await fetch(location.pathname,{cache:'no-store'})).text();
     const v=(/app\.js\?v=(\w+)/.exec(html)||[])[1];
-    if(!v||v===APP_V||cloudTimer||pushing||draft||document.activeElement?.matches?.('input,select'))return;
+    if(!v||v===APP_V||cloudDirty||cloudTimer||pushing||draft||document.activeElement?.matches?.('input,select'))return;
     location.reload();
   }catch(e){}
 }
 setInterval(checkUpdate,5*60000);
+window.addEventListener('beforeunload',e=>{
+  if(cloudReady&&!draft&&(cloudDirty||cloudTimer||pushing)){e.preventDefault();e.returnValue=''}
+});

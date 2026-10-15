@@ -76,10 +76,10 @@ class SyncTest(unittest.TestCase):
     def test_account_load_saves_expiry_back_to_planner_storage(self):
         self.page.evaluate('''() => {
           cloudReady=true;cloudUser={id:'fixture-user'};
-          sb={from:()=>({upsert:row=>{
-            window.savedPlanner=row;
-            return {select:()=>({single:async()=>({data:{updated_at:'2026-10-15T00:00:00Z'},error:null})})};
-          }})};
+          sb={rpc:async(name,args)=>{
+            window.savedPlanner={user_id:cloudUser.id,state:args.p_state};
+            return {data:'2026-10-15T00:00:00Z',error:null};
+          }};
           const next=clone(S);
           next.items=[{name:'Expired utility',kind:'bill',amount:100,bbDue:'2026-10-13'},
                       {name:'Manual rent',kind:'bill',amount:50,day:14}];
