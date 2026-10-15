@@ -870,18 +870,35 @@ $('.tabs').addEventListener('keydown',e=>{
 // ---------- boot ----------
 function adopt(next){
   if(!next||!Array.isArray(next.items)||next.ver!==DEFAULTS.ver)return;
-  S=next;prepare();rollover();editingId=null;syncInputs();renderAll();fillBB();fillAI();
+  S=next;prepare();const expired=pruneExpiredBB();rollover();editingId=null;syncInputs();renderAll();fillBB();fillAI();if(expired)save();
 }
 prepare();rollover();syncInputs();renderAll();
 // ---------- BillBuddy ----------
-// Card bills come from BillBuddy: each one fills the matching credit card's
-// statement amount and due day here. Matched by bank name ("RCBC" -> "RCBC CC").
+// Statements match by stable account key, last four digits, then bank and type.
 // The link and key are saved with the planner in your Supabase account.
 const bbConf=()=>S.bb||{};
 function fillBB(){const c=bbConf();$('#bbUrl').value=c.url||'';$('#bbKey').value=c.key||'';if(!c.url)bbState('off','Not connected')}
 const squash=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
 const bbState=(cls,txt)=>{const el=$('#bbState');el.className='sync '+cls;el.textContent=txt};
 let bbBusy=false,bbAgain=false;
+// BillBuddy uses Manila calendar days, regardless of this device's timezone.
+const BB_DAY_FORMAT=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'});
+function bbCutoff(){
+  const p=Object.fromEntries(BB_DAY_FORMAT.formatToParts(new Date()).map(x=>[x.type,x.value]));
+  return new Date(Date.UTC(+p.year,+p.month-1,+p.day)-86400000).toISOString().slice(0,10);
+}
+const bbExpired=(due,cutoff)=>/^\d{4}-\d{2}-\d{2}$/.test(due||'')&&due<cutoff;
+function pruneExpiredBB(){
+  const cutoff=bbCutoff(),expired=S.items.filter(i=>bbExpired(i.bbDue,cutoff));
+  if(!expired.length)return false;
+  const removed=new Set(expired),refs=new Set(expired.map(i=>i.bbRef).filter(Boolean));
+  expired.forEach(i=>{const a=i.kind==='card'&&acctOf(i);if(a&&i.bbKey)a.bbKey=i.bbKey});
+  S.items=S.items.filter(i=>!removed.has(i));
+  // Keep card accounts and future installment schedules. Loan breakdowns
+  // become standalone schedules when their enclosing statement expires.
+  S.items.forEach(i=>{if(refs.has(i.inBill))delete i.inBill});
+  return true;
+}
 // BillBuddy's bill type -> the planner's. Newer feeds send `type` (credit_card, loan, utility, insurance,
 // other) next to a finer `category` (personal_loan, electricity…); feeds with neither are credit cards.
 const BB_KIND={credit_card:'card',loan:'loan',utility:'bill',insurance:'bill'};
@@ -907,18 +924,23 @@ async function syncBillBuddy(){
   const {url,key}=bbConf();
   if(!url||!key){bbState('off','Not connected');return}
   if(bbBusy){bbAgain=true;return}bbBusy=true;
-  let bills;
+  const state=S,controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);
   try{
-    const r=await fetch(url,{headers:{Authorization:'Bearer '+key},cache:'no-store'});
+    const r=await fetch(url,{headers:{Authorization:'Bearer '+key},cache:'no-store',signal:controller.signal});
+    if(!cloudReady||S!==state||bbConf().url!==url||bbConf().key!==key)return;
     if(r.status===401){bbState('off','Wrong API key');return}
-    const j=await r.json();if(!j.ok)throw new Error(j.error||'BillBuddy returned an error');bills=j.bills||[];
-  }catch(e){console.warn('BillBuddy sync failed',e);bbState('off','Could not reach BillBuddy. Check the link.');return}
-  finally{bbBusy=false;if(bbAgain){bbAgain=false;setTimeout(syncBillBuddy,0)}}
-  bbLast=bills;applyBB(bills);
+    if(!r.ok)throw new Error('BillBuddy HTTP '+r.status);
+    const j=await r.json();if(!j.ok||!Array.isArray(j.bills))throw new Error(j.error||'Invalid BillBuddy feed');
+    if(!cloudReady||S!==state||bbConf().url!==url||bbConf().key!==key)return;
+    bbLast=j.bills;applyBB(j.bills);
+  }catch(e){if(S===state&&bbConf().url===url&&bbConf().key===key){console.warn('BillBuddy sync failed',e);bbState('off','Could not reach BillBuddy. Check the link.')}return}
+  finally{clearTimeout(timeout);bbBusy=false;if(bbAgain){bbAgain=false;setTimeout(syncBillBuddy,0)}}
 }
 let bbLast=[];
 function applyBB(bills){
-  let changed=false;const claimed=new Set();
+  const cutoff=bbCutoff();bills=bills.filter(b=>b&&typeof b==='object'&&!bbExpired(b.due_date,cutoff));
+  let changed=pruneExpiredBB();const claimed=new Set();
+  const byKey=new Map(S.items.filter(i=>i.bbKey).map(i=>[i.bbKey,i]));
   bills.forEach(b=>{
     const bank=squash(b.bank),due=parseD(b.due_date),amt=num(b.amount);
     if(!bank||!due||!(amt>0))return;
@@ -926,7 +948,7 @@ function applyBB(bills){
     const ofBank=i=>squash(i.name).includes(bank),free=i=>!billed(i)&&!i.bbInst&&!claimed.has(i)&&(!i.bbKey||i.bbKey===key);
     // same account as last time, then same last 4 digits (same type first, then any), then same bank and type
     // (several loans at one bank: the one with this amount, then this due day)
-    let it=(key&&S.items.find(i=>i.bbKey===key&&!claimed.has(i)))
+    let it=(key&&byKey.has(key)&&!claimed.has(byKey.get(key))&&byKey.get(key))
       ||(l4&&S.items.find(i=>i.kind===kind&&free(i)&&last4Of(i)===l4))
       ||(l4&&S.items.find(i=>free(i)&&last4Of(i)===l4))
       ||(()=>{const c=S.items.filter(i=>i.kind===kind&&free(i)&&ofBank(i)&&!(l4&&last4Of(i)));
@@ -937,7 +959,7 @@ function applyBB(bills){
     // the last 4 digits decide which card it is: a card in Accounts with these digits and no bill
     // (its bill was removed, or an older sync gave the card a second account) gets this bill back,
     // under the name you gave the card
-    const mine=kind==='card'&&l4?S.accounts.find(a=>a.last4===l4&&!S.items.some(i=>i.acct===a.key)):null;
+    const mine=kind==='card'?S.accounts.find(a=>((key&&a.bbKey===key)||(l4&&a.last4===l4))&&!S.items.some(i=>i.acct===a.key)):null;
     if(mine&&it&&it.kind==='card'){
       const dup=acctOf(it);it.acct=mine.key;it.name=mine.name;delete it.noAcct;changed=true;
       if(dup&&!num(dup.limit)&&!num(dup.stmt)&&!S.items.some(i=>i.acct===dup.key))S.accounts=S.accounts.filter(x=>x!==dup);
@@ -953,6 +975,8 @@ function applyBB(bills){
     }
     claimed.add(it);
     if(key&&it.bbKey!==key){it.bbKey=key;changed=true}
+    const account=it.kind==='card'&&acctOf(it);
+    if(key&&account&&account.bbKey!==key){account.bbKey=key;changed=true}
     // the card's last 4 digits go on its account; other bills keep them on the bill
     if(l4){const a=it.kind==='card'&&acctOf(it);
       if(a){if(a.last4!==l4){a.last4=l4;changed=true}}else if(it.bbLast4!==l4){it.bbLast4=l4;changed=true}}
@@ -1071,6 +1095,7 @@ function planHome(k,x,b,extra){
   return 'wait';
 }
 async function aiPlacePlans(){
+  const state=S;
   const q=placeQ.splice(0);if(!q.length)return;
   q.forEach(p=>placeBusy.add(p.k));
   const cands=[...new Set(q.flatMap(p=>p.c))],r2=v=>Math.round(num(v)*100)/100;
@@ -1080,6 +1105,7 @@ async function aiPlacePlans(){
   try{r=await aiAsk({name:'plan_place',purpose:'place',system:PLACE_SYSTEM,schema:PLACE_SCHEMA,check:checkPlace,priority:'low',out:60+40*q.length,user})}
   catch(e){console.warn('AI placing skipped:',e.kind||e.message)}
   q.forEach(p=>{placeBusy.delete(p.k);placeTried.add(p.k)});
+  if(S!==state)return;
   if(!r)return applyBB(bbLast);                // no answer: each plan is placed as new
   q.forEach((p,n)=>{const home=(r.a.find(x=>x.plan==='p'+n)||{}).home,y=p.c.find(c=>'i'+c.id===home);
     if(y&&!y.bbInst&&!S.items.some(z=>z.bbInst===p.k))y.bbInst=p.k;else S.bbHome={...(S.bbHome||{}),[p.k]:'new'}});
@@ -1104,6 +1130,7 @@ const KNOWN_KIND=[
 ];
 const knownKind=name=>{const t=String(name||'').toLowerCase();const k=KNOWN_KIND.find(([,re])=>re.test(t));return k?k[0]:null};
 async function aiSortBills(){
+  const state=S;
   let changed=false;
   S.items.filter(i=>i.bbUnsure&&!i.bbAi).forEach(it=>{const kind=knownKind(it.name);if(!kind)return;
     it.bbAi=kind;delete it.bbUnsure;if(it.kind!==kind){setKind(it,kind);delete it.cat}changed=true});
@@ -1115,6 +1142,7 @@ async function aiSortBills(){
   const user='Sort these bills:\n'+JSON.stringify(todo.map(i=>({key:i.bbKey,name:i.name,amount:Math.round(num(i.amount)*100)/100})));
   try{
     const r=await aiAsk({name:'bill_sort',purpose:'sort',system:SORT_SYSTEM,schema:SORT_SCHEMA,check:checkSort,priority:'low',out:200,user});
+    if(S!==state)return;
     changed=false;
     r.a.forEach(({key,kind})=>{const it=S.items.find(i=>i.bbKey===key);if(!it)return;it.bbAi=kind;delete it.bbUnsure;
       if(it.kind!==kind){setKind(it,kind);delete it.cat;changed=true}});
@@ -1148,8 +1176,7 @@ $('#bbClear').addEventListener('click',()=>{
   if(S.bb){delete S.bb;save()}
   $('#bbUrl').value='';$('#bbKey').value='';bbState('off','Not connected');
 });
-setInterval(syncBillBuddy,60000);
-setInterval(()=>{if(rollover())save();if(editingId==null&&!document.activeElement?.closest?.('.form'))renderItems();render()},60000);
+setInterval(()=>{if(document.hidden)return;const expired=pruneExpiredBB(),rolled=rollover();if(expired||rolled)save();syncBillBuddy();if(editingId==null&&!document.activeElement?.closest?.('.form'))renderItems();render()},60000);
 
 // ---------- AI: should I take this loan? ----------
 // The planner does the arithmetic itself: it lays the new loan's payments over the coming pay cycles
@@ -1580,6 +1607,8 @@ async function startCloud(user){
 document.addEventListener('visibilitychange',async()=>{
   if(document.hidden)return;
   checkUpdate();
+  if(cloudReady&&pruneExpiredBB()){save();renderAll()}
+  syncBillBuddy();
   if(!cloudReady||cloudTimer||pushing||draft)return;
   try{
     const row=await pullCloud();
