@@ -890,9 +890,21 @@ const bbState=(cls,txt)=>{const el=$('#bbState');el.className='sync '+cls;el.tex
 let bbBusy=false,bbAgain=false;
 // BillBuddy uses Manila calendar days, regardless of this device's timezone.
 const BB_DAY_FORMAT=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'});
-function bbCutoff(){
+function bbToday(){
   const p=Object.fromEntries(BB_DAY_FORMAT.formatToParts(new Date()).map(x=>[x.type,x.value]));
-  return new Date(Date.UTC(+p.year,+p.month-1,+p.day)-86400000).toISOString().slice(0,10);
+  return p.year+'-'+p.month+'-'+p.day;
+}
+function bbCutoff(){
+  return new Date(Date.parse(bbToday()+'T00:00:00Z')-86400000).toISOString().slice(0,10);
+}
+let bbExpiryTimer=null;
+function scheduleBBExpiry(){
+  clearTimeout(bbExpiryTimer);
+  const midnight=Date.parse(bbToday()+'T00:00:00+08:00')+86400000;
+  bbExpiryTimer=setTimeout(()=>{
+    if(!document.hidden&&cloudReady&&pruneExpiredBB()){save();renderAll()}
+    scheduleBBExpiry();
+  },Math.max(1,midnight-Date.now()));
 }
 const bbExpired=(due,cutoff)=>/^\d{4}-\d{2}-\d{2}$/.test(due||'')&&due<cutoff;
 function pruneExpiredBB(){
@@ -968,7 +980,15 @@ async function syncBillBuddy(){
     if(!cloudReady||S!==state||bbConf().url!==url||bbConf().key!==key)return;
     if(r.status===401){bbState('off','Wrong API key');return}
     if(!r.ok)throw new Error('BillBuddy HTTP '+r.status);
-    const j=await r.json();if(!j.ok||!Array.isArray(j.bills)||!j.bills.every(b=>b&&typeof b==='object'&&typeof b.bank==='string'&&typeof b.due_date==='string'))throw new Error(j.error||'Invalid BillBuddy feed');
+    const j=await r.json();
+    const validBill=b=>b&&typeof b==='object'&&typeof b.bank==='string'&&b.bank.trim()
+      &&typeof b.due_date==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(b.due_date)
+      &&!isNaN(Date.parse(b.due_date))&&new Date(b.due_date).toISOString().slice(0,10)===b.due_date
+      &&['number','string'].includes(typeof b.amount)&&String(b.amount).trim()!==''
+      &&Number.isFinite(Number(b.amount))&&Number(b.amount)>=0;
+    if(!j.ok||!Array.isArray(j.bills)||!j.bills.every(validBill)
+      ||(j.complete===true&&(!Number.isSafeInteger(j.count)||j.count!==j.bills.length)))
+      throw new Error(j.error||'Invalid or incomplete BillBuddy feed');
     if(!cloudReady||S!==state||bbConf().url!==url||bbConf().key!==key)return;
     bbLast=j.bills;applyBB(j.bills,{reconcile:j.complete===true});
   }catch(e){if(S===state&&bbConf().url===url&&bbConf().key===key){console.warn('BillBuddy sync failed',e);bbState('off','Could not reach BillBuddy. Check the link.')}return}
@@ -985,7 +1005,7 @@ function applyBB(bills,{reconcile=false}={}){
   const byKey=new Map(S.items.filter(i=>i.bbKey).map(i=>[i.bbKey,i]));
   bills.forEach(b=>{
     const bank=squash(b.bank),due=parseD(b.due_date),amt=num(b.amount);
-    if(!bank||!due||!(amt>0))return;
+    if(!bank||!due||!Number.isFinite(amt)||amt<0)return;
     const kind=bbKind(b),l4=String(b.last4||'').replace(/\D/g,'').slice(-4),key=b.account_key||null;
     const ofBank=i=>squash(i.name).includes(bank),free=i=>!billed(i)&&!i.bbInst&&!claimed.has(i)&&(!i.bbKey||i.bbKey===key);
     // same account as last time, then same last 4 digits (same type first, then any), then same bank and type
@@ -1215,6 +1235,7 @@ $('#bbClear').addEventListener('click',()=>{
   if(S.bb){delete S.bb;save()}
   $('#bbUrl').value='';$('#bbKey').value='';bbState('off','Not connected');
 });
+scheduleBBExpiry();
 setInterval(()=>{if(!document.hidden&&!bbBusy)syncBillBuddy()},3000);
 setInterval(()=>{if(document.hidden)return;const expired=pruneExpiredBB(),rolled=rollover();if(expired||rolled)save();if(editingId==null&&!document.activeElement?.closest?.('.form'))renderItems();render()},60000);
 
@@ -1646,6 +1667,7 @@ async function startCloud(user){
 // pick up changes made on another device when you come back to this one
 document.addEventListener('visibilitychange',async()=>{
   if(document.hidden)return;
+  scheduleBBExpiry();
   checkUpdate();
   if(cloudReady&&pruneExpiredBB()){save();renderAll()}
   syncBillBuddy();

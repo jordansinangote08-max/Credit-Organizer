@@ -86,9 +86,11 @@ How it syncs:
 - BillBuddy's link and key are saved in your account too, so every signed-in device syncs with it.
 
 **Bill expiration.** BillBuddy and the planner use Manila days for imported
-statements: a bill due October 14 remains through October 15 and disappears
-on October 16. The planner checks on sync, account load, every visible minute,
-and when the app resumes; expired imported statements are also removed from
+statements: a bill due October 15 remains through October 16 and disappears
+at **00:00 on October 17 in Manila**. A timer removes expired imports at Manila
+midnight even when the feed is offline. The planner also checks on sync,
+account load, every visible minute, and when the app resumes. Expired imported
+statements are also removed from
 the planner's saved Supabase state. Your manually entered bills, card accounts,
 and future installment schedules are retained. Installments keep a stable link
 to their lender even when their enclosing statement disappears, and show
@@ -99,16 +101,24 @@ once paid**; Undo restores its previous count and color. Payment status belongs
 to the statement, so a new bill starts unpaid even within the same pay cycle.
 
 While visible, the planner checks BillBuddy every **3 seconds**. A successful
-complete feed removes statements deleted in BillBuddy while preserving their
-installment history. Failed, invalid, or partial feeds never clear other bills.
-Background tabs pause polling; the app refreshes when you return.
+complete feed (`complete: true` with `count` matching the list) removes
+statements deleted in BillBuddy and saves the removal to your planner account,
+while preserving installment history. Failed, invalid, or partial feeds never
+clear other bills. Background tabs pause polling; the app refreshes when you
+return. Both apps need their matching updates deployed. BillBuddy's API reads
+its base `bills` table with the Vercel `OWNER_UID` matching its scanner; it does
+not need the legacy `bill_board` view. The existing API-tab link and key still
+apply.
 BillBuddy's `scanner/expire_bills.sql` enables
 database cleanup independently of the Gmail scanner.
 
 For local sync regression checks, install Python Playwright and use an existing
 Chromium (`CHROMIUM_PATH`, default `/usr/bin/chromium`), then run
 `python -m unittest discover -s tests -v`. These checks use synthetic statements
-and no signed-in accounts or external API calls.
+and no signed-in accounts or external API calls. The feed integration test
+also runs the actual BillBuddy API handler locally: keep the BillBuddy checkout
+beside this repository, or set `BILLBUDDY_REPO` to its path. It verifies deletion
+on the next poll and the resulting saved planner state using synthetic rows.
 - A device stays signed in: Supabase keeps the sign-in on the device and renews it automatically, so the planner opens straight away. The email address is also remembered to fill in the sign-in form.
 - An open planner reloads itself when a newer version is published (checked when you come back to it and every 5 minutes). The database also rejects saves from an older copy, so it can't put back outdated data. If you set up Supabase before this rule existed, run `supabase/schema.sql` again.
 - Signing out clears the planner from the screen and forgets the sign-in on that device.

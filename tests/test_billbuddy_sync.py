@@ -255,12 +255,56 @@ class SyncTest(unittest.TestCase):
         self.page.evaluate('''() => {
           cloudReady=true;draft={};S.bb={url:'https://fixture.invalid/api/bills',key:'test-only'};
           window.feedRequests=0;
-          window.fetch=async()=>{feedRequests++;return {status:200,ok:true,json:async()=>({ok:true,complete:true,bills:[]})}};
+          window.fetch=async()=>{feedRequests++;return {status:200,ok:true,json:async()=>({ok:true,complete:true,count:0,bills:[]})}};
         }''')
         self.page.clock.run_for(3100)
         self.assertGreaterEqual(self.page.evaluate('feedRequests'), 1)
         self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).length'), 0)
         self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbInst).length'), 2)
+
+    def test_incomplete_count_never_removes_existing_bills(self):
+        self.page.evaluate('b=>applyBB([b])', self.union_statement())
+        self.page.evaluate('''async () => {
+          cloudReady=true;draft={};S.bb={url:'https://fixture.invalid/api/bills',key:'test-only'};
+          window.fetch=async()=>({status:200,ok:true,json:async()=>({ok:true,complete:true,count:1,bills:[]})});
+          await syncBillBuddy();
+        }''')
+        self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).length'), 1)
+
+    def test_malformed_complete_feed_never_clears_existing_bills(self):
+        self.page.evaluate('b=>applyBB([b])', self.union_statement())
+        self.page.evaluate('''async () => {
+          cloudReady=true;draft={};S.bb={url:'https://fixture.invalid/api/bills',key:'test-only'};
+          window.fetch=async()=>({status:200,ok:true,json:async()=>({ok:true,complete:true,count:1,
+            bills:[{bank:'BPI',account_key:'other',amount:'broken',due_date:'2026-10-26'}]})});
+          await syncBillBuddy();
+        }''')
+        self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).length'), 1)
+
+    def test_zero_balance_statement_replaces_the_previous_amount(self):
+        self.page.evaluate('''() => {
+          applyBB([{bank:'BPI',account_key:'bpi',amount:100,due_date:'2026-10-26'}]);
+          applyBB([{bank:'BPI',account_key:'bpi',amount:0,due_date:'2026-10-26'}],{reconcile:true});
+        }''')
+        self.assertEqual(self.page.evaluate('S.items.find(i=>i.bbDue).amount'), 0)
+
+    def test_october_15_bill_expires_after_october_16_at_manila_midnight(self):
+        self.page.evaluate('''() => {
+          cloudReady=true;draft={};
+          S.items.push({id:uid++,name:'Manual rent',kind:'bill',amount:50,day:15});
+          applyBB([{bank:'EastWest',type:'credit_card',account_key:'eastwest',amount:13274.10,
+            due_date:'2026-10-15',installments:[{label:'Laptop',term:3,of:12,amount:100}]}]);
+        }''')
+        self.page.clock.set_system_time(datetime(2026, 10, 16, 15, 59, 59, tzinfo=timezone.utc))
+        self.page.evaluate('scheduleBBExpiry()')
+        self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).length'), 1)
+        self.assertEqual(self.page.evaluate('bbCutoff()'), '2026-10-15')
+        self.page.clock.run_for(1500)
+        self.assertEqual(self.page.evaluate('bbCutoff()'), '2026-10-16')
+        self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).length'), 0)
+        self.assertEqual(self.page.evaluate('S.accounts.length'), 1)
+        self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbInst).length'), 1)
+        self.assertTrue(self.page.evaluate("S.items.some(i=>i.name==='Manual rent')"))
 
 
 if __name__ == '__main__':
