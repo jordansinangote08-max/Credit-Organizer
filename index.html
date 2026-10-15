@@ -9,17 +9,16 @@
 <meta name="theme-color" content="#eef2f0" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0b0f0e" media="(prefers-color-scheme: dark)">
 <meta name="mobile-web-app-capable" content="yes">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Planner">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=45">
-<script src="config.js?v=45" defer></script>
+<link rel="stylesheet" href="styles.css?v=42">
+<script src="config.js?v=42" defer></script>
 <script src="vendor/supabase-2.116.0.js" defer></script>
-<script src="app.js?v=45" defer></script>
+<script src="app.js?v=42" defer></script>
 </head>
 <body class="locked">
 <div class="app">
@@ -31,7 +30,7 @@
     <form id="authForm" class="authform" hidden>
       <label class="label" for="authEmail">Sign in to open your planner</label>
       <div class="row"><input id="authEmail" type="email" autocomplete="email" inputmode="email" required placeholder="you@example.com"><button class="btn" id="authSend">Send link</button></div>
-      <p class="muted small" id="authMsg" aria-live="polite">We'll email you a sign-in link.</p>
+      <p class="muted small" id="authMsg">We'll email you a sign-in link.</p>
     </form>
 
     <section class="hero" aria-label="This pay cycle">
