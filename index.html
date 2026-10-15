@@ -2,9 +2,6 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' ; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https: wss:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; worker-src 'self'; upgrade-insecure-requests">
-<meta name="referrer" content="strict-origin-when-cross-origin">
-<script src="security.js"></script>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Paycheck and Debt Planner</title>
 <meta name="description" content="Plan each pay cycle: salary, bills, installments, credit cards and other money.">
@@ -18,22 +15,22 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=45">
+<link rel="stylesheet" href="styles.css?v=42">
 <script src="config.js?v=42" defer></script>
 <script src="vendor/supabase-2.116.0.js" defer></script>
-<script src="app.js?v=45" defer></script>
+<script src="app.js?v=42" defer></script>
 </head>
 <body class="locked">
 <div class="app">
   <aside class="side">
     <header>
       <h1>Paycheck and Debt Planner</h1>
-      <div class="acctbar"><p id="syncState" class="sync" role="status" aria-live="polite" aria-atomic="true">Loading…</p><span id="authWho" class="muted small"></span><button class="ghost sm" id="draftBtn" title="Try changes in a copy that is never saved" hidden>Draft</button><button class="ghost sm ib" id="authBtn" aria-label="Sign out" title="Sign out" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 012 2v12a2 2 0 01-2 2h-3"/><path d="M10 17l5-5-5-5"/><path d="M15 12H4"/></svg></button></div>
+      <div class="acctbar"><p id="syncState" class="sync">Loading…</p><span id="authWho" class="muted small"></span><button class="ghost sm" id="draftBtn" title="Try changes in a copy that is never saved" hidden>Draft</button><button class="ghost sm ib" id="authBtn" aria-label="Sign out" title="Sign out" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 012 2v12a2 2 0 01-2 2h-3"/><path d="M10 17l5-5-5-5"/><path d="M15 12H4"/></svg></button></div>
     </header>
     <form id="authForm" class="authform" hidden>
       <label class="label" for="authEmail">Sign in to open your planner</label>
       <div class="row"><input id="authEmail" type="email" autocomplete="email" inputmode="email" required placeholder="you@example.com"><button class="btn" id="authSend">Send link</button></div>
-      <p class="muted small" id="authMsg" role="status" aria-live="polite" aria-atomic="true">We'll email you a sign-in link.</p>
+      <p class="muted small" id="authMsg">We'll email you a sign-in link.</p>
     </form>
 
     <section class="hero" aria-label="This pay cycle">

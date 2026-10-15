@@ -2,12 +2,12 @@
 
 A minimalist, mobile-first planner for each pay cycle: salary, bills, installments, credit cards, other money, borrowing options and BillBuddy sync.
 
-Plain static files, no build step. Serve the folder (e.g. `python3 -m http.server`) and open its HTTP address, or deploy to a static HTTPS host. Direct file URLs are not a supported authentication environment.
+Plain static files, no build step. Open `index.html` or serve the folder (e.g. `python3 -m http.server`) and deploy to any static host.
 
 - `index.html` – markup
 - `styles.css` – layout for phones, tablets and desktop (two columns from 1024px), light/dark, iOS-style frosted glass (solid cards when the device asks for less transparency); uses the device's own font, so nothing is downloaded
 - `app.js` – planner logic
-- `config.js` – public Supabase connection settings (required for sign-in and saving)
+- `config.js` – Supabase connection (optional)
 - `supabase/schema.sql` – the table and access rules for cloud saving
 - `vendor/` – the Supabase client library (v2.116.0), served locally
 - `manifest.webmanifest`, `icon*.{svg,png}` – install to home screen
@@ -44,7 +44,7 @@ The top of each tab (This cycle, Bills, Installments, Accounts, Income, Borrow, 
 
 The **AI** tab checks a loan before you take it. Pick a creditor from the Borrow tab to fill in its interest, rate type, months and upfront fee (the check then shows what you receive after the fee, and warns if you ask for more than that creditor offers), or type your own terms: the amount, installments or a one-time payment, the interest, and when it's due. The planner first does the maths itself: it lays the loan's payments over your coming pay cycles next to every bill, installment, card and income you've entered, and works out the most you can borrow on those terms while every cycle keeps your buffer. That part is exact, free and needs no key.
 
-With an OpenAI key in the **API** tab, gpt-6-luna then reads a short summary of those numbers (about 2,000 characters: amounts, bill names, the cycle table; never card digits or your email) and explains the call in plain words, with tips. It's told to use the planner's numbers rather than redo them, and it answers in a fixed JSON format, so a question costs very little. Asking the same question again doesn't call the API. The API tab detects the provider from the key:
+With an OpenAI key in the **API** tab, gpt-6-luna then reads a short summary of those numbers (about 2,000 characters: amounts, bill names, the cycle table; never card digits or your email) and explains the call in plain words, with tips. It's told to use the planner's numbers rather than redo them, and it answers in a fixed JSON format, so a question costs very little. Asking the same question again doesn't call the API. Pick the provider in the API tab; each keeps its own key and model:
 
 **One model: gpt-6-luna.** Every AI feature (loan checks, tab reviews, sorting bills, placing installments) uses `gpt-6-luna` through chat completions with a strict JSON schema at low reasoning effort. The key in the API tab decides how it's reached: an OpenRouter key (`sk-or-…`) goes through OpenRouter (`openai/gpt-6-luna`), any other key straight to OpenAI. No key is refused for how it looks; if it doesn't work, the service's own error is shown. If the service turns down one of the request settings, the request is sent once more without it, still to gpt-6-luna. The answer shows the tokens used.
 
@@ -76,98 +76,15 @@ Everything is stored in Supabase: you sign in first, and the planner loads from 
 
 How it syncs:
 
-- Every change saves to your account about a second later; temporary save failures retry after 5 seconds with increasing delays, up to one minute. Setup and permission errors are shown instead of retried forever.
+- Every change saves to your account about a second later; a failed save retries every 5 seconds.
 - Coming back to the app picks up changes made on another device.
-- BillBuddy sends everything its dashboard shows, the installment plans behind each statement included. A card fills in its credit limit and statement day when they're empty; the installment plans its statement lists ("SHOPEE 04/12") become installments under the card in the Installments tab, with payments left and the end month, and are kept out of the cycle maths because the card's amount already includes them (plans no longer on the statement remain as waiting history and are excluded from its current-period breakdown). A loan's breakdown sets its payments left and total. Needs BillBuddy with the installments column (see its scanner/README.md). The API tab's BillBuddy line says how many installments came with the bills, or that BillBuddy sent none (its `/api/bills` needs updating). A card plan whose number of months the statement cut off still shows, by its payment number.
+- BillBuddy sends everything its dashboard shows, the installment plans behind each statement included. A card fills in its credit limit and statement day when they're empty; the installment plans its statement lists ("SHOPEE 04/12") become installments under the card in the Installments tab, with payments left and the end month, and are kept out of the cycle maths because the card's amount already includes them (a plan the next statement no longer lists after its last payment is removed). A loan's breakdown sets its payments left and total. Needs BillBuddy with the installments column (see its scanner/README.md). The API tab's BillBuddy line says how many installments came with the bills, or that BillBuddy sent none (its `/api/bills` needs updating). A card plan whose number of months the statement cut off still shows, by its payment number.
 - Each installment goes to the right loan or card. A plan on a card statement is filed under that card; if it's an installment you entered yourself (same purchase), that one moves under the card instead of being added twice. A loan statement that lists several loans (like UnionBank's two personal loans, 3/12 and 6/12, on one bill) stays one bill in Bills and This cycle, and each loan is its own installment under it in the Installments tab, with its own payments left and end month; the Plan tab counts each one until it ends. If you entered those loans yourself, yours become its installments instead of copies. Marking the bill paid pays its installments. The planner decides this itself when it's clear: nothing of yours looks like the plan (it's new), or exactly one of yours has the same amount to the centavo (it's that one). Only when it's unclear (a similar name or a close amount) does the AI decide, if one is set up: those plans only, all in one small request, each once, within the daily limit. Without AI, an unclear plan is added as new.
 - A bill BillBuddy couldn't type ("other") is sorted for free when the name says what it is (Meralco, Globe, PLDT, SSS, Netflix, Spotify, rent, Home Credit and other common billers); only names the planner doesn't know go to the AI, if one is set up: all in one small request, each once, within the daily limit.
 - Sorting bills and placing installments use gpt-6-luna like everything else. Switch both off in the API tab.
-- A BillBuddy card is recognised by its stable source account key. Older records without a source key can match by bank and last four digits. Two different source accounts are kept separate even when those digits match. A second copy an older sync made of that card is folded back in.
+- A BillBuddy card is recognised by its last 4 digits: if a card in Accounts has the same last 4, the bill goes onto that card under the name you gave it, even after you removed its bill. A second copy an older sync made of that card is folded back in.
 - BillBuddy's link and key are saved in your account too, so every signed-in device syncs with it.
-
-**Bill expiration.** BillBuddy and the planner use Manila days for imported
-statements: a bill due October 14 remains through October 15 and disappears
-on October 16. The planner checks on sync, account load, every visible minute,
-and when the app resumes; expired imported statements are also removed from
-the planner's saved Supabase state. Your manually entered bills, card accounts,
-and future installment schedules are retained. Installments keep a stable link
-to their lender even when their enclosing statement disappears, and show
-**Waiting for next bill**. They stay out of Bills until the next statement
-arrives. The new statement updates the same plans, without duplicate entries
-or counting a payment twice. A progress bar is **red while unpaid** and **green
-once paid**; Undo restores its previous count and color. Payment status belongs
-to the statement, so a new bill starts unpaid even within the same pay cycle.
-
-While visible, the planner checks BillBuddy every **3 seconds**. A successful
-complete feed removes statements deleted in BillBuddy while preserving their
-installment history. Failed, invalid, or partial feeds never clear other bills. Repeated connection failures increase the retry delay up to one minute.
-Background tabs pause polling; the app refreshes when you return.
-BillBuddy's `scanner/expire_bills.sql` enables
-database cleanup independently of the Gmail scanner.
-
-For local sync regression checks, install Python Playwright and use an existing
-Chromium (`CHROMIUM_PATH`, default `/usr/bin/chromium`), then run
-`python -m unittest discover -s tests -v`. These checks use synthetic statements
-and no signed-in accounts or external API calls.
 - A device stays signed in: Supabase keeps the sign-in on the device and renews it automatically, so the planner opens straight away. The email address is also remembered to fill in the sign-in form.
 - An open planner reloads itself when a newer version is published (checked when you come back to it and every 5 minutes). The database also rejects saves from an older copy, so it can't put back outdated data. If you set up Supabase before this rule existed, run `supabase/schema.sql` again.
 - Signing out clears the planner from the screen and forgets the sign-in on that device.
 - Data an earlier version kept in this browser moves to the account on its first sign-in (if the account is empty) and is then deleted from the browser.
-
-
-## Saving safely and reviewing conflicts
-
-Run the latest `supabase/schema.sql` **before deploying this client**. Saving uses
-`save_planner_state`, an authenticated database function that checks the previous
-save version in one transaction. Older clients cannot bypass this check with direct
-updates. A missing function or permission error leaves a clear unsaved message;
-the client does not fall back to an unsafe whole-planner overwrite.
-
-Saves from one device run in order. If another device saves first, the planner
-keeps your local changes on screen and asks you to choose **Load saved planner**
-(replace this screen) or **Keep this planner** (replace the saved version). Read
-both choices carefully. Unsaved changes live in this tab, so keep it open while
-resolving a connection failure or conflict. This is conflict detection, not an
-automatic merge of two different planners. Draft cannot begin while saving failed.
-
-## Imported bills and retained plans
-
-BillBuddy owns imported amounts, due dates and payment counts: those fields are
-read-only in their edit windows and refresh when the statement changes. You can
-still customize names/categories and mark a statement paid or undo it. Manual
-bills remain editable. New bills, cards, extra-income entries and creditors do
-not enter the saved planner until **Add** is pressed. Invalid negative amounts
-are rejected before autosave.
-
-Plans use an issuer plan ID when available. Otherwise the planner uses its lender,
-description, amount, number of terms, inferred starting month and occurrence.
-Existing uniquely matched plans migrate in place, retaining paid progress. Two
-indistinguishable plans without issuer IDs still depend on stable statement order;
-the source should include issuer IDs whenever possible. Removing a card that has
-imported installment history archives its account relationship, preserves its
-plans as waiting, and removes its current statement. A later source statement
-can reconnect that retained account. Previously orphaned plans receive a retained
-account relationship without deleting their schedules.
-
-## Loan checks, AI budget and privacy
-
-A loan check evaluates every scheduled payment through the last one, including
-weekly or twice-monthly pay schedules. The form supports first payments in the
-current planning cycle or within the next five years, and up to 60 monthly
-payments. Past or more distant first payments are rejected explicitly.
-
-AI requests reserve a conservative token budget, including requests already in
-flight on this device. The request's maximum output matches that reservation;
-billed tokens from unreadable answers still count. This is a per-device planning
-guard, not a provider-side monetary cap: other devices and other apps can also
-use the key. Set a spending cap with the AI provider. Requests time out after
-30 seconds and stale answers cannot attach to another account or planner.
-
-Automated plan matching sends bank/plan names, amounts and term counts, without
-adding card digits. Loan checks and tab reviews send the financial summaries
-described above. Any sensitive text you type into a name or purpose is still part
-of that summary. The provider key and BillBuddy connection are stored in your
-private signed-in planner and used by the browser; only enter keys you control.
-Embedded pages cannot initialize sign-in. For reliable anti-framing headers,
-use a host that supports `Content-Security-Policy: frame-ancestors 'none'`;
-GitHub Pages relies on the included client-side embedding guard.
