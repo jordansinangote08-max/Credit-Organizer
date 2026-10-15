@@ -3,102 +3,56 @@ name: Restore Credit Organizer
 
 on:
   workflow_dispatch:
-    inputs:
-      target_sha:
-        description: "Full 40-character SHA of PR #29 merge commit"
-        required: true
-        type: string
 
 permissions:
   contents: write
-  pull-requests: write
-
-concurrency:
-  group: credit-organizer-restore
-  cancel-in-progress: false
 
 jobs:
   restore:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check out main
+      - name: Check out Credit Organizer
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: claude/lucid-goldberg-sqom97
           fetch-depth: 0
-          persist-credentials: true
 
-      - name: Validate target commit
+      - name: Back up and restore PR 29
         env:
-          TARGET_SHA: ${{ inputs.target_sha }}
+          TARGET_SHA: 65b249d02d4b650d6ca8ddf67b3088dfda1caef3
         run: |
           set -euo pipefail
 
-          if ! [[ "$TARGET_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
-            echo "::error::Enter a full 40-character commit SHA."
-            exit 1
-          fi
-
-          git fetch origin "$TARGET_SHA"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git cat-file -e "${TARGET_SHA}^{commit}"
 
           if ! git merge-base --is-ancestor "$TARGET_SHA" HEAD; then
-            echo "::error::Target is not an ancestor of main."
+            echo "::error::PR 29 commit is not in branch history."
             exit 1
           fi
 
-          echo "Target commit validated."
-
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Back up current main
-        run: |
-          set -euo pipefail
-
           BACKUP="backup-credit-organizer-${GITHUB_RUN_ID}"
+          RESTORE="restore-credit-organizer-${GITHUB_RUN_ID}"
 
           git branch "$BACKUP" HEAD
           git push origin "$BACKUP"
 
-          echo "Backup branch: $BACKUP" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Prepare PR 29 restoration
-        env:
-          TARGET_SHA: ${{ inputs.target_sha }}
-        run: |
-          set -euo pipefail
-
-          RESTORE="restore-credit-organizer-${GITHUB_RUN_ID}"
-
           git switch -c "$RESTORE"
 
-          # Restore tracked files to the target snapshot.
-          git restore --source="$TARGET_SHA" \
-            --staged --worktree -- .
-
-          # Remove tracked files absent from target.
-          # The workflow itself is intentionally preserved
-          # so it can be used again.
-
-          git add -A
+          # Replace the index and working files with
+          # the complete PR 29 snapshot.
+          git read-tree --reset -u "$TARGET_SHA"
 
           if git diff --cached --quiet; then
-            echo "No differences from target snapshot." \
-              >> "$GITHUB_STEP_SUMMARY"
+            echo "No restoration changes needed."
             exit 0
           fi
 
-          git commit -m "Restore Credit Organizer to PR 29 snapshot"
-
+          git commit -m "Restore Credit Organizer to PR 29"
           git push -u origin "$RESTORE"
 
-          echo "Restore branch: $RESTORE" \
-            >> "$GITHUB_STEP_SUMMARY"
-
-          echo "Restore branch pushed successfully." \
-            >> "$GITHUB_STEP_SUMMARY"
+          echo "Backup branch: $BACKUP" >> "$GITHUB_STEP_SUMMARY"
+          echo "Restore branch: $RESTORE" >> "$GITHUB_STEP_SUMMARY"
