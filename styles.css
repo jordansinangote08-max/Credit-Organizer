@@ -432,6 +432,18 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 
 /* AI tab */
 .aiv,.aibox{display:grid;gap:10px}
+.advisor textarea{width:100%;min-height:104px;padding:12px;border:1px solid var(--field);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;line-height:1.5;resize:vertical}
+.advisor textarea:focus{border-color:var(--accent);box-shadow:var(--ring);outline:none}
+.advisor .acts{align-items:center;flex-wrap:wrap}
+.advisor .acts [role="status"]{flex:1;min-width:180px}
+.advisor-prompts{display:flex;flex-wrap:wrap;gap:8px}
+.advisor-prompts button,.advisor #advisorNew{min-height:44px}
+.advisor #advisorNew{justify-self:start}
+.advisor-turn{display:grid;gap:10px;padding-top:18px;margin-top:18px;border-top:1px solid var(--line);overflow-wrap:anywhere;max-width:75ch}
+.advisor-turn h3,.advisor-turn p{margin:0}
+.advisor-turn ul{margin:0;padding-left:20px;display:grid;gap:6px}
+.advisor-turn .advisor-question{font-weight:600}
+.advisor-turn .advisor-followup{font-weight:600}
 .aiv-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .aiv h3{font-size:1.05rem}
 .aibox{padding:16px;border-radius:16px;background:var(--sunk)}
