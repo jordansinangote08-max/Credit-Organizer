@@ -84,6 +84,31 @@ How it syncs:
 - Sorting bills and placing installments use gpt-6-luna like everything else. Switch both off in the API tab.
 - A BillBuddy card is recognised by its last 4 digits: if a card in Accounts has the same last 4, the bill goes onto that card under the name you gave it, even after you removed its bill. A second copy an older sync made of that card is folded back in.
 - BillBuddy's link and key are saved in your account too, so every signed-in device syncs with it.
+
+**Bill expiration.** BillBuddy and the planner use Manila days for imported
+statements: a bill due October 14 remains through October 15 and disappears
+on October 16. The planner checks on sync, account load, every visible minute,
+and when the app resumes; expired imported statements are also removed from
+the planner's saved Supabase state. Your manually entered bills, card accounts,
+and future installment schedules are retained. Installments keep a stable link
+to their lender even when their enclosing statement disappears, and show
+**Waiting for next bill**. They stay out of Bills until the next statement
+arrives. The new statement updates the same plans, without duplicate entries
+or counting a payment twice. A progress bar is **red while unpaid** and **green
+once paid**; Undo restores its previous count and color. Payment status belongs
+to the statement, so a new bill starts unpaid even within the same pay cycle.
+
+While visible, the planner checks BillBuddy every **3 seconds**. A successful
+complete feed removes statements deleted in BillBuddy while preserving their
+installment history. Failed, invalid, or partial feeds never clear other bills.
+Background tabs pause polling; the app refreshes when you return.
+BillBuddy's `scanner/expire_bills.sql` enables
+database cleanup independently of the Gmail scanner.
+
+For local sync regression checks, install Python Playwright and use an existing
+Chromium (`CHROMIUM_PATH`, default `/usr/bin/chromium`), then run
+`python -m unittest discover -s tests -v`. These checks use synthetic statements
+and no signed-in accounts or external API calls.
 - A device stays signed in: Supabase keeps the sign-in on the device and renews it automatically, so the planner opens straight away. The email address is also remembered to fill in the sign-in form.
 - An open planner reloads itself when a newer version is published (checked when you come back to it and every 5 minutes). The database also rejects saves from an older copy, so it can't put back outdated data. If you set up Supabase before this rule existed, run `supabase/schema.sql` again.
 - Signing out clears the planner from the screen and forgets the sign-in on that device.
