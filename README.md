@@ -90,10 +90,19 @@ statements: a bill due October 14 remains through October 15 and disappears
 on October 16. The planner checks on sync, account load, every visible minute,
 and when the app resumes; expired imported statements are also removed from
 the planner's saved Supabase state. Your manually entered bills, card accounts,
-and future installment schedules are retained. A loan's remaining installments
-become standalone schedules after its enclosing statement expires. Failed or
-invalid API responses never remove statements. Background tabs pause polling;
-the app refreshes when you return. BillBuddy's `scanner/expire_bills.sql` enables
+and future installment schedules are retained. Installments keep a stable link
+to their lender even when their enclosing statement disappears, and show
+**Waiting for next bill**. They stay out of Bills until the next statement
+arrives. The new statement updates the same plans, without duplicate entries
+or counting a payment twice. A progress bar is **red while unpaid** and **green
+once paid**; Undo restores its previous count and color. Payment status belongs
+to the statement, so a new bill starts unpaid even within the same pay cycle.
+
+While visible, the planner checks BillBuddy every **3 seconds**. A successful
+complete feed removes statements deleted in BillBuddy while preserving their
+installment history. Failed, invalid, or partial feeds never clear other bills.
+Background tabs pause polling; the app refreshes when you return.
+BillBuddy's `scanner/expire_bills.sql` enables
 database cleanup independently of the Gmail scanner.
 
 For local sync regression checks, install Python Playwright and use an existing

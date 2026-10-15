@@ -124,7 +124,10 @@ const PATCHES=[
  s=>{s.accounts.forEach(a=>{if(!a.key)a.key=genKey();if(a.bill!=null){const it=s.items.find(i=>i.kind==='card'&&i.name===a.bill&&!i.acct);if(it)it.acct=a.key;delete a.bill}})}
 ];
 function prepare(){
-  S.items.forEach(i=>{i.id=uid++;delete i._undo;delete i.min});
+  S.items.forEach(i=>{i.id=uid++;delete i._undo;delete i.min;
+    // Restore the stable link on plans detached by older versions.
+    if(i.bbInst?.startsWith('L')&&!i.inBill&&!i.inCard){i.inBill=i.bbInst.slice(1).split('|')[0];i.bbWaiting=!S.items.some(p=>p.bbRef===i.inBill)}
+  });
   if(!Array.isArray(S.sources))S.sources=clone(SRC_DEFAULT);
   S.sources.forEach(x=>{x.id=uid++});
   if(!Array.isArray(S.income))S.income=[];
@@ -185,19 +188,23 @@ function save(){
 // ---------- paid tracking ----------
 const DAY=86400000;
 const cycleKey=()=>{const d=cycleStart();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate()};
-const isPaid=i=>i.paidCycle===cycleKey();
+const isPaid=i=>i.bbStatement?i.bbPaidStatement===i.bbStatement:i.paidCycle===cycleKey();
+const paidInCycle=i=>isPaid(i)&&(!i.bbStatementDue||inCycle({...i,bbDue:i.bbStatementDue},cycleStart()));
 const isHiddenPaid=i=>isPaid(i)&&Date.now()-num(i.paidAt)>=DAY;
-function markPaid(i){i.paidAt=Date.now();i.paidCycle=cycleKey();if(i.kind==='loan'){i.prevLeft=num(i.left);i.left=Math.max(0,num(i.left)-1)}
-  if(i.bbRef)S.items.filter(y=>y.inBill===i.bbRef&&!isPaid(y)).forEach(markPaid)}
-function undoPaid(i){if(i.kind==='loan'&&i.prevLeft!=null)i.left=i.prevLeft;delete i.paidAt;delete i.paidCycle;delete i.prevLeft
-  if(i.bbRef)S.items.filter(y=>y.inBill===i.bbRef&&isPaid(y)).forEach(undoPaid)}
+function markPaid(i){if(isPaid(i))return;i.paidAt=Date.now();i.paidCycle=cycleKey();if(i.bbStatement){i.bbPaidStatement=i.bbStatement;i.bbPaidDue=i.bbStatementDue}
+  if(i.kind==='loan'){i.prevLeft=num(i.left);i.left=Math.max(0,num(i.left)-1)}
+  if(i.bbRef)S.items.filter(y=>y.inBill===i.bbRef&&!isPaid(y)).forEach(markPaid);
+  if(i.kind==='card')S.items.filter(y=>y.inCard===i.acct&&!isPaid(y)).forEach(markPaid)}
+function undoPaid(i){if(i.kind==='loan'&&i.prevLeft!=null)i.left=i.prevLeft;delete i.paidAt;delete i.paidCycle;delete i.prevLeft;delete i.bbPaidStatement;delete i.bbPaidDue;
+  if(i.bbRef)S.items.filter(y=>y.inBill===i.bbRef&&isPaid(y)).forEach(undoPaid);
+  if(i.kind==='card')S.items.filter(y=>y.inCard===i.acct&&isPaid(y)).forEach(undoPaid)}
 function rollover(){
   const key=cycleKey();let changed=false;
   S.items=S.items.filter(i=>{
     if(!i.paidCycle||i.paidCycle===key)return true;
     changed=true;delete i.paidAt;delete i.paidCycle;delete i.prevLeft;
-    if(i.kind==='card')i.amount=null;
-    return !(i.kind==='loan'&&num(i.left)<=0);
+    if(i.kind==='card'&&!i.bbStatement)i.amount=null;
+    return !(i.kind==='loan'&&num(i.left)<=0&&!i.bbInst);
   });
   return changed;
 }
@@ -391,7 +398,7 @@ const lenderName=i=>partOf(i)?lenderName(partOf(i)):i.inCard?(S.accounts.find(a=
 const lenderKey=i=>lenderName(i).toLowerCase().replace(/[^a-z0-9]/g,'').replace(/loans?$/,'')||'x';
 function renderInst(){
   const start=cycleStart(),endOf=i=>{const left=Math.max(0,Math.round(num(i.left)));if(!left)return null;
-    const n=dueDate(dayOf(i),start),m=new Date(n.getFullYear(),n.getMonth()+(isPaid(i)?left:left-1),1);return new Date(m.getFullYear(),m.getMonth(),Math.min(dayOf(i),dim(m.getFullYear(),m.getMonth())))};
+    const n=dueDate(dayOf(i),start),m=new Date(n.getFullYear(),n.getMonth()+(paidInCycle(i)?left:left-1),1);return new Date(m.getFullYear(),m.getMonth(),Math.min(dayOf(i),dim(m.getFullYear(),m.getMonth())))};
   const ym=d=>d?MON[d.getMonth()]+' '+d.getFullYear():'—';
   const groups=new Map();
   S.items.filter(i=>i.kind==='loan'&&!hasParts(i)).sort((a,b)=>dayOf(a)-dayOf(b)||num(b.left)-num(a.left)||String(a.name).localeCompare(b.name)).forEach(i=>{const k=lenderKey(i);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(i)});
@@ -406,16 +413,16 @@ function renderInst(){
       const nm=billed(i)||i.bbInst||(i.name&&i.name!==lenderName(i))?planLabel(i):'Installment '+(n+1);
       return `<div class="sub">
         <div class="sub-h"><span class="sub-n"><button class="openw" data-isched="${i.id}" aria-haspopup="dialog" title="Payment schedule">${of?`<span class="plan-of" aria-label="payment ${of.replace('/',' of ')}">${of}</span>`:''}${esc(nm)}${last4Of(i)?`<span class="l4">•••• ${esc(last4Of(i))}</span>`:''}</button></span><span class="pay">${peso(pay)}<span class="muted small">/mo</span></span></div>
-        ${pct!=null?`<div class="bar" role="img" aria-label="${total-left} of ${total} paid"><i style="width:${pct}%"></i></div>`:''}
+        ${pct!=null?`<div class="bar ${isPaid(i)||left===0?'is-paid':'is-unpaid'}" role="img" aria-label="${total-left} of ${total} paid; ${i.bbWaiting?'waiting for next bill':isPaid(i)?'current payment paid':'current payment unpaid'}"><i style="width:${pct}%"></i></div>`:''}
         <div class="sub-f"><div class="facts">${total?`<span><b>${peso(pay*left)}</b> to go</span><span>Last payment <b>${ym(end)}</b></span>`:i.bbTerm?'<span>Months not on the statement</span>':`<span><b>${left}</b> left</span><span><b>${peso(pay*left)}</b> to go</span><span>Last payment <b>${ym(end)}</b></span>`}</div>
-        <div class="acts">${billed(i)?'':`${isPaid(i)?`<span class="pill ok">Paid</span>${!isHiddenPaid(i)?undoBtn(`data-iundo="${i.id}"`,i.name):''}`:''}${last4Of(i)?'':`<button class="pill warn ask4" data-iedit4="${i.id}">Add last 4</button>`}${editBtn(`data-iedit="${i.id}"`,i.name)}${left>0&&!isPaid(i)?paidBtn(`data-ipaid="${i.id}"`,i.name):''}`}${billed(i)?editBtn(`data-iedit="${i.id}"`,i.name):''}</div></div>
+        <div class="acts">${i.bbWaiting?'<span class="pill">Waiting for next bill</span>':isPaid(i)?'<span class="pill ok">Paid</span>':''}${billed(i)?'':`${isPaid(i)?`${!isHiddenPaid(i)?undoBtn(`data-iundo="${i.id}"`,i.name):''}`:''}${last4Of(i)?'':`<button class="pill warn ask4" data-iedit4="${i.id}">Add last 4</button>`}${editBtn(`data-iedit="${i.id}"`,i.name)}${left>0&&!isPaid(i)?paidBtn(`data-ipaid="${i.id}"`,i.name):''}`}${billed(i)?editBtn(`data-iedit="${i.id}"`,i.name):''}</div></div>
       </div>`;
     }).join('');
     monthly+=gm;remaining+=gr;if(gl&&(!last||gl>last))last=gl;
     const r=list[0];
     const fk='l:'+lenderKey(r);
     return `<div class="lgrp${folded.has(fk)?' folded':''}"><div class="lgrp-h"><h3>${foldBtn(fk,esc(lenderName(r)))}</h3>
-      <span class="muted small"><b>${peso(gm)}</b>/mo · <b>${peso(gr)}</b> to go · until ${ym(gl)}${list.length>1?' · '+list.length+' installments':''}${r.inCard?' · billed with the card':r.inBill?' · one bill':''}</span></div>${rows}</div>`;
+      <span class="muted small"><b>${peso(gm)}</b>/mo · <b>${peso(gr)}</b> to go · until ${ym(gl)}${list.length>1?' · '+list.length+' installments':''}${r.inCard?' · billed with the card':r.inBill?(partOf(r)?' · one bill':' · waiting for next bill'):''}</span></div>${rows}</div>`;
   }).join('');
   $('#instSum').innerHTML=`<div><span class="label">Per month</span><span class="v">${peso(monthly)}</span></div><div><span class="label">Still to pay</span><span class="v">${peso(remaining)}</span></div><div><span class="label">All done by</span><span class="v">${ym(last)}</span></div>`;
   $('#instList').innerHTML=html||'<p class="empty">No installments yet.</p>';
@@ -460,11 +467,11 @@ const altTerms=s=>String(s.terms||'').split(/[^0-9]+/).map(x=>parseInt(x,10)).fi
 const known=s=>!(s.rate===null||s.rate===''||s.rate===undefined);
 // an installment's remaining monthly payment dates (the one already paid this cycle included)
 function loanDates(l){
-  const d0=dueDate(dayOf(l),cycleStart()),n=Math.max(0,Math.round(num(l.left)))+(isPaid(l)?1:0),out=[];
+  const d0=dueDate(dayOf(l),cycleStart()),n=Math.max(0,Math.round(num(l.left)))+(paidInCycle(l)?1:0),out=[];
   for(let k=0;k<Math.min(n,60);k++){const f=new Date(d0.getFullYear(),d0.getMonth()+k,1);out.push(new Date(f.getFullYear(),f.getMonth(),Math.min(dayOf(l),dim(f.getFullYear(),f.getMonth()))))}
   return out;
 }
-const loansIn=(start,skipPaid)=>{const end=shiftCycle(start,1);return S.items.filter(l=>l.kind==='loan'&&!l.inCard&&!hasParts(l)&&num(l.amount)>0&&!(skipPaid&&isPaid(l)&&inCycle(l,start))).reduce((s,l)=>s+num(l.amount)*loanDates(l).filter(d=>d>=start&&d<end).length,0)};
+const loansIn=(start,skipPaid)=>{const end=shiftCycle(start,1);return S.items.filter(l=>l.kind==='loan'&&!l.inCard&&!hasParts(l)&&num(l.amount)>0&&!(skipPaid&&paidInCycle(l)&&inCycle(l,start))).reduce((s,l)=>s+num(l.amount)*loanDates(l).filter(d=>d>=start&&d<end).length,0)};
 const fixedIn=start=>S.items.filter(i=>(i.kind==='essential'||i.kind==='bill')&&inCycle(i,start)).reduce((s,i)=>s+num(i.amount),0);
 let needOverride=null;
 function quote(s,need){
@@ -631,7 +638,7 @@ function cycleInfo(){
 }
 // every payment still to come on one installment, with its date and what's left after it
 function schedInfo(i){
-  const total=Math.round(num(i.total)),dates=loanDates(i).filter((d,k)=>!(isPaid(i)&&k===0)),amt=num(i.amount);
+  const total=Math.round(num(i.total)),dates=loanDates(i).filter((d,k)=>!(paidInCycle(i)&&k===0)),amt=num(i.amount);
   if(!dates.length){infoWin(planLabel(i),i.bbTerm?'<p class="small">The statement didn\'t show how many months this has, so its schedule isn\'t known yet.</p>':'<p class="small">No payments left.</p>');return}
   const first=total?total-dates.length+1:null;
   const rows=dates.map((d,k)=>[`${first?`<span class="plan-of">${first+k}/${total}</span>`:''}${fmtD(d)}, ${d.getFullYear()}`,peso(amt)]);
@@ -890,14 +897,45 @@ function bbCutoff(){
 const bbExpired=(due,cutoff)=>/^\d{4}-\d{2}-\d{2}$/.test(due||'')&&due<cutoff;
 function pruneExpiredBB(){
   const cutoff=bbCutoff(),expired=S.items.filter(i=>bbExpired(i.bbDue,cutoff));
-  if(!expired.length)return false;
-  const removed=new Set(expired),refs=new Set(expired.map(i=>i.bbRef).filter(Boolean));
-  expired.forEach(i=>{const a=i.kind==='card'&&acctOf(i);if(a&&i.bbKey)a.bbKey=i.bbKey});
-  S.items=S.items.filter(i=>!removed.has(i));
-  // Keep card accounts and future installment schedules. Loan breakdowns
-  // become standalone schedules when their enclosing statement expires.
-  S.items.forEach(i=>{if(refs.has(i.inBill))delete i.inBill});
-  return true;
+  expired.forEach(retireBBStatement);
+  return expired.length>0;
+}
+// A monthly statement is temporary; its installment plans are permanent.
+function retireBBStatement(it){
+  const account=it.kind==='card'&&acctOf(it);
+  if(account&&it.bbKey)account.bbKey=it.bbKey;
+  // Upgrade older one-plan loans whose schedule lived on the statement itself.
+  if(it.kind==='loan'&&!hasParts(it)&&num(it.total)>0&&it.left!=null){
+    const ref=it.bbRef||it.bbKey||genKey(),k='L'+ref+'|'+squash(it.name)+'|'+it.total;
+    it.bbRef=ref;
+    if(!S.items.some(i=>i.bbInst===k)){
+      const plan={...it,id:uid++,inBill:ref,bbInst:k};
+      ['bbDue','bbKey','bbRef'].forEach(key=>delete plan[key]);S.items.push(plan);
+    }
+  }
+  S.items.forEach(i=>{if((it.bbRef&&i.inBill===it.bbRef)||(account&&i.inCard===account.key)){
+    i.bbWaiting=true;if(!i.lender)i.lender=it.lender||it.name;
+  }});
+  S.items=S.items.filter(i=>i!==it);
+}
+function bbPaymentState(it,b){
+  const statement=String(b.statement_id||b.due_date),same=it.bbStatement===statement;
+  const history=S.items.filter(i=>i!==it&&((it.bbKey&&i.inBill===it.bbKey)||(it.acct&&i.inCard===it.acct))&&i.bbStatement===statement);
+  const paid=(same&&isPaid(it))||(!it.bbStatement&&isPaid(it)&&it.bbDue===b.due_date)||it.bbPaidDue===b.due_date||b.paid===true||(history.length>0&&history.every(isPaid));
+  let changed=false;
+  const set=(key,value)=>{if(it[key]!==value){it[key]=value;changed=true}};
+  if(!same){['paidAt','paidCycle','prevLeft'].forEach(key=>{if(key in it){delete it[key];changed=true}})}
+  set('bbStatement',statement);set('bbStatementDue',b.due_date);set('bbWaiting',false);
+  if(paid)set('bbPaidStatement',statement);
+  return changed;
+}
+const planIdentity=value=>squash(String(value||'').replace(/\b\d{1,3}\s*(?:\/|of\s+)\s*\d{1,3}\b/gi,''));
+function existingBBPlan(key,x,owns){
+  const exact=S.items.find(i=>i.bbInst===key);if(exact)return exact;
+  const candidates=S.items.filter(i=>i.bbInst&&owns(i)&&num(i.total)===x.total&&near(i.amount,x.amt));
+  const named=candidates.filter(i=>planIdentity(i.name)===planIdentity(x.desc)),older=named.length?named:candidates;
+  if(older.length===1){older[0].bbInst=key;return older[0]}
+  return null;
 }
 // BillBuddy's bill type -> the planner's. Newer feeds send `type` (credit_card, loan, utility, insurance,
 // other) next to a finer `category` (personal_loan, electricity…); feeds with neither are credit cards.
@@ -930,16 +968,20 @@ async function syncBillBuddy(){
     if(!cloudReady||S!==state||bbConf().url!==url||bbConf().key!==key)return;
     if(r.status===401){bbState('off','Wrong API key');return}
     if(!r.ok)throw new Error('BillBuddy HTTP '+r.status);
-    const j=await r.json();if(!j.ok||!Array.isArray(j.bills))throw new Error(j.error||'Invalid BillBuddy feed');
+    const j=await r.json();if(!j.ok||!Array.isArray(j.bills)||!j.bills.every(b=>b&&typeof b==='object'&&typeof b.bank==='string'&&typeof b.due_date==='string'))throw new Error(j.error||'Invalid BillBuddy feed');
     if(!cloudReady||S!==state||bbConf().url!==url||bbConf().key!==key)return;
-    bbLast=j.bills;applyBB(j.bills);
+    bbLast=j.bills;applyBB(j.bills,{reconcile:j.complete===true});
   }catch(e){if(S===state&&bbConf().url===url&&bbConf().key===key){console.warn('BillBuddy sync failed',e);bbState('off','Could not reach BillBuddy. Check the link.')}return}
   finally{clearTimeout(timeout);bbBusy=false;if(bbAgain){bbAgain=false;setTimeout(syncBillBuddy,0)}}
 }
 let bbLast=[];
-function applyBB(bills){
+function applyBB(bills,{reconcile=false}={}){
   const cutoff=bbCutoff();bills=bills.filter(b=>b&&typeof b==='object'&&!bbExpired(b.due_date,cutoff));
   let changed=pruneExpiredBB();const claimed=new Set();
+  if(reconcile){
+    const keys=new Set(bills.map(b=>b.account_key).filter(Boolean)),dates=new Set(bills.map(b=>b.due_date+'|'+squash(b.bank)));
+    S.items.filter(i=>i.bbDue&&!i.bbInst&&!(i.bbKey?keys.has(i.bbKey):dates.has(i.bbDue+'|'+squash(i.name.replace(/ (CC|Loan)$/,''))))).forEach(i=>{retireBBStatement(i);changed=true});
+  }
   const byKey=new Map(S.items.filter(i=>i.bbKey).map(i=>[i.bbKey,i]));
   bills.forEach(b=>{
     const bank=squash(b.bank),due=parseD(b.due_date),amt=num(b.amount);
@@ -981,13 +1023,12 @@ function applyBB(bills){
     if(l4){const a=it.kind==='card'&&acctOf(it);
       if(a){if(a.last4!==l4){a.last4=l4;changed=true}}else if(it.bbLast4!==l4){it.bbLast4=l4;changed=true}}
     // everything else the statement says: card limit and statement day, installment breakdown
+    if(bbPaymentState(it,b))changed=true;
     if(adoptBB(it,b,due))changed=true;
     // a bill BillBuddy couldn't type ("other") is sorted by the AI once, if one is set up
     const unsure=bbTyped(b)&&!BB_KIND[b.type]&&!BB_KIND[b.product_type]&&!BB_KIND[b.category]&&!/credit_?card|loan|credit_line|bnpl/i.test(String(b.category||b.product_type||''));
     if(unsure&&!it.bbAi&&!it.bbUnsure){it.bbUnsure=true;changed=true}
     // remember the statement you marked paid, so it is not brought back after payday
-    if(isPaid(it)){if(it.bbDue&&it.bbPaidDue!==it.bbDue){it.bbPaidDue=it.bbDue;changed=true}return}
-    if(it.bbPaidDue===b.due_date)return;
     if(num(it.amount)===amt&&num(it.day)===due.getDate()&&it.bbDue===b.due_date)return;
     it.amount=amt;it.day=due.getDate();it.bbDue=b.due_date;changed=true;
   });
@@ -1031,44 +1072,42 @@ function adoptBB(it,b,due){
     if(!bbList(b))return ch;                        // an older feed: leave the card's installments alone
     const seen=new Set();
     plans.forEach(x=>{
-      const k=a.key+'|'+squash(x.desc)+'|'+x.total;
+      const k=a.key+'|'+planIdentity(x.desc)+'|'+x.total+'|'+x.amt.toFixed(2);
       seen.add(k);
-      let i=S.items.find(y=>y.bbInst===k);
+      let i=existingBBPlan(k,x,y=>y.inCard===a.key);
       if(!i){const home=planHome(k,x,b,null);if(home==='wait')return;   // the AI is being asked where it goes
         if(home){i=home;i.bbInst=k}
         else{i={id:uid++,name:planName(x),kind:'loan',inCard:a.key,bbInst:k,amount:null,day:due.getDate(),left:null,total:null,rate:null};S.items.push(i)}
         ch=true}
       set(i,'inCard',a.key);set(i,'amount',x.amt);set(i,'day',due.getDate());
+      if(bbPaymentState(i,b))ch=true;
+      if(paidNow)set(i,'bbPaidStatement',i.bbStatement);
       if(x.total){set(i,'total',x.total);set(i,'left',planLeft(x,paidNow));if(i.bbTerm){delete i.bbTerm;ch=true}}else set(i,'bbTerm',x.paid);
     });
     // a plan the newest statement no longer lists after its last payment is finished
-    const before=S.items.length;
-    S.items=S.items.filter(i=>!(i.inCard===a.key&&i.bbInst&&!seen.has(i.bbInst)&&num(i.left)<=1));
-    if(S.items.length!==before)ch=true;
-  }else if(it.kind==='loan'&&(plans=plans.filter(x=>x.total)).length&&(plans.length>1||hasParts(it))){
+    S.items.filter(i=>i.inCard===a.key&&i.bbInst&&!seen.has(i.bbInst)).forEach(i=>set(i,'bbWaiting',true));
+  }else if(it.kind==='loan'&&(plans=plans.filter(x=>x.total)).length){
     // several loans on one statement (UnionBank's two personal loans): each is its own installment under this
     // bill, or the one you entered yourself (see planHome); the bill stays one bill in Bills and This cycle
     // the bill's own key for its installments: BillBuddy's account key when it sent one, else one of ours
     if(!it.bbRef){it.bbRef=it.bbKey||genKey();ch=true}
     const seen=new Set();let most=0,longest=0;
     plans.forEach(x=>{
-      const k='L'+it.bbRef+'|'+squash(x.desc)+'|'+x.total;
+      const k='L'+it.bbRef+'|'+planIdentity(x.desc)+'|'+x.total+'|'+x.amt.toFixed(2);
       seen.add(k);
-      let i=S.items.find(y=>y.bbInst===k);
+      let i=existingBBPlan(k,x,y=>y.inBill===it.bbRef);
       if(!i){const home=planHome(k,x,b,null);if(home==='wait')return;
         if(home){i=home;i.bbInst=k}
         else{i={id:uid++,name:planName(x),kind:'loan',inBill:it.bbRef,bbInst:k,amount:null,day:due.getDate(),left:null,total:null,rate:null};S.items.push(i)}
         ch=true}
       const left=planLeft(x,paidNow);most=Math.max(most,left);longest=Math.max(longest,x.total);
       set(i,'inBill',it.bbRef);set(i,'amount',x.amt);set(i,'day',due.getDate());set(i,'total',x.total);set(i,'left',left);
+      if(!i.lender)set(i,'lender',it.lender||it.name);
+      if(bbPaymentState(i,b))ch=true;
+      if(paidNow)set(i,'bbPaidStatement',i.bbStatement);
     });
-    const before=S.items.length;
-    S.items=S.items.filter(i=>!(i.inBill===it.bbRef&&i.bbInst&&!seen.has(i.bbInst)&&num(i.left)<=1));
-    if(S.items.length!==before)ch=true;
-    if(most)set(it,'left',most);if(longest)set(it,'total',longest);
-  }else if(it.kind==='loan'&&plans.length){
-    const x=plans.length===1?plans[0]:plans.find(y=>near(y.amt,b.amount)||near(y.amt,it.amount));
-    if(x){set(it,'total',x.total);set(it,'left',planLeft(x,paidNow))}
+    S.items.filter(i=>i.inBill===it.bbRef&&i.bbInst&&!seen.has(i.bbInst)).forEach(i=>set(i,'bbWaiting',true));
+    set(it,'left',most);if(longest)set(it,'total',longest);
   }
   return ch;
 }
@@ -1176,7 +1215,8 @@ $('#bbClear').addEventListener('click',()=>{
   if(S.bb){delete S.bb;save()}
   $('#bbUrl').value='';$('#bbKey').value='';bbState('off','Not connected');
 });
-setInterval(()=>{if(document.hidden)return;const expired=pruneExpiredBB(),rolled=rollover();if(expired||rolled)save();syncBillBuddy();if(editingId==null&&!document.activeElement?.closest?.('.form'))renderItems();render()},60000);
+setInterval(()=>{if(!document.hidden&&!bbBusy)syncBillBuddy()},3000);
+setInterval(()=>{if(document.hidden)return;const expired=pruneExpiredBB(),rolled=rollover();if(expired||rolled)save();if(editingId==null&&!document.activeElement?.closest?.('.form'))renderItems();render()},60000);
 
 // ---------- AI: should I take this loan? ----------
 // The planner does the arithmetic itself: it lays the new loan's payments over the coming pay cycles

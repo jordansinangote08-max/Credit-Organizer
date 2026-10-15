@@ -238,6 +238,8 @@ button:not(:disabled):active{transform:scale(.97)}
 .loan:first-child{border-top:0;padding-top:0}
 .bar{height:6px;background:var(--sunk);border-radius:999px;overflow:hidden}
 .bar i{display:block;height:100%;background:var(--accent)}
+.bar.is-unpaid i{background:var(--bad)}
+.bar.is-paid i{background:var(--ok)}
 .loan .acts{display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap}
 
 /* ---------- if short ---------- */
