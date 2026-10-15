@@ -29,8 +29,6 @@ const num=v=>{const n=parseFloat(v);return isFinite(n)?n:0};
 const cents=x=>Math.round(num(x)*100)/100;
 const peso=n=>{const v=Math.round(n*100)/100;return (v<0?'−₱':'₱')+Math.abs(v).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-// CSP has no 'unsafe-inline': dynamic bar widths go through the DOM (allowed), never style="".
-const barW=root=>root.querySelectorAll('[data-w]').forEach(el=>{el.style.width=el.dataset.w});
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const WD=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const fmtD=d=>MON[d.getMonth()]+' '+d.getDate();
@@ -40,11 +38,11 @@ const parseD=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s||'');return m?new Da
 let uid=1,S=clone(DEFAULTS);
 // Everything lives in Supabase. Earlier versions kept data in this browser: it moves to the
 // account on its first sign-in (if the account is still empty) and is then deleted here.
-const LEGACY_KEYS=[KEY,KEY+'.billbuddy'];
-let legacy=null,legacyDropped=false; // legacyDropped: this browser had saved data from an older version that couldn't be read
+const LEGACY_KEYS=[KEY,KEY+'.tab',KEY+'.billbuddy'];
+let legacy=null;
 try{
   const old=JSON.parse(localStorage.getItem(KEY)),bb=JSON.parse(localStorage.getItem(KEY+'.billbuddy'));
-  if(old&&Array.isArray(old.items)){if(old.ver===DEFAULTS.ver)legacy=old;else legacyDropped=true}
+  if(old&&Array.isArray(old.items)&&old.ver===DEFAULTS.ver)legacy=old;
   if(bb&&bb.url&&bb.key){legacy=legacy||clone(DEFAULTS);legacy.bb=bb}
 }catch(e){}
 
@@ -70,10 +68,7 @@ function prevPay(d){
 // Paydays are worked out once and remembered: every bill, row and chart asks for the same few dates.
 // The memo starts over whenever the schedule changes. Callers never change the dates they get back.
 let payMemo=new Map(),paySig='';
-function payCache(){const sig=[payFreq(),S.payday,S.payday2,S.payweekday].join();
-  if(sig!==paySig){payMemo=new Map();paySig=sig}
-  else if(payMemo.size>2000){let n=0;for(const k of payMemo.keys()){if(n++>=500)break;payMemo.delete(k)}} // evict the oldest, not everything
-  return payMemo}
+function payCache(){const sig=[payFreq(),S.payday,S.payday2,S.payweekday].join();if(sig!==paySig||payMemo.size>2000){payMemo=new Map();paySig=sig}return payMemo}
 function shiftCycle(start,k){
   const m=payCache(),key=start.getTime()+'|'+k;let d=m.get(key);
   if(!d){d=start;for(let j=k;j>0;j--)d=nextPay(d);for(let j=k;j<0;j++)d=prevPay(d);m.set(key,d)}
@@ -177,11 +172,11 @@ const last4Of=i=>(i.kind==='card'&&acctOf(i)?.last4)||i.bbLast4||'';
 
 // ---------- saving ----------
 // Saved to Supabase only (see the cloud section at the end); nothing is kept in the browser.
-let sb=null,cloudUser=null,cloudAt=null,cloudTimer=null,cloudReady=false,cloudStale=false,pushing=false,noWriter=false,draft=null; // draft: see the end
+let sb=null,cloudUser=null,cloudAt=null,cloudTimer=null,cloudReady=false,pushing=false,noWriter=false,draft=null; // draft: see the end
 function setSync(cls,txt){const el=$('#syncState');el.className='sync '+cls;el.textContent=txt}
 const snapshot=()=>JSON.stringify(S,(k,v)=>k==='id'?undefined:v);
 function save(){
-  if(!cloudReady||cloudStale)return;
+  if(!cloudReady)return;
   if(draft){setSync('draft','Draft · nothing is saved');return}
   clearTimeout(cloudTimer);setSync('busy','Saving…');
   cloudTimer=setTimeout(pushCloud,700);
@@ -194,7 +189,7 @@ const isPaid=i=>i.paidCycle===cycleKey();
 const isHiddenPaid=i=>isPaid(i)&&Date.now()-num(i.paidAt)>=DAY;
 function markPaid(i){i.paidAt=Date.now();i.paidCycle=cycleKey();if(i.kind==='loan'){i.prevLeft=num(i.left);i.left=Math.max(0,num(i.left)-1)}
   if(i.bbRef)S.items.filter(y=>y.inBill===i.bbRef&&!isPaid(y)).forEach(markPaid)}
-function undoPaid(i){if(i.kind==='loan'&&i.prevLeft!=null)i.left=i.total!=null?Math.min(i.prevLeft,num(i.total)):i.prevLeft;delete i.paidAt;delete i.paidCycle;delete i.prevLeft
+function undoPaid(i){if(i.kind==='loan'&&i.prevLeft!=null)i.left=i.prevLeft;delete i.paidAt;delete i.paidCycle;delete i.prevLeft
   if(i.bbRef)S.items.filter(y=>y.inBill===i.bbRef&&isPaid(y)).forEach(undoPaid)}
 function rollover(){
   const key=cycleKey();let changed=false;
@@ -226,17 +221,12 @@ function compute(){
 }
 
 // ---------- hero ----------
-let statusCache=''; // like paintMon: don't rebuild the live region unless it changed
 function renderStatus(C){
   const el=$('#status');
   const flow=`<div class="flow"><span>Money in <b>${peso(C.avail)}</b></span><span>Bills <b>${peso(C.total)}</b></span>${C.paidAmt>0?`<span>Paid so far <b>${peso(C.paidAmt)}</b></span>`:''}</div>`;
   const more=`<span class="more">Breakdown ${IC.chev}</span>`;
-  const cls=C.gap>0.004?'status bad':'status ok';
-  const html=C.gap>0.004?`<span class="label">Short this cycle</span><span class="big">${peso(C.gap)}</span>${flow}${more}`
-    :`<span class="label">${C.surplus>0.004?'Extra after all bills':'Everything is covered'}</span><span class="big">${peso(Math.max(0,C.surplus))}</span>${flow}${more}`;
-  if(statusCache===cls+'|'+html)return;
-  statusCache=cls+'|'+html;
-  el.className=cls;el.innerHTML=html;
+  if(C.gap>0.004){el.className='status bad';el.innerHTML=`<span class="label">Short this cycle</span><span class="big">${peso(C.gap)}</span>${flow}${more}`}
+  else{el.className='status ok';el.innerHTML=`<span class="label">${C.surplus>0.004?'Extra after all bills':'Everything is covered'}</span><span class="big">${peso(Math.max(0,C.surplus))}</span>${flow}${more}`}
 }
 
 // ---------- this cycle ----------
@@ -335,7 +325,6 @@ function renderItems(){
   // installments billed with a card are part of its statement, so the Bills tab doesn't list them twice
   const hidden=S.items.filter(i=>!billed(i)&&isHiddenPaid(i)),vis=S.items.filter(i=>!billed(i)&&!isHiddenPaid(i)&&inCycle(i,start));
   const done=S.items.filter(i=>!billed(i)&&ended(i,start));
-  const undated=S.items.filter(i=>!billed(i)&&repeats(i)&&i.once&&!exactDue(i)); // a one-time bill with no date shows nowhere else
   const later=S.items.filter(i=>repeats(i)&&i.once&&!i.bbDue&&exactDue(i)>=shiftCycle(start,1)).sort((a,b)=>exactDue(a)-exactDue(b));
   const html=S.cats.map(c=>{
     const its=vis.filter(i=>i.cat===c.key);if(!its.length)return '';
@@ -350,8 +339,6 @@ function renderItems(){
     (hidden.length?`<details class="paidlist"><summary>Paid this cycle (${hidden.length})</summary><ul>${hidden.map(i=>`<li><span>${esc(i.name)}</span><span class="num">${peso(num(i.amount))}</span></li>`).join('')}</ul></details>`:'')+
     (later.length?`<details class="paidlist"><summary>Coming in a later cycle (${later.length})</summary><div class="later">${later.map(i=>
       `<div class="laterrow"><span>${esc(i.name||'Untitled bill')} <span class="muted">· ${fmtD(exactDue(i))}, ${exactDue(i).getFullYear()}</span></span><span class="num">${peso(num(i.amount))}</span>${editBtn(`data-edit="${i.id}"`,i.name||"bill")}</div>`).join('')}</div></details>`:'')+
-    (undated.length?`<details class="paidlist"><summary>No date set (${undated.length})</summary><div class="later">${undated.map(i=>
-      `<div class="laterrow"><span>${esc(i.name||'Untitled bill')} <span class="muted">· open it and set a date</span></span><span class="num">${peso(num(i.amount))}</span>${editBtn(`data-edit="${i.id}"`,i.name||"bill")}</div>`).join('')}</div></details>`:'')+
     (done.length?`<details class="paidlist"><summary>Ended (${done.length})</summary><div class="later">${done.map(i=>
       `<div class="laterrow"><span>${esc(i.name||'Untitled bill')} <span class="muted">· ${i.once?'was due '+fmtD(exactDue(i)):'stopped after '+MON[untilYm(i.until)%100-1]+' '+Math.floor(untilYm(i.until)/100)}</span></span><span class="num">${peso(num(i.amount))}</span>${editBtn(`data-edit="${i.id}"`,i.name||"bill")}</div>`).join('')}</div></details>`:'');
 }
@@ -419,7 +406,7 @@ function renderInst(){
       const nm=billed(i)||i.bbInst||(i.name&&i.name!==lenderName(i))?planLabel(i):'Installment '+(n+1);
       return `<div class="sub">
         <div class="sub-h"><span class="sub-n"><button class="openw" data-isched="${i.id}" aria-haspopup="dialog" title="Payment schedule">${of?`<span class="plan-of" aria-label="payment ${of.replace('/',' of ')}">${of}</span>`:''}${esc(nm)}${last4Of(i)?`<span class="l4">•••• ${esc(last4Of(i))}</span>`:''}</button></span><span class="pay">${peso(pay)}<span class="muted small">/mo</span></span></div>
-        ${pct!=null?`<div class="bar" role="img" aria-label="${total-left} of ${total} paid"><i data-w="${pct}%"></i></div>`:''}
+        ${pct!=null?`<div class="bar" role="img" aria-label="${total-left} of ${total} paid"><i style="width:${pct}%"></i></div>`:''}
         <div class="sub-f"><div class="facts">${total?`<span><b>${peso(pay*left)}</b> to go</span><span>Last payment <b>${ym(end)}</b></span>`:i.bbTerm?'<span>Months not on the statement</span>':`<span><b>${left}</b> left</span><span><b>${peso(pay*left)}</b> to go</span><span>Last payment <b>${ym(end)}</b></span>`}</div>
         <div class="acts">${billed(i)?'':`${isPaid(i)?`<span class="pill ok">Paid</span>${!isHiddenPaid(i)?undoBtn(`data-iundo="${i.id}"`,i.name):''}`:''}${last4Of(i)?'':`<button class="pill warn ask4" data-iedit4="${i.id}">Add last 4</button>`}${editBtn(`data-iedit="${i.id}"`,i.name)}${left>0&&!isPaid(i)?paidBtn(`data-ipaid="${i.id}"`,i.name):''}`}${billed(i)?editBtn(`data-iedit="${i.id}"`,i.name):''}</div></div>
       </div>`;
@@ -431,7 +418,7 @@ function renderInst(){
       <span class="muted small"><b>${peso(gm)}</b>/mo · <b>${peso(gr)}</b> to go · until ${ym(gl)}${list.length>1?' · '+list.length+' installments':''}${r.inCard?' · billed with the card':r.inBill?' · one bill':''}</span></div>${rows}</div>`;
   }).join('');
   $('#instSum').innerHTML=`<div><span class="label">Per month</span><span class="v">${peso(monthly)}</span></div><div><span class="label">Still to pay</span><span class="v">${peso(remaining)}</span></div><div><span class="label">All done by</span><span class="v">${ym(last)}</span></div>`;
-  $('#instList').innerHTML=html||'<p class="empty">No installments yet.</p>';barW($('#instList'));
+  $('#instList').innerHTML=html||'<p class="empty">No installments yet.</p>';
 }
 
 // ---------- other money ----------
@@ -465,10 +452,8 @@ function payFor(s,B,n){const r=num(s.rate)/100;return s.addon?B*(1+r*n)/n:pmt(B,
 function effRate(s,nOver){
   const r=num(s.rate)/100,f=Math.min(0.99,num(s.fee)/100),n=nOver||Math.max(1,Math.round(num(s.term)||1));
   if(f<=0&&!s.addon)return r;
-  const P=payFor(s,1,n),N=1-f,pvAt=m=>m===0?P*n:P*(1-Math.pow(1+m,-n))/m;
-  let lo=0,hi=1;
-  while(pvAt(hi)>N&&hi<1e12)hi*=2; // widen the bracket: extreme fees can exceed 100%/mo
-  for(let k=0;k<80;k++){const m=(lo+hi)/2;if(pvAt(m)>N)lo=m;else hi=m}
+  const P=payFor(s,1,n),N=1-f;let lo=0,hi=1;
+  for(let k=0;k<80;k++){const m=(lo+hi)/2;const pv=m===0?P*n:P*(1-Math.pow(1+m,-n))/m;if(pv>N)lo=m;else hi=m}
   return (lo+hi)/2;
 }
 const altTerms=s=>String(s.terms||'').split(/[^0-9]+/).map(x=>parseInt(x,10)).filter(x=>x>0);
@@ -476,11 +461,12 @@ const known=s=>!(s.rate===null||s.rate===''||s.rate===undefined);
 // an installment's remaining monthly payment dates (the one already paid this cycle included)
 function loanDates(l){
   const d0=dueDate(dayOf(l),cycleStart()),n=Math.max(0,Math.round(num(l.left)))+(isPaid(l)?1:0),out=[];
-  for(let k=0;k<Math.min(n,600);k++){const f=new Date(d0.getFullYear(),d0.getMonth()+k,1);out.push(new Date(f.getFullYear(),f.getMonth(),Math.min(dayOf(l),dim(f.getFullYear(),f.getMonth()))))}
+  for(let k=0;k<Math.min(n,60);k++){const f=new Date(d0.getFullYear(),d0.getMonth()+k,1);out.push(new Date(f.getFullYear(),f.getMonth(),Math.min(dayOf(l),dim(f.getFullYear(),f.getMonth()))))}
   return out;
 }
 const loansIn=(start,skipPaid)=>{const end=shiftCycle(start,1);return S.items.filter(l=>l.kind==='loan'&&!l.inCard&&!hasParts(l)&&num(l.amount)>0&&!(skipPaid&&isPaid(l)&&inCycle(l,start))).reduce((s,l)=>s+num(l.amount)*loanDates(l).filter(d=>d>=start&&d<end).length,0)};
 const fixedIn=start=>S.items.filter(i=>(i.kind==='essential'||i.kind==='bill')&&inCycle(i,start)).reduce((s,i)=>s+num(i.amount),0);
+let needOverride=null;
 function quote(s,need){
   const f=Math.min(0.99,num(s.fee)/100),n=Math.max(1,Math.round(num(s.term)||1)),avail=num(s.avail);
   let B=need/(1-f),capped=false;if(avail>0&&B>avail){B=avail;capped=true}
@@ -489,22 +475,21 @@ function quote(s,need){
 }
 function renderBorrow(C){
   $('#shortHead').innerHTML=C.gap>0.004
-    ?`<h2>Cover ${peso(C.gap)}</h2><p class="muted small mt4">Cheapest first.</p>`
-    :`<h2>You're not short</h2><p class="muted small mt4">Every bill is covered.</p>`;
-  const need=Math.max(0,C.gap);
+    ?`<h2>Cover ${peso(C.gap)}</h2><p class="muted small" style="margin-top:4px">Cheapest first.</p>`
+    :`<h2>You're not short</h2><p class="muted small" style="margin-top:4px">Every bill is covered.</p>`;
+  const need=needOverride!==null?needOverride:Math.max(0,C.gap);
   const list=$('#credList'),box=$('#srcPick');
   if(need<=0.004){list.innerHTML='';box.innerHTML='';return}
   if(!S.sources.length){box.innerHTML='';list.innerHTML='<p class="empty">No creditors yet. Open Edit creditors to add one.</p>';return}
   const qs=S.sources.map(s=>quote(s,need)).sort((a,b)=>(a.known?0:1)-(b.known?0:1)||(a.e??0)-(b.e??0)||(b.net-a.net));
-  const firstKnown=qs.findIndex(q=>q.known);
-  const pct=x=>x>9.99?'>999%/mo':(x*100).toFixed(2)+'%';
+  const pct=x=>(x*100).toFixed(2)+'%';
   list.innerHTML=qs.map((q,k)=>{
     if(!q.known)return `<div class="cred"><span class="rank">?</span><div><b>${esc(q.s.name)}</b><div class="meta">Add its interest rate in Edit creditors to see the cost.</div></div><div class="right"><span class="pill warn">No rate</span></div></div>`;
-    const bad=q.e>0.03,best=k===firstKnown&&!bad;
+    const bad=q.e>0.03,best=k===0&&!bad;
     const alts=altTerms(q.s).filter(t=>t!==q.n);
     return `<div class="cred"><span class="rank">${k+1}</span><div><b>${esc(q.s.name)}</b>
       <div class="meta"><span>Borrow <b>${peso(q.B)}</b></span>${q.B-q.net>0.004?`<span>Receive <b>${peso(q.net)}</b></span>`:''}<span>${q.n===1?`Repay <b>${peso(q.p)}</b> next month`:`<b>${peso(q.p)}</b> × ${q.n} mo`}</span><span>${pct(q.e)}/mo real cost</span></div>
-      ${q.capped?`<div class="meta tx-bad">Limit covers only ${peso(q.net)}.</div>`:''}
+      ${q.capped?`<div class="meta" style="color:var(--bad)">Limit covers only ${peso(q.net)}.</div>`:''}
       ${alts.length?`<div class="meta">${alts.map(t=>{const p=payFor(q.s,q.B,t);return `${t} mo: <b>${peso(p)}</b>/mo, cost <b>${peso(cents(p)*t-q.net)}</b>`}).join(' · ')}</div>`:''}
     </div><div class="right"><span class="cost">${peso(q.cost)}<small>interest + fees</small></span><span class="pill ${best?'ok':bad?'bad':'warn'}">${best?'Cheapest':bad?'Expensive':'Okay'}</span></div></div>`;
   }).join('');
@@ -521,7 +506,7 @@ function renderBorrow(C){
   box.innerHTML=`<div class="reco ok"><h3>Best option</h3><ul>${parts.map(x=>`<li><span>${esc(x.q.s.name)} · borrow ${peso(x.B)}</span><span class="a">${x.q.n===1?'repay '+peso(x.p):peso(x.p)+' × '+x.q.n}</span></li>`).join('')}</ul>
     <p class="small">Costs <b class="num">${peso(cost)}</b> in interest and fees.</p>
     <p class="reco-total num">${peso(total)}</p>
-    ${rem>0.004?`<p class="small tx-bad">Still ${peso(rem)} short after every creditor.</p>`:''}</div>`;
+    ${rem>0.004?`<p class="small" style="color:var(--bad)">Still ${peso(rem)} short after every creditor.</p>`:''}</div>`;
 }
 function srcFields(s){return `
 
@@ -543,7 +528,7 @@ function renderAhead(C){
   const loans=S.items.filter(i=>i.kind==='loan'&&!i.inCard&&!hasParts(i)&&num(i.amount)>0);
   // one row per pay cycle, until a cycle after the last installment
   const last=Math.max(0,...loans.flatMap(l=>loanDates(l)).map(Number));let n=1;
-  while(n<600&&shiftCycle(C.start,n-1)<=last)n++;
+  while(n<36&&shiftCycle(C.start,n-1)<=last)n++;
   const monthly=payFreq()==='month';
   const scale=Math.max(salary,fixedIn(C.start)+loans.reduce((s,l)=>s+num(l.amount),0))||1;
   let rows='';
@@ -551,9 +536,9 @@ function renderAhead(C){
     const d=shiftCycle(C.start,m),fixed=fixedIn(d);
     const ln=loansIn(d);
     const free=Math.max(0,salary-ln-fixed),w=v=>(v/scale*100).toFixed(2)+'%';
-    rows+=`<div class="mrow"><span>${monthly?MON[d.getMonth()]+' '+String(d.getFullYear()).slice(2):fmtD(d)}</span><div class="track" role="img" aria-label="Installments ${peso(ln)}, rent and bills ${peso(fixed)}, free ${peso(free)}"><div class="seg loan" data-w="${w(ln)}"></div><div class="seg fixed" data-w="${w(fixed)}"></div><div class="seg free" data-w="${w(free)}"></div></div><span class="num tr">${peso(free)}</span></div>`;
+    rows+=`<div class="mrow"><span>${monthly?MON[d.getMonth()]+' '+String(d.getFullYear()).slice(2):fmtD(d)}</span><div class="track" role="img" aria-label="Installments ${peso(ln)}, rent and bills ${peso(fixed)}, free ${peso(free)}"><div class="seg loan" style="width:${w(ln)}"></div><div class="seg fixed" style="width:${w(fixed)}"></div><div class="seg free" style="width:${w(free)}"></div></div><span class="num" style="text-align:right">${peso(free)}</span></div>`;
   }
-  $('#monthList').innerHTML=loans.length?rows:'<p class="empty">No installments listed.</p>';barW($('#monthList'));
+  $('#monthList').innerHTML=loans.length?rows:'<p class="empty">No installments listed.</p>';
 }
 
 // ---------- accounts ----------
@@ -599,15 +584,15 @@ function renderAccounts(){
     return `<div class="acct" data-k="card">
       <div class="acct-h"><h3>${esc(a.name)}${a.last4?`<span class="l4">•••• ${esc(a.last4)}</span>`:`<button class="pill warn ask4" data-aedit4="${a.id}">Add last 4</button>`}</h3>
         <span class="lim">${L>0?peso(L):'—'}<small>credit limit</small></span></div>
-      ${p!==null?`<div class="ubar" role="img" aria-label="${p.toFixed(0)}% of limit used"><i class="${ucls(p)}" data-w="${Math.min(100,p).toFixed(1)}%"></i></div>`:''}
+      ${p!==null?`<div class="ubar" role="img" aria-label="${p.toFixed(0)}% of limit used"><i class="${ucls(p)}" style="width:${Math.min(100,p).toFixed(1)}%"></i></div>`:''}
       <div class="facts">${p!==null?`<span><b>${p.toFixed(0)}%</b> used</span>`:''}${facts.join('')}</div>
       ${cardPlans(a,bill)}
       <div class="acts">${editBtn(`data-aedit="${a.id}"`,a.name)}</div>
     </div>`;
   }).join('');
-  $('#acctList').innerHTML=html||'<p class="empty">No cards yet.</p>';barW($('#acctList'));
+  $('#acctList').innerHTML=html||'<p class="empty">No cards yet.</p>';
   const p=lim>0?used/lim*100:null;
-  $('#acctSum').innerHTML=`<div><span class="label">Total limit</span><span class="v">${peso(lim)}</span></div><div><span class="label">Total used</span><span class="v">${peso(used)}</span></div><div><span class="label">Overall usage</span><span class="v ${p===null?'':p>50?'tx-bad':p>30?'tx-warn':'tx-ok'}">${p===null?'—':p.toFixed(0)+'%'}</span></div>`;
+  $('#acctSum').innerHTML=`<div><span class="label">Total limit</span><span class="v">${peso(lim)}</span></div><div><span class="label">Total used</span><span class="v">${peso(used)}</span></div><div><span class="label">Overall usage</span><span class="v" style="color:${p===null?'inherit':p>50?'var(--bad)':p>30?'var(--warn)':'var(--ok)'}">${p===null?'—':p.toFixed(0)+'%'}</span></div>`;
 }
 
 // ---------- render ----------
@@ -631,7 +616,7 @@ document.addEventListener('click',e=>{
   f.setAttribute('aria-expanded',!folded.has(k));box&&box.classList.toggle('folded',folded.has(k));
 });
 function infoWin(title,html){$('#infoTitle').textContent=title;$('#infoBody').innerHTML=html;const d=$('#infoDlg');if(!d.open)d.showModal()}
-$('#infoDlg').addEventListener('click',e=>{if(e.target===e.currentTarget){e.currentTarget.close();return}if(e.target.closest('[data-infoclose]'))$('#infoDlg').close()});
+$('#infoDlg').addEventListener('click',e=>{if(e.target.closest('[data-infoclose]'))$('#infoDlg').close()});
 const infoRows=rows=>`<ul class="ilist">${rows.map(([a,b,c])=>`<li${c?` class="${c}"`:''}><span>${a}</span><span class="num">${b}</span></li>`).join('')}</ul>`;
 // This cycle, line by line: what comes in, what each category of bills takes, and what's left
 function cycleInfo(){
@@ -662,12 +647,9 @@ function renderAll(){runJobs(['bills','money','src','ai']);render()}
 function flushStale(){if(!stale.size)return;const C=compute();[...stale].forEach(j=>{if(shown(j)){stale.delete(j);JOBS[j](C);paintMon(JOB_PANEL[j]||j)}})}
 window.addEventListener('beforeprint',()=>{const C=compute();Object.keys(JOBS).forEach(j=>JOBS[j](C));stale.clear()});
 const commit=()=>{save();render()};
-// typing fires input on every keystroke: save at once, repaint once the typing pauses
-let typeTimer=null;
-const repaintSoon=all=>{clearTimeout(typeTimer);typeTimer=setTimeout(()=>{typeTimer=null;all?renderAll():render()},150)};
 
 // ---------- events ----------
-['salary','payday','payday2','payweekday'].forEach(k=>{$('#'+k).addEventListener('input',e=>{S[k]=e.target.value===''?(k==='salary'?0:null):num(e.target.value);save();repaintSoon(k!=='salary')})});
+['salary','payday','payday2','payweekday'].forEach(k=>{$('#'+k).addEventListener('input',e=>{S[k]=e.target.value===''?(k==='salary'?0:null):num(e.target.value);save();if(k==='salary')render();else renderAll()})});
 $('#payfreq').addEventListener('change',e=>{
   const was=payFreq();S.payfreq=e.target.value;
   // monthly and twice-a-month share the payday box: each keeps its own day, so switching back restores it
@@ -685,9 +667,9 @@ function syncInputs(){
   $('#salLabel').textContent=f==='month'?'Salary this cycle':'Salary each payday';
 }
 // the buffer field sits in the Pay ahead window and keeps your typing; everything that depends on it redraws around it
-$('#buffer').addEventListener('input',e=>{S.buffer=Math.max(0,num(e.target.value));save();repaintSoon(false)});
+$('#buffer').addEventListener('input',e=>{S.buffer=Math.max(0,num(e.target.value));save();render()});
 document.addEventListener('click',e=>{if(e.target.closest('[data-ahead]')){$('#buffer').value=num(S.buffer);$('#aheadDlg').showModal()}});
-$('#aheadDlg').addEventListener('click',e=>{if(e.target===e.currentTarget){e.currentTarget.close();return}if(e.target.closest('[data-aheadclose]'))$('#aheadDlg').close()});
+$('#aheadDlg').addEventListener('click',e=>{if(e.target.closest('[data-aheadclose]'))$('#aheadDlg').close()});
 document.addEventListener('click',e=>{const g=e.target.closest('[data-goto]');if(g)selectTab(g.dataset.goto)});
 
 $('#billBody').addEventListener('input',e=>{
@@ -869,7 +851,6 @@ $('#sheetDlg').addEventListener('close',()=>{
 });
 $('#acctAdd').addEventListener('click',()=>{const a={id:uid++,key:genKey(),name:'',last4:'',limit:null,stmt:null};S.accounts.push(a);S.items.push({id:uid++,name:'',kind:'card',amount:null,day:clampPd(),acct:a.key});ensureLinks();openSheet('acct',a,true,'#an'+a.id)});
 function selectTab(name){
-  try{localStorage.setItem(KEY+'.tab',name)}catch(e){}
   document.querySelectorAll('.tab').forEach(x=>{const on=x.dataset.tab===name;x.setAttribute('aria-selected',on);x.tabIndex=on?0:-1;
     if(on&&x.parentElement.scrollWidth>x.parentElement.clientWidth)x.parentElement.scrollTo({left:x.offsetLeft-x.parentElement.clientWidth/2+x.offsetWidth/2,behavior:'smooth'})});
   document.querySelectorAll('[data-panel]').forEach(p=>p.hidden=p.dataset.panel!==name);
@@ -892,8 +873,6 @@ function adopt(next){
   S=next;prepare();rollover();editingId=null;syncInputs();renderAll();fillBB();fillAI();
 }
 prepare();rollover();syncInputs();renderAll();
-{let t=null;try{t=localStorage.getItem(KEY+'.tab')}catch(e){} // the tab you had open is remembered
- if(t&&document.querySelector('.tab[data-tab="'+CSS.escape(t)+'"]'))selectTab(t)}
 // ---------- BillBuddy ----------
 // Card bills come from BillBuddy: each one fills the matching credit card's
 // statement amount and due day here. Matched by bank name ("RCBC" -> "RCBC CC").
@@ -930,13 +909,12 @@ async function syncBillBuddy(){
   if(bbBusy){bbAgain=true;return}bbBusy=true;
   let bills;
   try{
-    const r=await fetch(url,{headers:{Authorization:'Bearer '+key},cache:'no-store',signal:AbortSignal.timeout(25000)});
+    const r=await fetch(url,{headers:{Authorization:'Bearer '+key},cache:'no-store'});
     if(r.status===401){bbState('off','Wrong API key');return}
     const j=await r.json();if(!j.ok)throw new Error(j.error||'BillBuddy returned an error');bills=j.bills||[];
   }catch(e){console.warn('BillBuddy sync failed',e);bbState('off','Could not reach BillBuddy. Check the link.');return}
   finally{bbBusy=false;if(bbAgain){bbAgain=false;setTimeout(syncBillBuddy,0)}}
-  bbLast=bills;
-  try{applyBB(bills)}catch(e){console.warn('BillBuddy sync failed',e);bbState('off','BillBuddy sent data we could not read.')}
+  bbLast=bills;applyBB(bills);
 }
 let bbLast=[];
 function applyBB(bills){
@@ -1041,7 +1019,7 @@ function adoptBB(it,b,due){
     });
     // a plan the newest statement no longer lists after its last payment is finished
     const before=S.items.length;
-    S.items=S.items.filter(i=>!(i.inCard===a.key&&i.bbInst&&!seen.has(i.bbInst)&&i.left!=null&&num(i.left)<=1));
+    S.items=S.items.filter(i=>!(i.inCard===a.key&&i.bbInst&&!seen.has(i.bbInst)&&num(i.left)<=1));
     if(S.items.length!==before)ch=true;
   }else if(it.kind==='loan'&&(plans=plans.filter(x=>x.total)).length&&(plans.length>1||hasParts(it))){
     // several loans on one statement (UnionBank's two personal loans): each is its own installment under this
@@ -1061,14 +1039,12 @@ function adoptBB(it,b,due){
       set(i,'inBill',it.bbRef);set(i,'amount',x.amt);set(i,'day',due.getDate());set(i,'total',x.total);set(i,'left',left);
     });
     const before=S.items.length;
-    S.items=S.items.filter(i=>!(i.inBill===it.bbRef&&i.bbInst&&!seen.has(i.bbInst)&&i.left!=null&&num(i.left)<=1));
+    S.items=S.items.filter(i=>!(i.inBill===it.bbRef&&i.bbInst&&!seen.has(i.bbInst)&&num(i.left)<=1));
     if(S.items.length!==before)ch=true;
     if(most)set(it,'left',most);if(longest)set(it,'total',longest);
   }else if(it.kind==='loan'&&plans.length){
     const x=plans.length===1?plans[0]:plans.find(y=>near(y.amt,b.amount)||near(y.amt,it.amount));
-    // a cut-off term (total 0) means the statement hid the term: keep what we knew, don't mark it finished
-    if(x&&x.total){set(it,'total',x.total);set(it,'left',planLeft(x,paidNow));if(it.bbTerm){delete it.bbTerm;ch=true}}
-    else if(x&&!it.total)set(it,'bbTerm',x.paid);
+    if(x){set(it,'total',x.total);set(it,'left',planLeft(x,paidNow))}
   }
   return ch;
 }
@@ -1103,9 +1079,8 @@ async function aiPlacePlans(){
   let r=null;
   try{r=await aiAsk({name:'plan_place',purpose:'place',system:PLACE_SYSTEM,schema:PLACE_SCHEMA,check:checkPlace,priority:'low',out:60+40*q.length,user})}
   catch(e){console.warn('AI placing skipped:',e.kind||e.message)}
-  q.forEach(p=>placeBusy.delete(p.k));
+  q.forEach(p=>{placeBusy.delete(p.k);placeTried.add(p.k)});
   if(!r)return applyBB(bbLast);                // no answer: each plan is placed as new
-  q.forEach(p=>placeTried.add(p.k));           // only tried when it worked: a failure retries next sync
   q.forEach((p,n)=>{const home=(r.a.find(x=>x.plan==='p'+n)||{}).home,y=p.c.find(c=>'i'+c.id===home);
     if(y&&!y.bbInst&&!S.items.some(z=>z.bbInst===p.k))y.bbInst=p.k;else S.bbHome={...(S.bbHome||{}),[p.k]:'new'}});
   save();applyBB(bbLast);
@@ -1136,10 +1111,10 @@ async function aiSortBills(){
   if(S.aiSortOff||!aiReady())return;
   const todo=S.items.filter(i=>i.bbUnsure&&!i.bbAi&&i.bbKey&&!aiSortTried.has(i.bbKey));
   if(!todo.length)return;
+  todo.forEach(i=>aiSortTried.add(i.bbKey));
   const user='Sort these bills:\n'+JSON.stringify(todo.map(i=>({key:i.bbKey,name:i.name,amount:Math.round(num(i.amount)*100)/100})));
   try{
     const r=await aiAsk({name:'bill_sort',purpose:'sort',system:SORT_SYSTEM,schema:SORT_SCHEMA,check:checkSort,priority:'low',out:200,user});
-    todo.forEach(i=>aiSortTried.add(i.bbKey)); // only tried when it worked: a failure retries next sync
     changed=false;
     r.a.forEach(({key,kind})=>{const it=S.items.find(i=>i.bbKey===key);if(!it)return;it.bbAi=kind;delete it.bbUnsure;
       if(it.kind!==kind){setKind(it,kind);delete it.cat;changed=true}});
@@ -1173,14 +1148,8 @@ $('#bbClear').addEventListener('click',()=>{
   if(S.bb){delete S.bb;save()}
   $('#bbUrl').value='';$('#bbKey').value='';bbState('off','Not connected');
 });
-// background jobs stop when signed out and restart on sign-in, so a signed-out tab doesn't keep waking up
-let syncTimer=null,renderTimer=null,updateTimer=null;
-function startTimers(){stopTimers();
-  syncTimer=setInterval(syncBillBuddy,60000);
-  renderTimer=setInterval(()=>{if(rollover())save();if(editingId==null&&!document.activeElement?.closest?.('.form'))renderItems();render()},60000);
-  updateTimer=setInterval(checkUpdate,5*60000)}
-function stopTimers(){[syncTimer,renderTimer,updateTimer].forEach(t=>t&&clearInterval(t));syncTimer=renderTimer=updateTimer=null}
-startTimers();
+setInterval(syncBillBuddy,60000);
+setInterval(()=>{if(rollover())save();if(editingId==null&&!document.activeElement?.closest?.('.form'))renderItems();render()},60000);
 
 // ---------- AI: should I take this loan? ----------
 // The planner does the arithmetic itself: it lays the new loan's payments over the coming pay cycles
@@ -1214,14 +1183,14 @@ async function aiCheck(force){
   try{
     let r,j;
     if(c.via==='OpenRouter'){
-      r=await fetch(c.base+'/key',{headers:auth,signal:AbortSignal.timeout(25000)});
+      r=await fetch(c.base+'/key',{headers:auth});
       if(!r.ok)throw new Error('OpenRouter did not accept the key (HTTP '+r.status+')');
-      r=await fetch(c.base+'/models/'+c.model+'/endpoints',{headers:auth,signal:AbortSignal.timeout(25000)});
+      r=await fetch(c.base+'/models/'+c.model+'/endpoints',{headers:auth});
       if(!r.ok)throw new Error('OpenRouter has no model '+c.model+' (HTTP '+r.status+')');
       j=(await r.json())?.data||{};
       aiLive={ok:true,model:String(j.id||c.model),name:String(j.name||''),at:Date.now()};
     }else{
-      r=await fetch(c.base+'/models/'+c.model,{headers:auth,signal:AbortSignal.timeout(25000)});
+      r=await fetch(c.base+'/models/'+c.model,{headers:auth});
       j=await r.json().catch(()=>null);
       if(!r.ok)throw new Error('OpenAI answered HTTP '+r.status+(j?.error?.message?': '+j.error.message:''));
       aiLive={ok:true,model:String(j?.id||c.model),name:'',at:Date.now()};
@@ -1255,8 +1224,8 @@ function fillAI(){
   if(!$('#panel-bbsync').hidden)aiCheck();
 }
 function aiNote(){$('#aiNote').textContent=aiReady()?'Then asks '+AI_WHO:'Add a key in API for AI advice'}
-$('#aiKey').addEventListener('change',()=>{const k=$('#aiKey').value.trim();S.ai=k?{openai:{key:k}}:{};aiLive=null;aiMemo.clear();save();fillAI()}); // fillAI checks the new key when this tab is open
-$('#aiClear').addEventListener('click',()=>{S.ai={};aiLive=null;aiMemo.clear();save();fillAI()});
+$('#aiKey').addEventListener('change',()=>{const k=$('#aiKey').value.trim();S.ai=k?{openai:{key:k}}:{};aiLive=null;save();fillAI()}); // fillAI checks the new key when this tab is open
+$('#aiClear').addEventListener('click',()=>{S.ai={};aiLive=null;save();fillAI()});
 $('#aiRecheck').addEventListener('click',()=>aiCheck(true));
 $('#aiSort').addEventListener('change',()=>{if($('#aiSort').checked)delete S.aiSortOff;else S.aiSortOff=true;save();if(!S.aiSortOff)aiSortBills()});
 $('#aiLimit').addEventListener('change',()=>{const v=Math.round(num($('#aiLimit').value));if(v>0)S.aiLimit=v;else delete S.aiLimit;$('#aiLimit').value=v>0?v:'';save();paintUsage()});
@@ -1286,7 +1255,7 @@ function loanCheck(f){
   const total=plan.reduce((s,p)=>s+p.amt,0),covered=rows.filter(x=>x.pay>0).length;
   const verdict=worst.after<-0.004?'no':worst.after<buffer-0.004?'careful':'yes';
   const fee=Math.min(99,Math.max(0,f.fee||0)),net=f.amt*(1-fee/100);
-  const eff=f.type==='inst'||fee>0?effRate({rate:f.rate,addon:f.addon,fee,term:f.term})*100:null;
+  const eff=f.type==='inst'||fee>0?effRate({rate:f.type==='inst'?f.rate:0,addon:f.addon,fee,term:f.term})*100:null;
   if(f.avail>0)safe=Math.min(safe,f.avail);                       // a creditor can't lend more than it offers
   return {f,plan,rows,buffer,safe:Math.floor(safe/100)*100,worst,total,interest:total-net,net,fee,overLimit:f.avail>0&&f.amt>f.avail,
     eff:eff!=null&&f.type==='once'&&fee>0?null:eff,verdict,covered,shortNow:rows[0].before<0};
@@ -1325,7 +1294,7 @@ function renderLoanCheck(R){
     <h3>${f.type==='inst'?`${peso(per)} a month for ${f.term} month${f.term===1?'':'s'}`:`Pay back ${peso(R.total)} on ${fmtD(f.due)}`}</h3>
     ${R.overLimit?`<p class="small t-bad">More than ${esc(f.src)} offers (${peso(f.avail)}).</p>`:''}
     <ul>${R.fee>0?`<li><span>You receive</span><span class="a">${peso(R.net)}</span></li>`:''}<li><span>Interest${R.fee>0?' and fee':''}</span><span class="a">${peso(R.interest)}</span></li>
-      ${R.eff!=null?`<li><span>Real rate /mo</span><span class="a">${R.eff>9.99?'>999%/mo':R.eff.toFixed(2)+'%'}</span></li>`:''}
+      ${R.eff!=null?`<li><span>Real rate /mo</span><span class="a">${R.eff.toFixed(2)}%</span></li>`:''}
       <li><span>Tightest cycle${isFinite(R.worst.after)?' ('+fmtD(R.worst.start)+')':''}</span><span class="a">${isFinite(R.worst.after)?peso(R.worst.after)+' left':'—'}</span></li>
       <li><span>Safe to borrow</span><span class="a"><b>${peso(R.safe)}</b></span></li></ul>
     <p class="note">Safe = every cycle keeps your ${peso(R.buffer)} buffer. Card bills are estimated from this cycle.${R.shortNow?' You\'re already short this cycle.':''}</p>
@@ -1360,7 +1329,6 @@ function monitor(tab){
     const soon=C.lines.filter(l=>!isPaid(l.i)&&days(l.date)>=0&&days(l.date)<=3).sort((a,b)=>a.date-b.date);
     if(soon.length)add('warn',soon[0].i.name+' due '+(days(soon[0].date)===0?'today':days(soon[0].date)===1?'tomorrow':'in '+days(soon[0].date)+' days')+(soon.length>1?' (+'+(soon.length-1)+' more)':''));
     const nEnded=S.items.filter(i=>ended(i,start)).length;if(nEnded)add('warn',plural(nEnded,'ended bill')+' to remove or update');
-    const nUndated=S.items.filter(i=>!billed(i)&&repeats(i)&&i.once&&!exactDue(i)).length;if(nUndated)add('warn',plural(nUndated,'one-time bill')+' with no date set');
     if(!out.length)add('ok','All set this cycle');
   }else if(tab==='inst'){
     const loans=S.items.filter(i=>i.kind==='loan');
@@ -1387,10 +1355,7 @@ function monitor(tab){
     if(kn.length){const c=kn.map(x=>({x,e:effRate(x)})).sort((a,b)=>a.e-b.e)[0];add('ok','Cheapest: '+c.x.name+' ('+(c.e*100).toFixed(2)+'%/mo)')}
   }else if(tab==='ahead'){
     const salary=num(S.salary);let first=null,last=null;
-    /* Scan out to the longest loan term so long loans don't report "done"
-       early; the 36-cycle floor keeps the common case cheap. */
-    const maxM=Math.max(36,...S.items.filter(i=>i.kind==='loan').map(i=>Math.ceil(num(i.left)||0)));
-    for(let m=0,d=C.start;m<maxM;m++,d=shiftCycle(d,1)){const free=salary-loansIn(d)-fixedIn(d);if(free<-0.004&&!first)first=d;if(loansIn(d)>0)last=d}
+    for(let m=0,d=C.start;m<36;m++,d=shiftCycle(d,1)){const free=salary-loansIn(d)-fixedIn(d);if(free<-0.004&&!first)first=d;if(loansIn(d)>0)last=d}
     if(first)add('bad','Short in the '+fmtD(first)+' cycle');
     if(last)add('ok','Installments done after '+MON[last.getMonth()]+' '+last.getFullYear());
     if(!out.length)add('ok','No installments');
@@ -1426,21 +1391,15 @@ function reviewHtml(r){const [cls,word]=REVIEW_LOOK[r.a.status];
     ${r.a.points.length?`<ul>${r.a.points.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
     ${r.a.actions.length?`<p class="label">Next</p><ul>${r.a.actions.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
     <p class="note">${esc(r.model)}${r.cost?' · '+esc(r.cost):''}</p>`}
-const monCache={}; // last HTML per tab: the monitor only touches the DOM when something actually changed,
-// so screen readers aren't re-announced on every keystroke
 function paintMon(tab){
   const el=$('#mon-'+tab);if(!el||!TAB_NAME||!TAB_NAME[tab])return; // the first draw at startup runs before this part has loaded
   const list=monitor(tab),worst=list.some(x=>x.lv==='bad')?'bad':list.some(x=>x.lv==='warn')?'warn':'ok',n=list.filter(x=>x.lv!=='ok').length;
   const c=S.aiTab?.[tab],fresh=c&&c.day===todayIso()&&c.h===hashStr(reviewPrompt(tab,list));
   const box=el.querySelector('.mon-ai'),busy=box&&box.dataset.busy;
-  const cls='mon '+worst;
-  const html=`<div class="mon-h">${IC[worst]}<span class="mon-t">${n?n+' to check':'All good'}</span>${aiReady()?`<button class="ghost ib" data-review="${tab}" aria-label="Review ${TAB_NAME[tab]} with AI" title="Review with AI"${busy?' disabled':''}>${IC.spark}</button>`:''}</div>
+  el.className='mon '+worst;
+  el.innerHTML=`<div class="mon-h">${IC[worst]}<span class="mon-t">${n?n+' to check':'All good'}</span>${aiReady()?`<button class="ghost ib" data-review="${tab}" aria-label="Review ${TAB_NAME[tab]} with AI" title="Review with AI"${busy?' disabled':''}>${IC.spark}</button>`:''}</div>
     <ul class="mon-l">${list.slice(0,4).map(x=>`<li class="${x.lv}">${IC[x.lv]}<span>${esc(x.t)}</span></li>`).join('')}</ul>
     <div class="mon-ai"${busy?' data-busy="1"':''}>${busy?box.innerHTML:fresh?reviewHtml(c):''}</div>`;
-  if(monCache[tab]===cls+'|'+html)return;
-  monCache[tab]=cls+'|'+html;
-  el.className=cls;
-  el.innerHTML=html;
 }
 function paintAllMon(){Object.keys(TAB_NAME).forEach(t=>{if(!$('#panel-'+t).hidden)paintMon(t)});Object.keys(TAB_NAME).forEach(t=>{if($('#panel-'+t).hidden)stale.add(t==='borrow'?'borrow':t)})}
 document.addEventListener('click',async e=>{
@@ -1497,10 +1456,9 @@ function paintUsage(){
   const log=S.aiLog||{},today=log[todayIso()]||{},days=Object.keys(log).sort().reverse().filter(d=>d!==todayIso()).slice(0,6);
   const sum=o=>Object.values(o).reduce((s,v)=>s+num(v),0);
   const names=USE_NAME||{};el.innerHTML=`<div class="usage-t"><span>Today</span><span class="num">${u.toLocaleString()}${L?' / '+L.toLocaleString():''} tokens</span></div>`+
-    (L?`<div class="ubar" role="img" aria-label="${Math.min(100,u/L*100).toFixed(0)}% of today's limit used"><i class="${u>=L?'bad':u>=L*LOW_SHARE?'warn':''}" data-w="${Math.min(100,u/L*100).toFixed(1)}%"></i></div>`:'')+
+    (L?`<div class="ubar" role="img" aria-label="${Math.min(100,u/L*100).toFixed(0)}% of today's limit used"><i class="${u>=L?'bad':u>=L*LOW_SHARE?'warn':''}" style="width:${Math.min(100,u/L*100).toFixed(1)}%"></i></div>`:'')+
     (Object.keys(today).length?`<div class="usage-p">${Object.entries(today).map(([k,v])=>`<span>${names[k]||k} <b class="num">${num(v).toLocaleString()}</b></span>`).join('')}</div>`:'')+
-    (days.length?`<details class="paidlist"><summary>Earlier days</summary><ul>${days.map(d=>{const dt=parseD(d);return `<li><span>${dt?fmtD(dt):esc(d)}</span><span class="num">${sum(log[d]).toLocaleString()} tokens</span></li>`}).join('')}</ul></details>`:'');
-  barW(el);
+    (days.length?`<details class="paidlist"><summary>Earlier days</summary><ul>${days.map(d=>`<li><span>${fmtD(parseD(d))}</span><span class="num">${sum(log[d]).toLocaleString()} tokens</span></li>`).join('')}</ul></details>`:'');
 }
 const hashStr=t=>{let h=5381;for(let k=0;k<t.length;k++)h=(h*33^t.charCodeAt(k))>>>0;return h.toString(36)};
 async function aiAsk(job){
@@ -1510,14 +1468,11 @@ async function aiAsk(job){
   if(L&&aiUsed()+est>(job.priority==='low'?L*LOW_SHARE:L))throw Object.assign(new Error('limit'),{kind:'limit',low:job.priority==='low'});
   const out=await askOpenAI(c,job);
   aiSpend(out.tokens||est,job.purpose);
-  if(aiMemo.size>=50)aiMemo.delete(aiMemo.keys().next().value); // oldest answer first: the memory stays bounded
   aiMemo.set(memoKey,out);return out;
 }
 // OpenAI's chat completions with a strict JSON schema and low reasoning effort. If gpt-6-luna turns down one of
 // those settings, the same request is sent again without it (still gpt-6-luna; no other model is ever used).
 const lunaRefused={effort:false,schema:false}; // settings gpt-6-luna turned down, so later requests skip them
-if('serviceWorker' in navigator)addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{})}); // offline app shell; network-first so checkUpdate() still rules releases
-const sleep=ms=>new Promise(r=>setTimeout(r,ms)); // one short backoff for a transient AI failure
 async function askOpenAI(c,job){
   const plainJson=()=>{body.response_format={type:'json_object'};body.messages[0].content=job.system+'\nReply with only a JSON object with the keys '+job.schema.required.join(', ')+'.'};
   const body={model:c.model,max_completion_tokens:4000,reasoning_effort:'low',
@@ -1525,16 +1480,16 @@ async function askOpenAI(c,job){
     response_format:{type:'json_schema',json_schema:{name:job.name,strict:true,schema:job.schema}}};
   if(lunaRefused.effort)delete body.reasoning_effort;
   if(lunaRefused.schema)plainJson();
-  for(let tries=0,waits=0;;tries++){
+  for(let tries=0;;tries++){
     let r;
-    try{r=await fetch(c.base+'/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+c.key},body:JSON.stringify(body),signal:AbortSignal.timeout(30000)})}
-    catch(e){if(waits<1){waits++;await sleep(1500);continue}aiSeen(false,null,'could not reach '+c.via);throw Object.assign(new Error('network'),{kind:'network'})}
+    try{r=await fetch(c.base+'/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+c.key},body:JSON.stringify(body)})}
+    catch(e){aiSeen(false,null,'could not reach '+c.via);throw Object.assign(new Error('network'),{kind:'network'})}
     const j=await r.json().catch(()=>null),msg=String(j?.error?.message||'');
     if(r.status===400&&tries<2){
       if(body.reasoning_effort&&/reasoning/i.test(msg)){lunaRefused.effort=true;delete body.reasoning_effort;continue}
       if(body.response_format.type==='json_schema'&&/response_format|json_schema|schema/i.test(msg)){lunaRefused.schema=true;plainJson();continue}
     }
-    if(!r.ok){if((r.status===429||r.status>=500)&&waits<1){waits++;await sleep(1500);continue}if(r.status!==429)aiSeen(false,null,c.via+' answered HTTP '+r.status+(msg?': '+msg:''));throw Object.assign(new Error(msg||'HTTP '+r.status),{kind:'http',status:r.status})}
+    if(!r.ok){if(r.status!==429)aiSeen(false,null,c.via+' answered HTTP '+r.status+(msg?': '+msg:''));throw Object.assign(new Error(msg||'HTTP '+r.status),{kind:'http',status:r.status})}
     aiSeen(true,String(j?.model||c.model));
     const ch=j?.choices?.[0],m=ch?.message;
     if(m?.refusal)throw Object.assign(new Error('refusal'),{kind:'refusal'});
@@ -1558,7 +1513,7 @@ function aiError(e){
   if(st===401)return 'The API key was not accepted. Check it in the API tab.';
   if(st===403||st===404)return 'This key cannot use '+AI_MODEL+'. Check that the model is enabled for your account.';
   if(st===429)return 'Too many requests or no credit left on the key. Try again later.';
-  if(st===400)return AI_WHO+' could not read the request: '+esc(e.message);
+  if(st===400)return AI_WHO+' could not read the request: '+e.message;
   if(st)return aiConf().via+' had a problem ('+st+'). Try again.';
   return 'Something went wrong asking '+AI_WHO+'.';
 }
@@ -1592,23 +1547,14 @@ const EMAIL_KEY=KEY+'.email'; // only the email address, to fill in the sign-in 
 const newWriter=()=>Math.random().toString(36).slice(2)+Date.now().toString(36);
 async function pushCloud(){
   cloudTimer=null;pushing=true;
-  try{
-    const row={user_id:cloudUser.id,state:JSON.parse(snapshot())};if(!noWriter)row.writer=newWriter();
-    let {data,error}=await sb.from('planner_state').upsert(row).select('updated_at').single();
-    // the `writer` column isn't there until schema.sql is run again; save without it meanwhile
-    if(error&&!noWriter&&/writer/i.test(error.message||'')){noWriter=true;delete row.writer;({data,error}=await sb.from('planner_state').upsert(row).select('updated_at').single())}
-    // N7: the guard trigger rejects writer-less saves once the column exists ("out of date"): send the writer again
-    if(error&&noWriter&&/out of date/i.test(error.message||'')){noWriter=false;row.writer=newWriter();({data,error}=await sb.from('planner_state').upsert(row).select('updated_at').single())}
-    pushing=false;
-    if(cloudTimer||!cloudReady)return; // a newer save is queued, or signed out meanwhile
-    if(error)throw error;
-    cloudAt=data.updated_at;setSync('ok','Saved to your account');
-  }catch(e){
-    pushing=false;
-    console.warn('Supabase save failed',e);
-    if(cloudTimer||!cloudReady)return; // a newer save is queued, or signed out meanwhile
-    setSync('off','Not saved yet. Retrying…');cloudTimer=setTimeout(pushCloud,5000);
-  }
+  const row={user_id:cloudUser.id,state:JSON.parse(snapshot())};if(!noWriter)row.writer=newWriter();
+  let {data,error}=await sb.from('planner_state').upsert(row).select('updated_at').single();
+  // the `writer` column isn't there until schema.sql is run again; save without it meanwhile
+  if(error&&!noWriter&&/writer/i.test(error.message||'')){noWriter=true;delete row.writer;({data,error}=await sb.from('planner_state').upsert(row).select('updated_at').single())}
+  pushing=false;
+  if(cloudTimer||!cloudReady)return; // a newer save is queued, or signed out meanwhile
+  if(error){console.warn('Supabase save failed',error);setSync('off','Not saved yet. Retrying…');cloudTimer=setTimeout(pushCloud,5000);return}
+  cloudAt=data.updated_at;setSync('ok','Saved to your account');
 }
 async function pullCloud(){
   const {data,error}=await sb.from('planner_state').select('state,updated_at').eq('user_id',cloudUser.id).maybeSingle();
@@ -1616,17 +1562,13 @@ async function pullCloud(){
   return data;
 }
 async function startCloud(user){
-  cloudUser=user;cloudReady=false;cloudStale=false;renderAuth();setSync('busy','Loading your planner…');
+  cloudUser=user;cloudReady=false;renderAuth();setSync('busy','Loading your planner…');
   try{
     const row=await pullCloud();
     if(cloudUser?.id!==user.id)return;
     cloudReady=true;
-    startTimers(); // background jobs run again now that we're signed in
     if(row&&row.state&&row.state.ver===DEFAULTS.ver){adopt(row.state);cloudAt=row.updated_at;setSync('ok','Saved to your account')}
-    // N8: a cloud copy from a newer version is never overwritten here — it waits for a newer app instead
-    else if(row&&row.state){cloudStale=true;console.warn('Cloud copy is a newer version; leaving it alone.');setSync('warn','Your saved data is from a newer version and was left alone. Reload to retry.')}
-    else{adopt(legacy||clone(DEFAULTS));save(); // a new account starts from this browser's old data, or the installments
-      if(legacyDropped)setTimeout(()=>{if(cloudReady)setSync('warn','This device had data from an older version that could not be read.')},3000)}
+    else{adopt(legacy||clone(DEFAULTS));save()} // a new account starts from this browser's old data, or the installments
     legacy=null;LEGACY_KEYS.forEach(k=>{try{localStorage.removeItem(k)}catch(e){}});
     renderAuth();syncBillBuddy();
   }catch(e){
@@ -1659,7 +1601,7 @@ function renderAuth(){
   $('#authWho').textContent=cloudUser?.email||'';$('#authWho').title=cloudUser?.email||'';
 }
 function signedOut(){
-  cloudUser=null;cloudReady=false;clearTimeout(cloudTimer);cloudTimer=null;stopTimers();draft=null;document.body.classList.remove('drafting');
+  cloudUser=null;cloudReady=false;clearTimeout(cloudTimer);cloudTimer=null;draft=null;document.body.classList.remove('drafting');
   S=clone(DEFAULTS);prepare();editingId=null;syncInputs();renderAll();fillBB();fillAI();aiMemo.clear();$('#aiOut').innerHTML='';
   setSync('','Sign in to open your planner');renderAuth();
 }
@@ -1718,14 +1660,14 @@ $('#draftBtn').addEventListener('click',()=>draft?closeDraft():openDraft());
 // ---------- updates ----------
 // A tab left open keeps running the code it loaded with. When a newer version is published, reload, so an
 // old copy never syncs BillBuddy with outdated rules and saves that to the account.
-const APP_V=window.APP_VERSION; // single version constant (config.js); checkUpdate compares against version.json
+const APP_V=(/[?&]v=(\w+)/.exec(document.currentScript?.getAttribute('src')||'')||[])[1];
 async function checkUpdate(){
   if(!APP_V)return;
   try{
-    const j=await (await fetch('version.json',{cache:'no-store',signal:AbortSignal.timeout(25000)})).json();
-    const v=j&&j.v;
-    if(!v||String(v)===String(APP_V)||cloudTimer||pushing||draft||document.querySelector('dialog[open]')||document.activeElement?.matches?.('input,select'))return;
+    const html=await (await fetch(location.pathname,{cache:'no-store'})).text();
+    const v=(/app\.js\?v=(\w+)/.exec(html)||[])[1];
+    if(!v||v===APP_V||cloudTimer||pushing||draft||document.activeElement?.matches?.('input,select'))return;
     location.reload();
   }catch(e){}
 }
-// checkUpdate runs on updateTimer (see startTimers)
+setInterval(checkUpdate,5*60000);
