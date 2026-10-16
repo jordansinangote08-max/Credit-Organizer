@@ -15,23 +15,45 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=45">
+<link rel="stylesheet" href="styles.css?v=46">
 <script src="config.js?v=42" defer></script>
 <script src="vendor/supabase-2.116.0.js" defer></script>
-<script src="app.js?v=46" defer></script>
+<script src="app.js?v=47" defer></script>
 </head>
 <body class="locked">
 <div class="app">
   <aside class="side">
     <header>
       <h1>Paycheck and Debt Planner</h1>
-      <div class="acctbar"><p id="syncState" class="sync">Loading…</p><span id="authWho" class="muted small"></span><button class="ghost sm" id="draftBtn" title="Try changes in a copy that is never saved" hidden>Draft</button><button class="ghost sm ib" id="authBtn" aria-label="Sign out" title="Sign out" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 012 2v12a2 2 0 01-2 2h-3"/><path d="M10 17l5-5-5-5"/><path d="M15 12H4"/></svg></button></div>
+      <div class="acctbar"><p id="syncState" class="sync">Loading…</p><span id="authWho" class="muted small"></span><button class="ghost sm" id="accessBtn" hidden>Set password</button><button class="ghost sm" id="draftBtn" title="Try changes in a copy that is never saved" hidden>Draft</button><button class="ghost sm ib" id="authBtn" aria-label="Sign out" title="Sign out" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 012 2v12a2 2 0 01-2 2h-3"/><path d="M10 17l5-5-5-5"/><path d="M15 12H4"/></svg></button></div>
     </header>
     <form id="authForm" class="authform" hidden>
-      <label class="label" for="authEmail">Sign in to open your planner</label>
-      <div class="row"><input id="authEmail" type="email" autocomplete="email" inputmode="email" required placeholder="you@example.com"><button class="btn" id="authSend">Send link</button></div>
-      <p class="muted small" id="authMsg">We'll email you a sign-in link.</p>
+      <h2 id="authTitle">Open your planner</h2>
+      <p class="muted small" id="authHint">Checking this device for a saved session…</p>
+      <div id="authChoices" class="authchoices"><button class="btn" id="authExisting" type="button">Open existing planner</button><button class="ghost" id="authCreate" type="button">Create a planner</button></div>
+      <div id="authFields" class="authfields" hidden>
+        <div id="authCodeField" class="authfields" hidden><label for="authCode">Account code</label><input id="authCode" autocomplete="off" spellcheck="false" autocapitalize="none" maxlength="704" aria-describedby="authHint"></div>
+        <label for="authPassword">Password</label><input id="authPassword" type="password" autocomplete="current-password" maxlength="128" aria-describedby="authHint authMsg">
+        <div id="authConfirmField" class="authfields" hidden><label for="authConfirm">Confirm password</label><input id="authConfirm" type="password" autocomplete="new-password" maxlength="128"></div>
+        <button class="btn" id="authSend">Sign in</button>
+      </div>
+      <button class="ghost" id="authOther" type="button" hidden>Use another planner</button>
+      <p class="muted small" id="authMsg" role="status"></p>
     </form>
+    <section id="accountAccess" class="authform" aria-labelledby="accountTitle" hidden>
+      <h2 id="accountTitle">Password and devices</h2>
+      <p class="muted small">Set a password for this planner. This device opens automatically while its session is saved.</p>
+      <form id="accountForm" class="authfields">
+        <label for="accountPassword">New password</label><input id="accountPassword" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+        <label for="accountConfirm">Confirm password</label><input id="accountConfirm" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+        <button class="btn" id="accountSave">Save password</button>
+      </form>
+      <label for="accountCode">Your account code</label>
+      <input id="accountCode" readonly aria-describedby="accountCodeHint">
+      <p id="accountCodeHint" class="muted small">Keep this code to open the same planner on another device. You will also need your password.</p>
+      <div class="authchoices"><button class="ghost" id="accountCopy" type="button">Copy account code</button><button class="ghost" id="accountClose" type="button">Close</button></div>
+      <p class="muted small" id="accountMsg" role="status"></p>
+    </section>
 
     <section class="hero" aria-label="This pay cycle">
       <div class="salrow">

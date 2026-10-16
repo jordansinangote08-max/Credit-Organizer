@@ -1784,18 +1784,19 @@ $('#aiForm').addEventListener('submit',async e=>{
 // One row per user in public.planner_state (see supabase/schema.sql); Row Level Security keeps it private.
 // Connection details come from config.js. Without them the planner stays on this device only.
 const CFG=window.PLANNER_CONFIG||{};
-const EMAIL_KEY=KEY+'.email'; // only the email address, to fill in the sign-in form
+const EMAIL_KEY=KEY+'.email'; // legacy remembered account identifier; migrated without showing an email form
 // Every save carries a new random `writer`. The database rejects saves that don't (see supabase/schema.sql):
 // those come from a copy of the planner loaded before this rule, which would file bills with outdated rules.
 const newWriter=()=>Math.random().toString(36).slice(2)+Date.now().toString(36);
 async function pushCloud(){
   cloudTimer=null;pushing=true;
-  const row={user_id:cloudUser.id,state:JSON.parse(snapshot())};if(!noWriter)row.writer=newWriter();
+  const owner=cloudUser?.id;if(!owner){pushing=false;return}
+  const row={user_id:owner,state:JSON.parse(snapshot())};if(!noWriter)row.writer=newWriter();
   let {data,error}=await sb.from('planner_state').upsert(row).select('updated_at').single();
   // the `writer` column isn't there until schema.sql is run again; save without it meanwhile
   if(error&&!noWriter&&/writer/i.test(error.message||'')){noWriter=true;delete row.writer;({data,error}=await sb.from('planner_state').upsert(row).select('updated_at').single())}
   pushing=false;
-  if(cloudTimer||!cloudReady)return; // a newer save is queued, or signed out meanwhile
+  if(cloudTimer||!cloudReady||cloudUser?.id!==owner)return; // a newer save or account replaced this request
   if(error){console.warn('Supabase save failed',error);setSync('off','Not saved yet. Retrying…');cloudTimer=setTimeout(pushCloud,5000);return}
   cloudAt=data.updated_at;setSync('ok','Saved to your account');
 }
@@ -1845,10 +1846,14 @@ function renderAuth(){
   db.title=draft?'Close the draft; nothing in it is kept':'Try changes in a copy that is never saved';
   $('#authBtn').hidden=!cloudUser;
   $('#authForm').hidden=!sb||!authKnown||!!cloudUser;
-  $('#authWho').textContent=cloudUser?.email||'';$('#authWho').title=cloudUser?.email||'';
+  $('#authWho').textContent=cloudUser?'My planner':'';$('#authWho').title=cloudUser?'Your private planner':'';
+  paintPasswordForm();paintAccountAccess();
 }
 function signedOut(){
   resetAiSession();
+  accessOpen=false;$('#accountPassword').value='';$('#accountConfirm').value='';$('#accountMsg').textContent='';
+  $('#authPassword').value='';$('#authConfirm').value='';$('#authCode').value='';$('#authMsg').textContent='';
+  authMode=accountIdentity?'signin':'choose';
   cloudUser=null;cloudReady=false;clearTimeout(cloudTimer);cloudTimer=null;draft=null;document.body.classList.remove('drafting');
   S=clone(DEFAULTS);prepare();editingId=null;syncInputs();renderAll();fillBB();fillAI();aiMemo.clear();$('#aiOut').innerHTML='';
   setSync('','Sign in to open your planner');renderAuth();
@@ -1858,24 +1863,141 @@ function initCloud(){
   // the sign-in is remembered on this device and renewed automatically, so a known device opens straight in
   sb=window.supabase.createClient(CFG.supabaseUrl,CFG.supabaseAnonKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
   setSync('busy','Signing you in…');
-  try{$('#authEmail').value=localStorage.getItem(EMAIL_KEY)||''}catch(e){}
-  sb.auth.onAuthStateChange((ev,session)=>{
-    const u=session?.user||null;authKnown=true;
-    // claim the user now so a second auth event can't start a second load; load outside the callback
-    if(u&&cloudUser?.id!==u.id){cloudUser=u;setTimeout(()=>startCloud(u),0)}
-    else if(!u)setTimeout(signedOut,0);
-  });
+  sb.auth.onAuthStateChange((event,session)=>acceptAuthState(session));
   renderAuth();
 }
-$('#authBtn').addEventListener('click',()=>{if(cloudUser)sb.auth.signOut()});
-$('#authForm').addEventListener('submit',async e=>{
-  e.preventDefault();
-  const email=$('#authEmail').value.trim(),msg=$('#authMsg'),b=$('#authSend');if(!email)return;
-  b.disabled=true;msg.textContent='Sending…';
-  try{localStorage.setItem(EMAIL_KEY,email)}catch(e){}
-  const {error}=await sb.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+location.pathname}});
-  b.disabled=false;
-  msg.textContent=error?'Could not send the link: '+error.message:'Check your email and open the sign-in link on this device.';
+$('#authBtn').addEventListener('click',async()=>{
+  if(!cloudUser)return;
+  const button=$('#authBtn');button.disabled=true;
+  try{const {error}=await sb.auth.signOut({scope:'local'});if(error)throw error}
+  catch(e){setSync('off','Could not sign out. Check your connection and try again.')}
+  finally{button.disabled=false}
+});
+// ---------- password access ----------
+// Supabase validates passwords and owns sessions. This browser stores an account
+// identifier and the SDK session, never a password or a local "unlocked" flag.
+const IDENTITY_KEY=KEY+'.account';
+let accountIdentity='';
+try{accountIdentity=localStorage.getItem(IDENTITY_KEY)||localStorage.getItem(EMAIL_KEY)||''}catch(e){}
+let authMode=accountIdentity?'signin':'choose',authBusy=false,authEpoch=0,accessOpen=false;
+function rememberAccount(email){
+  if(typeof email!=='string'||!email.includes('@'))return;
+  accountIdentity=email;
+  try{localStorage.setItem(IDENTITY_KEY,email);localStorage.removeItem(EMAIL_KEY)}catch(e){}
+}
+function accountCode(email){
+  if(!email)return '';
+  return 'CO1.'+btoa(String.fromCharCode(...new TextEncoder().encode(email))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function accountFromCode(code){
+  try{
+    if(!/^CO1\.[A-Za-z0-9_-]{4,700}$/.test(code.trim()))return '';
+    const value=code.trim().slice(4).replace(/-/g,'+').replace(/_/g,'/');
+    const email=new TextDecoder('utf-8',{fatal:true}).decode(Uint8Array.from(atob(value),c=>c.charCodeAt(0)));
+    return email.length<=254&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)?email:'';
+  }catch(e){return ''}
+}
+function setAuthMode(mode){
+  if(authBusy)return;
+  authMode=mode;$('#authMsg').textContent='';$('#authPassword').value='';$('#authConfirm').value='';
+  paintPasswordForm();
+  if(mode==='restore')$('#authCode').focus();else if(mode!=='choose')$('#authPassword').focus();
+}
+function paintPasswordForm(){
+  const choose=authMode==='choose',create=authMode==='create',restore=authMode==='restore';
+  $('#authTitle').textContent=choose?'Open your planner':create?'Create a planner':'Sign in with your password';
+  $('#authChoices').hidden=!choose;$('#authFields').hidden=choose;
+  $('#authCodeField').hidden=!restore;$('#authCode').required=restore;
+  $('#authConfirmField').hidden=!create;$('#authConfirm').required=create;
+  $('#authPassword').required=!choose;$('#authPassword').minLength=create?12:1;
+  $('#authPassword').autocomplete=create?'new-password':'current-password';
+  $('#authSend').textContent=create?'Create planner':'Sign in';
+  $('#authHint').textContent=choose?'This device opens automatically when a saved session is available.':
+    create?'Creates a new, separate planner. Use at least 12 characters.':
+    restore?'Enter the account code saved from your planner and its password.':
+    'This device remembers your account. Enter your password to sign in again.';
+  $('#authOther').textContent=choose?'':accountIdentity?'Use another planner':'Back';
+  $('#authOther').hidden=choose;
+  $('#authForm').querySelectorAll('button').forEach(button=>button.disabled=authBusy);
+}
+function paintAccountAccess(){
+  $('#accountAccess').hidden=!cloudUser||!accessOpen;
+  $('#accessBtn').hidden=!cloudReady;
+  $('#accessBtn').textContent=cloudUser?.user_metadata?.planner_password_ready?'Account access':'Set password';
+  $('#accountCode').value=accountCode(cloudUser?.email||accountIdentity);
+}
+async function passwordSignupReady(){
+  const response=await fetch(CFG.supabaseUrl+'/auth/v1/settings',{headers:{apikey:CFG.supabaseAnonKey}});
+  if(!response.ok)throw new Error('Could not check signup settings. Check your connection and try again.');
+  const settings=await response.json();
+  if(settings.disable_signup)throw new Error('New accounts are disabled. Open your existing planner instead.');
+  if(!settings.external?.email||!settings.mailer_autoconfirm)throw new Error('Password-only signup needs a one-time setup change. Follow the password access setup instructions before creating an account.');
+}
+async function submitPasswordAuth(){
+  if(authBusy||!sb||authMode==='choose')return;
+  const mode=authMode,password=$('#authPassword').value,msg=$('#authMsg');
+  let email=mode==='restore'?accountFromCode($('#authCode').value):accountIdentity;
+  if(mode==='restore'&&!email){msg.textContent='Enter a valid account code from your planner.';return}
+  if(mode!=='create'&&!email){setAuthMode('restore');return}
+  if(!password||password.length>128||(mode==='create'&&password.length<12)){msg.textContent='Use a password between 12 and 128 characters for a new planner.';return}
+  if(mode==='create'&&password!==$('#authConfirm').value){msg.textContent='The passwords do not match.';return}
+  authBusy=true;paintPasswordForm();msg.textContent=mode==='create'?'Creating your planner…':'Signing in…';
+  try{
+    let result;
+    if(mode==='create'){
+      await passwordSignupReady();
+      email='p-'+crypto.randomUUID()+'@accounts.credit-organizer.invalid';
+      result=await sb.auth.signUp({email,password,options:{data:{planner_password_ready:true}}});
+    }else result=await sb.auth.signInWithPassword({email,password});
+    if(result.error)throw result.error;
+    if(!result.data?.session||!result.data?.user)throw new Error('A saved session was not created. Check the password access setup before trying again.');
+    rememberAccount(result.data.user.email||email);
+    $('#authPassword').value='';$('#authConfirm').value='';$('#authCode').value='';
+    if(mode==='create'){accessOpen=true;$('#accountMsg').textContent='Save your account code to open this planner on another device.'}
+    acceptAuthState(result.data.session);
+    msg.textContent='Signed in. This device will remember your session.';
+  }catch(error){
+    const message=String(error.message||error);
+    msg.textContent=/invalid login credentials/i.test(message)?'The password or account code is incorrect. Try again.':
+      /email not confirmed/i.test(message)?'This account needs the password access setup completed before it can sign in.':
+      /rate limit|too many/i.test(message)?'Too many attempts. Wait a moment, then try again.':
+      /fetch|network/i.test(message)?'Could not connect. Check your connection and try again.':message;
+  }finally{authBusy=false;paintPasswordForm()}
+}
+function acceptAuthState(session){
+  const user=session?.user||null,epoch=++authEpoch;authKnown=true;
+  if(user){
+    rememberAccount(user.email);
+    if(cloudUser?.id!==user.id){resetAiSession();cloudUser=user;setTimeout(()=>{if(cloudUser?.id===user.id)startCloud(user)},0)}
+    else{cloudUser=user;renderAuth()}
+  }else setTimeout(()=>{if(epoch===authEpoch)signedOut()},0);
+}
+$('#authForm').addEventListener('submit',event=>{event.preventDefault();submitPasswordAuth()});
+$('#authCreate').addEventListener('click',()=>setAuthMode('create'));
+$('#authExisting').addEventListener('click',()=>setAuthMode(accountIdentity?'signin':'restore'));
+$('#authOther').addEventListener('click',()=>setAuthMode(authMode==='restore'?'choose':'restore'));
+$('#accessBtn').addEventListener('click',()=>{accessOpen=!accessOpen;paintAccountAccess()});
+$('#accountClose').addEventListener('click',()=>{accessOpen=false;paintAccountAccess()});
+$('#accountForm').addEventListener('submit',async event=>{
+  event.preventDefault();const user=cloudUser,password=$('#accountPassword').value,msg=$('#accountMsg'),button=$('#accountSave');
+  if(!user||button.disabled)return;
+  if(password.length<12||password.length>128){msg.textContent='Use a password between 12 and 128 characters.';return}
+  if(password!==$('#accountConfirm').value){msg.textContent='The passwords do not match.';return}
+  button.disabled=true;msg.textContent='Saving your password…';
+  try{
+    const {data,error}=await sb.auth.updateUser({password,data:{planner_password_ready:true}});
+    if(cloudUser?.id!==user.id)return;
+    if(error)throw error;
+    cloudUser=data?.user||cloudUser;rememberAccount(cloudUser.email);
+    $('#accountPassword').value='';$('#accountConfirm').value='';
+    msg.textContent='Password saved. This device stays signed in. Keep your account code for other devices.';renderAuth();
+  }catch(error){if(cloudUser?.id===user.id)msg.textContent='Password was not changed: '+String(error.message||error)}
+  finally{button.disabled=false}
+});
+$('#accountCopy').addEventListener('click',async()=>{
+  const input=$('#accountCode');
+  try{await navigator.clipboard.writeText(input.value);$('#accountMsg').textContent='Account code copied. Keep it with your password for access on another device.'}
+  catch(e){input.focus();input.select();$('#accountMsg').textContent='Select and copy your account code.'}
 });
 
 initCloud();

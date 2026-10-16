@@ -111,19 +111,53 @@ The key is saved in your account and used straight from the device, so give it a
 
 ## Draft: a testing room
 
-**Draft** (next to your email at the top) opens a copy of the whole planner: every tab, bill, installment, card and setting, with the AI working as usual. Try anything there (a new bill, a different salary, marking things paid, a loan check). Nothing in a draft is saved, and changes from your other devices aren't pulled in while you're in it. BillBuddy keeps syncing, so new bills appear in the draft too. The same button then reads **Close draft**: it brings back your planner exactly as it was; closing the tab does the same. AI used in a draft is real, so it still counts toward the daily AI limit. A draft is black and white, so it can't be mistaken for the real planner.
+**Draft** (in the account bar) opens a copy of the whole planner: every tab, bill, installment, card and setting, with the AI working as usual. Try anything there (a new bill, a different salary, marking things paid, a loan check). Nothing in a draft is saved, and changes from your other devices aren't pulled in while you're in it. BillBuddy keeps syncing, so new bills appear in the draft too. The same button then reads **Close draft**: it brings back your planner exactly as it was; closing the tab does the same. AI used in a draft is real, so it still counts toward the daily AI limit. A draft is black and white, so it can't be mistaken for the real planner.
 
 ## Saving
 
-Everything is stored in Supabase: you sign in first, and the planner loads from and saves to your account. Nothing is kept in the browser except the sign-in (so the device opens straight in) and your email address. Without `config.js` filled in, the planner shows a setup message instead.
+Everything is stored in Supabase: the planner loads from and saves to your existing account. The browser remembers the Supabase session and account identifier so a recognized device opens automatically. Passwords are never stored by the app. Without `config.js` filled in, the planner shows a setup message instead.
+
+### Password access and existing planners
+
+The sign-in form has no email field or email-link button. On a device where your
+existing planner is open, choose **Set password**, save a password of at least
+12 characters, then copy **Your account code**. This updates the same Supabase
+user; it does not create a new user, copy bills, reset settings or change the
+owner of your saved planner. Keep this session open until the password is saved.
+
+On a new device choose **Open existing planner**, enter that code and password
+once, and keep site storage enabled. Later visits restore the saved session
+without asking again. Signing out explicitly still requires the password next
+time; a remembered identifier is not authorization. The code identifies the
+account and is not a replacement for its password. It encodes an account
+identifier and is not encryption; keep it private alongside your password.
+
+Supabase still uses its built-in password authentication behind the scenes.
+Existing accounts retain their current identity; new accounts get a random,
+internal account address unrelated to their password. No address is requested
+from the user or emailed. Password verification, rate limits, sessions and row
+ownership stay on Supabase; no service-role key or custom password database is
+added. The app never hashes a password into a shared account identifier.
+
+**One-time setup for new accounts:** the project's Email provider must have
+**Confirm email** disabled. The app checks this read-only setting before signup
+and refuses to create an unusable unconfirmed account. This deployment cannot
+change your Supabase dashboard settings. Existing users setting a password do
+not need a SQL change or this signup setting. Recovery without an active session
+or a known password requires the project owner; no email reset flow is offered.
+
+Tests use a synthetic Supabase client and synthetic planners. They verify
+preserved owner IDs/data, password-only entry, session restoration, wrong
+passwords, cross-device codes, signup configuration failures and mobile layout;
+they do not create real accounts or change live passwords.
 
 ### Set up Supabase
 
 1. Create a project at [supabase.com](https://supabase.com).
 2. **SQL Editor → New query**: paste `supabase/schema.sql` and run it. This creates `planner_state` (one row per user) with Row Level Security, so each person can only read and change their own row.
-3. **Authentication → URL Configuration**: set **Site URL** to where the planner is hosted (e.g. `https://your-planner.vercel.app`) and add it under **Redirect URLs**. Sign-in links send you back there.
+3. **Authentication → Sign In / Providers → Email**: keep the provider enabled and turn **Confirm email** off to allow new password-only accounts. No user email address, OTP or sign-in email is requested by the app. Existing confirmed accounts can set a password without this signup setting change.
 4. **Project Settings → API**: copy the **Project URL** and the **anon / publishable** key into `config.js`. The anon key is meant to be public; Row Level Security protects the data. Never put the `service_role` key here.
-5. Open the planner, enter your email and open the sign-in link from the same device.
+5. If already signed in, open **Set password**, choose a password and save your account code. For a new planner choose **Create a planner** and set a password. On another device choose **Open existing planner** and enter its account code and password.
 
 How it syncs:
 
@@ -170,7 +204,7 @@ and no signed-in accounts or external API calls. The feed integration test
 also runs the actual BillBuddy API handler locally: keep the BillBuddy checkout
 beside this repository, or set `BILLBUDDY_REPO` to its path. It verifies deletion
 on the next poll and the resulting saved planner state using synthetic rows.
-- A device stays signed in: Supabase keeps the sign-in on the device and renews it automatically, so the planner opens straight away. The email address is also remembered to fill in the sign-in form.
+- A device stays signed in: Supabase persists and refreshes its session, so it opens without another password prompt. An account identifier alone never unlocks data; expired/revoked sessions, clearing site data or signing out require authentication again.
 - An open planner reloads itself when a newer version is published (checked when you come back to it and every 5 minutes). The database also rejects saves from an older copy, so it can't put back outdated data. If you set up Supabase before this rule existed, run `supabase/schema.sql` again.
 - Signing out clears the planner from the screen and forgets the sign-in on that device.
 - Data an earlier version kept in this browser moves to the account on its first sign-in (if the account is empty) and is then deleted from the browser.

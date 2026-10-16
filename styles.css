@@ -661,3 +661,13 @@ body.drafting #draftBtn.on{background:var(--ink);color:var(--bg)}
 .mdot.live{background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 22%,transparent)}
 .mdot.down{background:var(--bad)}
 @media (prefers-reduced-motion:no-preference){.mdot.live{animation:mpulse 2.4s ease-in-out infinite}@keyframes mpulse{50%{box-shadow:0 0 0 6px color-mix(in srgb,var(--ok) 0%,transparent)}}}
+
+/* Password access uses the existing account surface and native form controls. */
+.authfields,.authchoices{display:grid;gap:10px;min-width:0}
+.authform h2{font-size:1.1rem;margin:0}
+.authform input{width:100%;box-sizing:border-box;font-size:1rem;min-height:44px}
+.authform button{min-height:44px}
+.authform label{font-size:.875rem;font-weight:600}
+.authform p{overflow-wrap:anywhere}
+header .acctbar{flex-wrap:wrap}
+#accessBtn{margin-left:auto}
