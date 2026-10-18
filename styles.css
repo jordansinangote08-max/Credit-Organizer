@@ -180,6 +180,9 @@ button:not(:disabled):active{transform:scale(.97)}
 .form{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(min(100%,124px),1fr));padding:14px;margin:6px 0;border-radius:12px;background:var(--sunk)}
 .form.flat{margin:0}
 .form .wide{grid-column:1/-1}
+.bbfacts{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:0}
+.bbfacts dt{font-size:.8rem;color:var(--muted)} .bbfacts dd{margin:2px 0 0;color:var(--ink);font-weight:500;font-variant-numeric:tabular-nums}
+.bbnote{margin:0;font-size:.8rem;color:var(--muted)}
 .field{display:grid;gap:4px;font-size:.8rem;color:var(--muted);min-width:0}
 .field input,.field select{font-size:.95rem;background:var(--surface);border:1px solid var(--field);border-radius:8px;padding:8px 10px;width:100%;min-width:0}
 .field input:focus,.field select:focus,.payday input:focus,.reco .bufrow input:focus,.authform input:focus{border-color:var(--accent);box-shadow:var(--ring);outline:none}

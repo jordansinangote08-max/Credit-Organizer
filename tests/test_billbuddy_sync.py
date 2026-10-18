@@ -307,5 +307,24 @@ class SyncTest(unittest.TestCase):
         self.assertTrue(self.page.evaluate("S.items.some(i=>i.name==='Manual rent')"))
 
 
+    def test_billbuddy_bill_only_lets_name_and_category_change(self):
+        self.page.evaluate('''() => {
+          S.cats.push({key:'subs',name:'Subscriptions',color:'teal',kind:'bill'});
+          applyBB([{bank:'Meralco',type:'utility',account_key:'meralco',amount:2500,due_date:'2026-10-26'}]);
+          openBill(S.items.find(i=>i.bbDue).id);
+        }''')
+        body = self.page.locator('#billBody')
+        self.assertEqual(body.locator('[data-k]').evaluate_all('els=>els.map(e=>e.dataset.k)'), ['name', 'cat'])
+        self.assertEqual(body.locator('[data-del]').count(), 0)
+        self.assertIn('2,500', body.inner_text())
+        body.locator('[data-k=name]').fill('Electric')
+        body.locator('[data-k=cat]').select_option('subs')
+        it = self.page.evaluate("(({name,cat,amount,bbDue})=>({name,cat,amount,bbDue}))(S.items.find(i=>i.bbDue))")
+        self.assertEqual(it, {'name': 'Electric', 'cat': 'subs', 'amount': 2500, 'bbDue': '2026-10-26'})
+        # an edit to any other field is ignored
+        self.page.evaluate('''() => {const f=document.createElement('input');f.dataset.k='amount';f.value='1';
+          $('#billBody .form').append(f);f.dispatchEvent(new Event('input',{bubbles:true}))}''')
+        self.assertEqual(self.page.evaluate('S.items.find(i=>i.bbDue).amount'), 2500)
+
 if __name__ == '__main__':
     unittest.main()

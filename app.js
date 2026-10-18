@@ -298,7 +298,22 @@ function dayField(id,k,label,date,hint){
 }
 const dayFrom=el=>{const d=parseD(el.value);return d?d.getDate():null};
 const catOptions=sel=>S.cats.map(c=>`<option value="${esc(c.key)}" ${c.key===sel?'selected':''}>${esc(c.name)}</option>`).join('');
+// A bill BillBuddy sent is its statement: only its name and category are yours to change, the rest comes from BillBuddy
+const fromBB=i=>!!i.bbDue;
+function bbForm(i){
+  const facts=[[i.kind==='card'?'Statement amount':'Amount',peso(num(i.amount))],['Due date',fmtD(dueOf(i,cycleStart()))+', '+dueOf(i,cycleStart()).getFullYear()]];
+  if(last4Of(i))facts.push(['Last 4 digits','•••• '+esc(last4Of(i))]);
+  if(i.kind==='loan'&&i.total)facts.push(['Payments left',num(i.left)+' of '+num(i.total)]);
+  return `<div class="form flat" data-id="${i.id}">
+    <div class="field wide"><label for="n${i.id}">Name</label><input id="n${i.id}" data-k="name" value="${esc(i.name)}"></div>
+    <div class="field wide"><label for="k${i.id}">Category</label><select id="k${i.id}" data-k="cat">${catOptions(catOf(i)?.key)}</select></div>
+    <dl class="bbfacts wide">${facts.map(([k,v])=>`<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>
+    <p class="bbnote wide">From BillBuddy. Only the name and category can be changed here.</p>
+    <div class="acts"><span></span><button class="btn" data-done="1">Done</button></div>
+  </div>`;
+}
 function itemForm(i,isNew){
+  if(fromBB(i)&&!isNew)return bbForm(i);
   return `<div class="form flat" data-id="${i.id}">
     <div class="field wide"><label for="n${i.id}">Name</label><input id="n${i.id}" data-k="name" placeholder="${i.kind==='loan'?'e.g. Home Credit':'e.g. Meralco'}" value="${esc(i.name)}"></div>
     <div class="field wide"><label for="k${i.id}">Category</label><select id="k${i.id}" data-k="cat">${catOptions(catOf(i)?.key)}</select></div>
@@ -682,6 +697,7 @@ document.addEventListener('click',e=>{const g=e.target.closest('[data-goto]');if
 $('#billBody').addEventListener('input',e=>{
   const row=e.target.closest('.form');if(!row)return;const it=S.items.find(i=>i.id==row.dataset.id),k=e.target.dataset.k;if(!it||!k)return;
   if(k==='cat'){const c=S.cats.find(x=>x.key===e.target.value);if(!c)return;it.cat=c.key;setKind(it,c.kind);ensureLinks();commit();refreshBill();const f=$('#k'+it.id);f&&f.focus();return}
+  if(fromBB(it)&&k!=='name')return;                                   // the rest of a BillBuddy bill is BillBuddy's
   if(k==='repeat'){
     if(e.target.checked){delete it.once;const d=parseD(it.date);if(d){it.day=d.getDate();delete it.date}}
     else{it.once=true;it.date=it.date||iso(dueOf(it,cycleStart()));delete it.until}
@@ -726,7 +742,7 @@ function refreshBill(){const it=S.items.find(i=>i.id===editingId);if(!it)return;
 function openBill(id,isNew){
   editingId=id;billNew=!!isNew;billKeep=false;refreshBill();
   const d=$('#billDlg');if(!d.open)d.showModal();
-  const f=isNew?$('#n'+id):$('#a'+id);f&&(f.focus(),isNew&&f.select());
+  const f=isNew?$('#n'+id):$('#a'+id)||$('#n'+id);f&&(f.focus(),isNew&&f.select());
 }
 $('#billDlg').addEventListener('close',()=>{
   const it=S.items.find(i=>i.id===editingId);
@@ -739,7 +755,7 @@ $('#billDlg').addEventListener('click',e=>{
   const t=e.target.closest('button');if(!t)return;
   if(t.dataset.billclose){$('#billDlg').close();return}
   if(t.dataset.done){billKeep=true;$('#billDlg').close();return}
-  if(t.dataset.del){const g=S.items.find(i=>i.id==t.dataset.del);S.items=S.items.filter(i=>i!==g&&!(g&&g.bbRef&&i.inBill===g.bbRef));  // with the loans listed on it
+  if(t.dataset.del){const g=S.items.find(i=>i.id==t.dataset.del);if(g&&fromBB(g))return;S.items=S.items.filter(i=>i!==g&&!(g&&g.bbRef&&i.inBill===g.bbRef));  // with the loans listed on it
     billKeep=true;$('#billDlg').close()}
 });
 function newBill(kind){
