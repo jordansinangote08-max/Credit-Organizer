@@ -24,7 +24,7 @@ Each category's bills sit together on a background of that category's color. **C
 
 ## Installments by lender
 
-Each installment shows its payment the way BillBuddy does: **3/12** means this bill is your 3rd payment of 12 (after you mark it paid, the one you just paid). A card in Accounts lists the installments inside its statement the same way, with what they come to, the rest of the bill and the statement total. The Installments tab groups installments by lender: each lender is a card showing its total per month, what's left to pay and when it's all done, with each installment inside as Installment 1, 2… showing payments left (like 4/6), the amount still to go and the month it ends. The lender is the **Lender** field in the installment's form (it suggests the lenders you already have); left empty, it's the name without a trailing letter or number, so "UnionBank Loan A" and "UnionBank Loan B" both sit under UnionBank Loan. Loans that BillBuddy adds are filed under their bank.
+Each installment shows its payment the way BillBuddy does: **3/12** means this bill is your 3rd payment of 12 (after you mark it paid, the one you just paid). A card in Credit cards lists the installments inside its statement the same way, with what they come to, the rest of the bill and the statement total. The Installments tab groups installments by lender: each lender is a card showing its total per month, what's left to pay and when it's all done, with each installment inside as Installment 1, 2… showing payments left (like 4/6), the amount still to go and the month it ends. The lender is the **Lender** field in the installment's form (it suggests the lenders you already have); left empty, it's the name without a trailing letter or number, so "UnionBank Loan A" and "UnionBank Loan B" both sit under UnionBank Loan. Loans that BillBuddy adds are filed under their bank.
 
 ## Repeating and one-time bills
 
@@ -36,7 +36,7 @@ When this cycle's money covers every bill with some to spare, This cycle says ho
 
 ## Every tab is monitored
 
-The top of each tab (This cycle, Bills, Installments, Accounts, Income, Borrow, Plan) lists what needs attention: money running out, bills past due or due soon, cards over 30% or 50% of their limit, missing last 4 digits, installments without payments left, expensive debt, entries from past cycles. The planner works these out itself as you go, free and instantly. With an AI key set, the ✨ button asks the AI to review that tab: it gets the tab's checks plus a snapshot of the whole planner, so its advice rests on the same numbers. A review is kept for the day until the numbers change, so looking again costs nothing.
+The top of each tab (This cycle, Bills, Installments, Credit cards, Income, Borrow, Plan) lists what needs attention: money running out, bills past due or due soon, cards over 30% or 50% of their limit, missing last 4 digits, installments without payments left, expensive debt, entries from past cycles. The planner works these out itself as you go, free and instantly. With an AI key set, the ✨ button asks the AI to review that tab: it gets the tab's checks plus a snapshot of the whole planner, so its advice rests on the same numbers. A review is kept for the day until the numbers change, so looking again costs nothing.
 
 **Daily AI limit.** Every AI use is counted in the API tab, by purpose (loan checks, tab reviews, sorting bills, placing installments), with the last week's totals. In the API tab, set how many tokens the AI may use per day (about 2,000 a question; empty means no limit). The meter shows today's use. When the limit is reached the AI stops until the next day. Loan checks come first: tab reviews pause at 70% of the limit, so there's always room to check a loan.
 
@@ -106,7 +106,7 @@ The key is saved in your account and used straight from the device, so give it a
 ## Tap, fold, compact
 
 - **Tap to open a window:** the salary card's result (Short / Extra) opens this cycle's breakdown: money in, bills by category, paid so far and what's left. An installment's name opens its payment schedule: every payment still to come, with its date, 4/12-style number and the total to go. A bill's name opens its edit window.
-- **Fold:** tap a header to fold what's under it: Money in and out, each Bills category, each lender on Installments, a card's installments in Accounts, and the BillBuddy and AI settings in API. Folds reset when the page reloads.
+- **Fold:** tap a header to fold what's under it: Money in and out, each Bills category, each lender on Installments, a card's installments in Credit cards, and the BillBuddy and AI settings in API. Folds reset when the page reloads.
 - The layout is compact; every button and tap area stays at least 44px.
 
 ## Draft: a testing room
@@ -167,7 +167,7 @@ How it syncs:
 - Each installment goes to the right loan or card. A plan on a card statement is filed under that card; if it's an installment you entered yourself (same purchase), that one moves under the card instead of being added twice. A loan statement that lists several loans (like UnionBank's two personal loans, 3/12 and 6/12, on one bill) stays one bill in Bills and This cycle, and each loan is its own installment under it in the Installments tab, with its own payments left and end month; the Plan tab counts each one until it ends. If you entered those loans yourself, yours become its installments instead of copies. Marking the bill paid pays its installments. The planner decides this itself when it's clear: nothing of yours looks like the plan (it's new), or exactly one of yours has the same amount to the centavo (it's that one). Only when it's unclear (a similar name or a close amount) does the AI decide, if one is set up: those plans only, all in one small request, each once, within the daily limit. Without AI, an unclear plan is added as new.
 - A bill BillBuddy couldn't type ("other") is sorted for free when the name says what it is (Meralco, Globe, PLDT, SSS, Netflix, Spotify, rent, Home Credit and other common billers); only names the planner doesn't know go to the AI, if one is set up: all in one small request, each once, within the daily limit.
 - Sorting bills and placing installments use gpt-6-luna like everything else. Switch both off in the API tab.
-- A BillBuddy card is recognised by its last 4 digits: if a card in Accounts has the same last 4, the bill goes onto that card under the name you gave it, even after you removed its bill. A second copy an older sync made of that card is folded back in.
+- A BillBuddy card is recognised by its last 4 digits: if a card in Credit cards has the same last 4, the bill goes onto that card under the name you gave it, even after you removed its bill. A second copy an older sync made of that card is folded back in.
 - BillBuddy's link and key are saved in your account too, so every signed-in device syncs with it.
 
 **Bill expiration.** BillBuddy and the planner use Manila days for imported

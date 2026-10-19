@@ -142,7 +142,7 @@ function prepare(){
   ensureLinks();
 }
 function genKey(){return Math.random().toString(36).slice(2,10)}
-// every credit card bill has one account in Accounts, joined by a stable key
+// every credit card bill has one account in Credit cards, joined by a stable key
 function ensureLinks(){
   S.accounts.forEach(a=>{if(!a.key)a.key=genKey()});
   S.items.forEach(i=>{
@@ -1034,7 +1034,7 @@ function applyBB(bills,{reconcile=false}={}){
     // an earlier sync filed this statement under the wrong type (a loan as "UnionBank CC"): fix or drop that copy
     const wrong=S.items.filter(i=>i!==it&&!billed(i)&&i.kind!==kind&&!claimed.has(i)&&i.bbDue===b.due_date&&near(i.amount,amt)&&ofBank(i));
     if(wrong.length){changed=true;if(!it){it=wrong.shift();refile(it,kind,b.bank)}wrong.forEach(removeItem)}
-    // the last 4 digits decide which card it is: a card in Accounts with these digits and no bill
+    // the last 4 digits decide which card it is: a card in Credit cards with these digits and no bill
     // (its bill was removed, or an older sync gave the card a second account) gets this bill back,
     // under the name you gave the card
     const mine=kind==='card'?S.accounts.find(a=>((key&&a.bbKey===key)||(l4&&a.last4===l4))&&!S.items.some(i=>i.acct===a.key)):null;
@@ -1411,7 +1411,7 @@ function renderLoanCheck(R){
 // top. The ✨ button asks the AI for a short review of that tab: it gets these checks plus a snapshot of the
 // whole planner, so its advice rests on the same numbers. Reviews are only asked for when you tap, are kept
 // for the day until the numbers change, and stop at 70% of the daily limit (see aiAsk).
-var TAB_NAME={cycle:'This cycle',bills:'Bills',inst:'Installments',acct:'Accounts',money:'Income',borrow:'Borrow',ahead:'Plan'};
+var TAB_NAME={cycle:'This cycle',bills:'Bills',inst:'Installments',acct:'Credit cards',money:'Income',borrow:'Borrow',ahead:'Plan'};
 function moneyRunsOut(C){
   const ev=[{d:C.start,v:num(S.salary)},...C.inc.map(o=>({d:o.d,v:num(o.x.amount)})),...C.lines.map(l=>({d:l.date,v:-l.need}))].sort((a,b)=>a.d-b.d||b.v-a.v);
   let bal=0;for(const e of ev){bal+=e.v;if(bal<-0.004)return e.d}return null;
