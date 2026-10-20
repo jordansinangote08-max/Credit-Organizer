@@ -9,6 +9,10 @@ create table if not exists public.planner_state (
 
 alter table public.planner_state enable row level security;
 
+-- the signed-in app needs table privileges as well as the policies below; without them every save fails
+-- with "permission denied for table planner_state" (newer projects don't grant them by default)
+grant select, insert, update, delete on public.planner_state to authenticated;
+
 drop policy if exists "Read own planner"   on public.planner_state;
 drop policy if exists "Insert own planner" on public.planner_state;
 drop policy if exists "Update own planner" on public.planner_state;
