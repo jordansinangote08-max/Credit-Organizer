@@ -23,11 +23,13 @@ window.supabase={createClient:(url,key,options)=>{
       updateUser:async input=>{authCalls.push({kind:'password',id:session?.user.id});
         if(window.failPassword)return {data:{},error:{message:'Could not update password'}};
         session.user.user_metadata={...session.user.user_metadata,...input.data};persist(session);callback('USER_UPDATED',session);return {data:{user:session.user},error:null}},
+      refreshSession:async()=>{authCalls.push({kind:'refresh'});return window.failRefresh?{data:{session:null},error:{message:'Invalid Refresh Token'}}:{data:{session},error:null}},
       signOut:async options=>{authCalls.push({kind:'signout',scope:options?.scope});persist(null);callback('SIGNED_OUT',null);return {error:null}}
     },
     from:()=>({select:()=>({eq:(key,id)=>({maybeSingle:async()=>({data:id==='existing-account'?{
       state:{ver:2,rev:7,salary:45678,payday:24,buffer:1000,items:[],accounts:[],sources:[],income:[]},updated_at:'2026-10-16T00:00:00Z'}:null,error:null})})}),
-      upsert:row=>({select:()=>({single:async()=>({data:{updated_at:'2026-10-16T00:00:00Z'},error:null})})})})
+      upsert:row=>({select:()=>({single:async()=>{window.upserts=(window.upserts||0)+1;const e=(window.upsertErrors||[]).shift();
+        return e?{data:null,error:e}:{data:{updated_at:'2026-10-16T00:00:00Z'},error:null}}})})})
   };
 }};
 const nativeFetch=window.fetch;
@@ -206,3 +208,17 @@ class PasswordAccessTest(unittest.TestCase):
             self.page.set_viewport_size({'width':width,'height':900})
             self.assertLessEqual(self.page.evaluate('document.documentElement.scrollWidth'),width)
             self.page.screenshot(path=str(root/f'password-account-{width}.png'),full_page=True)
+
+    def test_expired_sign_in_is_renewed_and_the_save_goes_through(self):
+        self.restore_existing()
+        self.page.evaluate("upsertErrors=[{message:'JWT expired',code:'PGRST303'}];upserts=0;S.salary=50000;save()")
+        self.page.wait_for_function("upserts===2",timeout=5000)
+        self.page.wait_for_function("$('#syncState').textContent==='Saved to your account'",timeout=5000)
+        self.assertIn({'kind':'refresh'},self.page.evaluate('authCalls'))
+
+    def test_failed_renewal_and_other_errors_say_why(self):
+        self.restore_existing()
+        self.page.evaluate("failRefresh=true;upsertErrors=[{message:'JWT expired',code:'PGRST303'}];S.salary=50000;save()")
+        self.page.wait_for_function("/sign-in expired/.test($('#syncState').textContent)",timeout=5000)
+        self.page.evaluate("clearTimeout(cloudTimer);cloudTimer=null;upsertErrors=[{message:'value too long for type',code:'22001'}];save()")
+        self.page.wait_for_function("/value too long/.test($('#syncState').textContent)",timeout=5000)
