@@ -1813,8 +1813,28 @@ async function pushCloud(){
   if(error&&!noWriter&&/writer/i.test(error.message||'')){noWriter=true;delete row.writer;({data,error}=await sb.from('planner_state').upsert(row).select('updated_at').single())}
   pushing=false;
   if(cloudTimer||!cloudReady||cloudUser?.id!==owner)return; // a newer save or account replaced this request
-  if(error){console.warn('Supabase save failed',error);setSync('off','Not saved yet. Retrying…');cloudTimer=setTimeout(pushCloud,5000);return}
-  cloudAt=data.updated_at;setSync('ok','Saved to your account');
+  if(error){console.warn('Supabase save failed',error);saveFailed(error,owner);return}
+  saveFails=0;cloudAt=data.updated_at;setSync('ok','Saved to your account');
+}
+// A failed save says why and fixes what it can, instead of sending the same request every 5 seconds:
+// an expired sign-in is renewed, a save the database turned away for lacking `writer` is sent with it again,
+// and anything else is retried, less often the longer it lasts.
+let saveFails=0;
+async function saveFailed(error,owner){
+  const why=String(error.message||error.code||'unknown error'),code=String(error.code||'');
+  const again=ms=>{if(!cloudTimer&&cloudReady&&cloudUser?.id===owner)cloudTimer=setTimeout(pushCloud,ms)};
+  saveFails++;
+  if(/jwt|token|expired|unauthori[sz]ed|PGRST30\d/i.test(why+' '+code)||error.status===401){
+    const {data:r,error:e}=await sb.auth.refreshSession();
+    if(e||!r?.session){setSync('off','Not saved: your sign-in expired. Reload the page and enter your password.');again(60000);return}
+    setSync('busy','Saving…');again(500);return;
+  }
+  if(code==='P0001'||/out of date/i.test(why)){
+    if(noWriter){noWriter=false;setSync('busy','Saving…');again(500);return}
+    setSync('off','Not saved: this copy of the planner is out of date. Reload the page.');return;
+  }
+  setSync('off',/fetch|network|load failed/i.test(why)?'Not saved yet: no connection. Retrying…':'Not saved yet ('+why.slice(0,80)+'). Retrying…');
+  again(Math.min(60000,5000*saveFails));
 }
 async function pullCloud(){
   const {data,error}=await sb.from('planner_state').select('state,updated_at').eq('user_id',cloudUser.id).maybeSingle();
