@@ -15,10 +15,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=47">
+<link rel="stylesheet" href="styles.css?v=48">
 <script src="config.js?v=42" defer></script>
 <script src="vendor/supabase-2.116.0.js" defer></script>
-<script src="app.js?v=48" defer></script>
+<script src="app.js?v=49" defer></script>
 </head>
 <body class="locked">
 <div class="app">
@@ -97,10 +97,10 @@
     <section class="panel" role="tabpanel" id="panel-bills" aria-labelledby="tab-bills" data-panel="bills" hidden>
       <div class="mon" id="mon-bills" aria-live="polite"></div>
       <div class="sec">
-        <div class="sec-h"><h2>Bills</h2><div class="row"><button class="ghost ib" id="catBtn" aria-label="Categories" title="Categories"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg></button><button class="ghost ib" id="resetBtn" aria-label="Reset to starting bills" title="Reset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 109-9 9.3 9.3 0 00-6.4 2.6L3 8"/><path d="M3 3v5h5"/></svg></button></div></div>
-        <div id="resetConfirm" class="reco bad" hidden><p class="small">Erase your changes and restore the starting bills and categories?</p><div class="row"><button class="btn" id="resetYes">Yes, reset</button><button class="ghost" id="resetNo">Cancel</button></div></div>
+        <div class="sec-h"><h2>Bills</h2><div class="row"><button class="ghost ib" id="catBtn" aria-label="Categories" title="Categories"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg></button><button class="ghost ib" id="addBtn" type="button" aria-label="Add bill" title="Add bill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div></div>
         <div id="itemList"></div>
-        <button class="add" id="addBtn">+ Add bill</button>
+        <div class="row" style="justify-content:flex-end"><button class="ghost sm" id="resetBtn" type="button">Reset to starting bills</button></div>
+        <div id="resetConfirm" class="reco bad" hidden><p class="small">Erase your changes and restore the starting bills and categories?</p><div class="row"><button class="btn" id="resetYes">Yes, reset</button><button class="ghost" id="resetNo">Cancel</button></div></div>
       </div>
     </section>
 
@@ -118,13 +118,12 @@
     <section class="panel" role="tabpanel" id="panel-acct" aria-labelledby="tab-acct" data-panel="acct" hidden>
       <div class="mon" id="mon-acct" aria-live="polite"></div>
       <div class="sec">
-        <div><h2>Credit cards</h2><p class="muted small lead">Keep each card under 30% of its limit.</p></div>
+        <div><h2>Credit cards</h2><p class="muted small lead">Keep each card under 20% of its limit.</p></div>
         <div class="sumrow" id="acctSum"></div>
       </div>
       <div class="sec">
         <div id="acctList"></div>
         <button class="add" id="acctAdd">+ Add card</button>
-        <p class="muted small">Last 4 digits only. Never your full number, CVV or PIN.</p>
       </div>
     </section>
 
@@ -174,7 +173,9 @@
 
     <section class="panel" role="tabpanel" id="panel-ai" aria-labelledby="tab-ai" data-panel="ai" hidden>
       <div class="sec advisor">
-        <div><h2>Your financial manager</h2><p class="muted small lead">Ask about your money, debts, credit cards or next move. Uses your saved planner; calculations stay local.</p></div>
+        <div><h2>Your financial manager</h2><p class="muted small lead">Advice on your bills, cards, installments and money right now. It updates by itself only when your planner changes, so nothing is spent when nothing changed.</p></div>
+        <div id="autoAdvice" class="auto-advice" aria-live="polite"></div>
+        <details class="ask-more"><summary>Ask something specific</summary>
         <form class="form flat" id="advisorForm">
           <div class="field wide"><label for="advisorQuestion">What would you like to work out?</label>
             <textarea id="advisorQuestion" rows="3" maxlength="1600" required placeholder="Which debt should I pay first while keeping enough for bills?"></textarea>
@@ -191,6 +192,7 @@
         </div>
         <div id="advisorConversation" aria-live="polite"></div>
         <button class="ghost sm" id="advisorNew" type="button">New conversation</button>
+        </details>
         <p class="note">Advice uses planned figures, not a live bank balance or credit report. You decide what to change; questions do not edit your planner.</p>
       </div>
       <div class="sec">
@@ -212,27 +214,32 @@
     </section>
 
     <section class="panel" role="tabpanel" id="panel-bbsync" aria-labelledby="tab-bbsync" data-panel="bbsync" hidden>
-      <details class="sec" open>
-        <summary><h2>BillBuddy</h2></summary>
+      <div class="sec">
+        <div><h2>Connections</h2><p class="muted small lead">Green is working, yellow is busy, red needs attention, grey is off.</p></div>
+        <ul class="conn" id="apiStatus" aria-live="polite"></ul>
+      </div>
+      <details class="sec" id="bbSec">
+        <summary><h2>BillBuddy settings</h2></summary>
         <p class="muted small">Syncs bills every minute, with card limits and installment breakdowns. Matched by last 4 digits.</p>
         <div class="form flat">
           <div class="field wide"><label for="bbUrl">BillBuddy API link</label><input id="bbUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://your-billbuddy.vercel.app/api/bills"></div>
           <div class="field wide"><label for="bbKey">API key</label><input id="bbKey" type="password" autocomplete="off" spellcheck="false" placeholder="BILLS_API_KEY"></div>
           <div class="acts"><button class="danger ib" id="bbClear" aria-label="Disconnect BillBuddy" title="Disconnect"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13.5a4 4 0 005.6 0l2.9-2.9a4 4 0 00-5.6-5.6l-1.1 1.1"/><path d="M14 10.5a4 4 0 00-5.6 0l-2.9 2.9a4 4 0 005.6 5.6l1.1-1.1"/><path d="M4 4l16 16"/></svg></button></div>
         </div>
-        <span class="sync" id="bbState">Not connected</span>
+        <span class="sync" id="bbState" hidden>Not connected</span>
         <p class="muted small">Saved privately in your account.</p>
       </details>
-      <details class="sec" open>
-        <summary><h2>AI</h2></summary>
+      <details class="sec" id="aiSec">
+        <summary><h2>AI settings</h2></summary>
         <p class="muted small">The planner does the maths; the AI only explains it, so it costs little.</p>
+        <p class="muted small" id="aiClaudeNote" hidden>Using Claude on your account here, so no API key is needed.</p>
         <div class="form flat">
-          <div class="field wide"><label for="aiKey">API key</label><input id="aiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…"><span class="hint">An OpenAI key, or an OpenRouter key (sk-or-…). Every AI feature uses gpt-6-luna either way.</span></div>
+          <div class="field wide" id="aiKeyField"><label for="aiKey">API key</label><input id="aiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…"><span class="hint">An OpenAI key, or an OpenRouter key (sk-or-…). Every AI feature uses gpt-6-luna either way.</span></div>
           <label class="check wide"><input type="checkbox" id="aiSort" checked><span>Sort unclear BillBuddy bills and place their installments with AI</span></label>
           <div class="field wide"><label for="aiLimit">Daily token limit</label><input id="aiLimit" type="number" inputmode="numeric" min="0" step="1000" placeholder="No limit"><span class="hint">About 2,000 tokens a question. Resets every day; tab reviews pause at 70% so loan checks keep room.</span></div>
-          <div class="acts"><span></span><button class="danger ib" id="aiClear" aria-label="Remove this AI key" title="Remove key"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13.5a4 4 0 005.6 0l2.9-2.9a4 4 0 00-5.6-5.6l-1.1 1.1"/><path d="M14 10.5a4 4 0 00-5.6 0l-2.9 2.9a4 4 0 005.6 5.6l1.1-1.1"/><path d="M4 4l16 16"/></svg></button></div>
+          <div class="acts" id="aiKeyActs"><span></span><button class="danger ib" id="aiClear" aria-label="Remove this AI key" title="Remove key"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13.5a4 4 0 005.6 0l2.9-2.9a4 4 0 00-5.6-5.6l-1.1 1.1"/><path d="M14 10.5a4 4 0 00-5.6 0l-2.9 2.9a4 4 0 005.6 5.6l1.1-1.1"/><path d="M4 4l16 16"/></svg></button></div>
         </div>
-        <span class="sync" id="aiState">Not connected</span>
+        <span class="sync" id="aiState" hidden>Not connected</span>
         <div class="modelai"><span class="label">Model AI</span><div class="mrowl"><div id="aiModelLive" class="mlive" role="status" aria-live="polite"></div><button class="ghost sm" id="aiRecheck">Check now</button></div></div>
         <div class="usage" id="aiUsage"></div>
         <p class="muted small">Set a spend limit with your provider. Bill names and amounts go to the provider; card digits and email never do.</p>
@@ -248,7 +255,7 @@
   <div class="dlg-h"><h2 id="aheadTitle">Pay ahead</h2><button class="x" data-aheadclose="1" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
   <div class="reco ahead">
     <div id="aheadList"></div>
-    <div class="bufrow"><label for="buffer">Buffer</label><div class="bufin"><span>₱</span><input id="buffer" type="number" inputmode="decimal" min="0" step="100" autocomplete="off"></div><span class="note">kept aside every cycle</span></div>
+    <div class="bufrow"><label for="buffer">Keep on hand</label><div class="bufin"><span>₱</span><input id="buffer" type="number" inputmode="decimal" min="0" step="100" autocomplete="off" aria-describedby="bufHint"></div><span class="note" id="bufHint">Money left alone every payday for surprises. Only what's above it is suggested to pay ahead.</span></div>
     <p class="note">Paying early frees next month; it doesn't cut interest.</p>
   </div>
 </div></dialog>

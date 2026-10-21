@@ -215,7 +215,13 @@ button:not(:disabled):active{transform:scale(.97)}
 .ubar{height:8px;background:var(--sunk);border-radius:999px;overflow:hidden;position:relative}
 .ubar i{display:block;height:100%;border-radius:999px;background:var(--ok)}
 .ubar i.warn{background:var(--warn)} .ubar i.bad{background:var(--bad)}
-.ubar::after{content:"";position:absolute;left:30%;top:0;bottom:0;width:2px;background:var(--surface);opacity:.9}
+.acct-use{display:flex;justify-content:space-between;gap:10px;font-size:.9rem;color:var(--muted)}
+.acct-use b{color:var(--ink);font-weight:600}
+.acct-use .t-bad b{color:var(--bad)} .acct-use .t-ok b{color:var(--ok)}
+.acct-h{align-items:center}
+/* a card's bar runs from 0 to 20% of its limit: full means it has reached 20% */
+.acct .ubar::after{display:none}
+.ubar::after{content:"";position:absolute;left:20%;top:0;bottom:0;width:2px;background:var(--surface);opacity:.9}
 .acct .facts,.loan .facts{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:.82rem;color:var(--muted)}
 .acct .facts b,.loan .facts b{font-family:var(--mono);font-weight:500;color:var(--ink)}
 .acct .acts{display:flex;justify-content:flex-end}
@@ -438,6 +444,15 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 .advisor textarea{width:100%;min-height:104px;padding:12px;border:1px solid var(--field);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;line-height:1.5;resize:vertical}
 .advisor textarea:focus{border-color:var(--accent);box-shadow:var(--ring);outline:none}
 .advisor .acts{align-items:center;flex-wrap:wrap}
+.auto-advice{display:grid;gap:10px;padding:14px;border-radius:16px;background:var(--sunk);overflow-wrap:anywhere}
+.auto-advice:empty{display:none}
+.auto-advice p,.auto-advice h3{margin:0}
+.auto-advice ul{margin:0;padding-left:20px;display:grid;gap:6px}
+.auto-advice .aa-h{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.auto-advice .aa-ans{font-size:1rem;line-height:1.5}
+.ask-more{display:grid;gap:12px}
+.ask-more>summary{cursor:pointer;font-weight:600;min-height:44px;display:flex;align-items:center}
+.ask-more[open]{gap:14px}
 .advisor .acts [role="status"]{flex:1;min-width:180px}
 .advisor-prompts{display:flex;flex-wrap:wrap;gap:8px}
 .advisor-prompts button,.advisor #advisorNew{min-height:44px}
@@ -674,3 +689,47 @@ body.drafting #draftBtn.on{background:var(--ink);color:var(--bg)}
 .authform p{overflow-wrap:anywhere}
 header .acctbar{flex-wrap:wrap}
 #accessBtn{margin-left:auto}
+
+/* ---------- installments: clean rows ----------
+   Lender header: name on the left, monthly total on the right, one summary line under it.
+   Each installment: payment number and name with its amount; the bar; what's left and actions on one line. */
+.loans{gap:12px}
+.lgrp{padding:14px 16px;gap:0;border-radius:18px}
+.lgrp-h{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-bottom:0}
+.lgrp-h h3{min-width:0}
+.lgrp-amt{flex:none;font-weight:650;font-size:1.05rem;font-variant-numeric:tabular-nums}
+.lgrp-sub{margin:0 0 4px;font-size:.82rem;color:var(--muted)}
+.lgrp.folded .lgrp-sub{margin-bottom:0}
+.lgrp .sub{gap:8px;padding:12px 0 2px}
+.sub-h{align-items:center}
+.sub-n{min-width:0}
+.sub-n .openw{gap:8px;align-items:center;text-decoration:none;min-height:32px}
+.sub-n .plan-of{flex:none;min-width:0;font-size:.75rem;font-weight:600;color:var(--ink);background:var(--sunk);border-radius:999px;padding:2px 8px}
+.sub-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sub .pay{flex:none;font-weight:600;font-variant-numeric:tabular-nums}
+.lgrp .bar{height:8px}
+.lgrp .sub-f{align-items:center;gap:8px}
+.sub .facts{display:block;font-size:.82rem;color:var(--muted)}
+.sub .facts b{font-weight:600;color:var(--ink)}
+.sub .acts{gap:6px}
+
+/* ---------- API tab: connection lights ---------- */
+.conn{list-style:none;margin:0;padding:0;display:grid}
+.conn-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:6px 12px;padding:12px 0;border-top:1px solid var(--line)}
+.conn-row:first-child{border-top:0;padding-top:4px}
+.conn-name{display:grid;gap:1px;min-width:0}
+.conn-name b{font-weight:600}
+.conn-dot{width:12px;height:12px;border-radius:50%;background:var(--muted);opacity:.5}
+.conn-dot.ok{background:var(--ok);opacity:1;box-shadow:0 0 0 4px color-mix(in srgb,var(--ok) 20%,transparent)}
+.conn-dot.busy{background:var(--warn);opacity:1;box-shadow:0 0 0 4px color-mix(in srgb,var(--warn) 20%,transparent)}
+.conn-dot.bad{background:var(--bad);opacity:1;box-shadow:0 0 0 4px color-mix(in srgb,var(--bad) 20%,transparent)}
+.conn-state{font-size:.82rem;text-align:right;max-width:52vw;overflow-wrap:anywhere;color:var(--muted)}
+.conn-state.ok{color:var(--ok)} .conn-state.bad{color:var(--bad)} .conn-state.busy{color:var(--warn)}
+@media (max-width:520px){.conn-row{grid-template-columns:auto minmax(0,1fr)}.conn-state{grid-column:2;text-align:left;max-width:none}}
+@media (prefers-reduced-motion:no-preference){.conn-dot.busy{animation:mpulse 1.6s ease-in-out infinite}}
+
+/* automatic advice: status pill, one plain sentence, numbered steps */
+.auto-advice .aa-meta{display:flex;align-items:center;gap:8px;margin-left:auto}
+.auto-advice .aa-ans{font-size:1.02rem;font-weight:500}
+.aa-steps{margin:0;padding-left:22px;display:grid;gap:8px}
+.aa-steps li{padding-left:2px}

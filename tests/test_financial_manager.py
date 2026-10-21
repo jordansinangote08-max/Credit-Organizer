@@ -18,7 +18,7 @@ class FinancialManagerTest(unittest.TestCase):
           S.salary=30000;S.buffer=2000;S.items=[{id:1,name:'Rent',kind:'essential',amount:8000,day:24}];
           S.ai={openai:{key:'fixture-private-key'}};S.bb={key:'fixture-billbuddy-secret'};
           S.advisorTurns=[];S.advisorCache=[];S.advisorNotes='Keep medicine money available.';
-          syncInputs();renderAuth();renderAll();fillAI();setSync('ok','Saved to your account');selectTab('ai');
+          syncInputs();renderAuth();renderAll();fillAI();setSync('ok','Saved');selectTab('ai');
         }''')
         self.install_responder()
 
@@ -166,6 +166,7 @@ class FinancialManagerTest(unittest.TestCase):
 
     def test_manager_ui_safe_rendering_and_mobile_desktop_layout(self):
         self.page.evaluate("advisorReply.answer='Review <img src=x onerror=alert(1)> safely.'")
+        self.page.locator('.ask-more > summary').click()  # typed questions sit under "Ask something specific"
         self.page.locator('#advisorQuestion').fill('What should I prioritize before payday?')
         self.page.locator('#advisorAsk').click()
         self.page.wait_for_function('S.advisorTurns.length===1')
