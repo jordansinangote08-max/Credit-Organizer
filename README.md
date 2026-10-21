@@ -113,6 +113,16 @@ The key is saved in your account and used straight from the device, so give it a
 
 **Draft** (in the account bar) opens a copy of the whole planner: every tab, bill, installment, card and setting, with the AI working as usual. Try anything there (a new bill, a different salary, marking things paid, a loan check). Nothing in a draft is saved, and changes from your other devices aren't pulled in while you're in it. BillBuddy keeps syncing, so new bills appear in the draft too. The same button then reads **Close draft**: it brings back your planner exactly as it was; closing the tab does the same. AI used in a draft is real, so it still counts toward the daily AI limit. A draft is black and white, so it can't be mistaken for the real planner.
 
+## Running as a Claude artifact
+
+The same files also run as a published Claude artifact. There the page can't reach outside servers, so `app.js` detects `window.claude` and switches modes:
+
+- **Planner data** loads and saves through the viewer's claude.ai **Supabase** connector (`execute_sql` on the project in `config.js`), with no password. It opens the most recently updated row in `planner_state`.
+- **AI** uses Claude on the viewer's account instead of an OpenAI/OpenRouter key.
+- **BillBuddy** doesn't sync there; bills it already added are kept.
+
+On the deployed site nothing changes: no `window.claude`, so the normal Supabase sign-in and OpenAI paths run.
+
 ## Saving
 
 Everything is stored in Supabase: the planner loads from and saves to your existing account. The browser remembers the Supabase session and account identifier so a recognized device opens automatically. Passwords are never stored by the app. Without `config.js` filled in, the planner shows a setup message instead.

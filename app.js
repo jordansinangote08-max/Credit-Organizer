@@ -175,14 +175,38 @@ const last4Of=i=>(i.kind==='card'&&acctOf(i)?.last4)||i.bbLast4||'';
 
 // ---------- saving ----------
 // Saved to Supabase only (see the cloud section at the end); nothing is kept in the browser.
+let mcpMode=false,mcpApi=null,sampleFn=null; // inside a Claude artifact: Supabase through the viewer's connector, AI through Claude
 let sb=null,cloudUser=null,cloudAt=null,cloudTimer=null,cloudReady=false,pushing=false,noWriter=false,draft=null; // draft: see the end
-function setSync(cls,txt){const el=$('#syncState');el.className='sync '+cls;el.textContent=txt}
+function setSync(cls,txt){const el=$('#syncState');el.className='sync '+cls;el.textContent=txt;paintStatus()}
+// API tab: one coloured light per connection (planner data, BillBuddy, AI). Green working, yellow busy, red failing, grey off.
+function paintStatus(){
+  const box=document.getElementById('apiStatus');if(!box)return;
+  try{
+    const lv=c=>/\bok\b/.test(c)?'ok':/\b(busy|draft)\b/.test(c)?'busy':/\boff\b/.test(c)?'bad':'idle';
+    const sy=$('#syncState'),bb=$('#bbState');
+    const rows=[];
+    rows.push(['Planner data',mcpMode?'Supabase, through Claude':'Supabase',lv(sy.className),sy.textContent||'—']);
+    let bl=lv(bb.className),bt=bb.textContent||'Not connected';
+    if(bl==='bad'&&(/^Not connected$/.test(bt)||mcpMode))bl='idle';
+    rows.push(['BillBuddy','Bill sync',bl,bt]);
+    let al,at;
+    if(!aiReady()){al='idle';at='Not set up. Add a key in AI settings.'}
+    else if(aiLive&&aiLive.ok===false){al='bad';at='Not working · '+(aiLive.error||'error')}
+    else if(aiLive&&aiLive.ok){al='ok';at='Working · '+(aiLive.model||AI_WHO)}
+    else if(sampleFn){al='ok';at='Ready · Claude on your account'}
+    else{al='busy';at='Key saved · not checked yet'}
+    rows.push(['AI',sampleFn?'Claude':aiConf().via,al,at]);
+    const word={ok:'Working',busy:'Busy',bad:'Needs attention',idle:'Off'};
+    box.innerHTML=rows.map(([name,sub,l,t])=>`<li class="conn-row"><span class="conn-dot ${l}" role="img" aria-label="${word[l]}"></span><span class="conn-name"><b>${esc(name)}</b><span class="muted small">${esc(sub)}</span></span><span class="conn-state ${l}">${esc(t)}</span></li>`).join('');
+  }catch(e){}
+}
 const snapshot=()=>JSON.stringify(S,(k,v)=>k==='id'?undefined:v);
 function save(){
   if(!cloudReady)return;
   if(draft){setSync('draft','Draft · nothing is saved');return}
+  if(!$('#panel-ai').hidden)scheduleAutoAdvice();
   clearTimeout(cloudTimer);setSync('busy','Saving…');
-  cloudTimer=setTimeout(pushCloud,700);
+  cloudTimer=setTimeout(pushCloud,mcpMode?2500:700);
 }
 
 // ---------- paid tracking ----------
@@ -417,30 +441,40 @@ function renderInst(){
   const ym=d=>d?MON[d.getMonth()]+' '+d.getFullYear():'—';
   const groups=new Map();
   S.items.filter(i=>i.kind==='loan'&&!hasParts(i)).sort((a,b)=>dayOf(a)-dayOf(b)||num(b.left)-num(a.left)||String(a.name).localeCompare(b.name)).forEach(i=>{const k=lenderKey(i);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(i)});
-  let monthly=0,remaining=0,last=null;
+  let monthly=0,remaining=0,last=null,maxLeftChanged=false;
   const html=[...groups.values()].map(list=>{
     let gm=0,gr=0,gl=null;
     const rows=list.map((i,n)=>{
       const left=Math.max(0,Math.round(num(i.left))),pay=num(i.amount),total=Math.round(num(i.total))||null,end=endOf(i);
       if(left>0){gm+=pay;gr+=pay*left;if(!gl||end>gl)gl=end}
-      const pct=total?Math.round(Math.max(0,total-left)/total*100):null;
+      // Without "Total payments" the bar counts from the most payments left this installment has had (remembered
+      // as maxLeft): 2 left of a 3-payment run shows a third done. Green once this payment is paid, red while unpaid.
+      if(!total){const ml=Math.max(Math.round(num(i.maxLeft))||0,left+(isPaid(i)?1:0));if(ml>0&&ml!==i.maxLeft){i.maxLeft=ml;maxLeftChanged=true}}
+      const runOf=total||Math.round(num(i.maxLeft))||0;
+      const pct=runOf?Math.round(Math.max(0,runOf-left)/runOf*100):(isPaid(i)?100:0);
       const of=planOf(i);
       const nm=billed(i)||i.bbInst||(i.name&&i.name!==lenderName(i))?planLabel(i):'Installment '+(n+1);
+      // one tidy row: payment number and name with the monthly amount; the bar; what's left and when it ends, with the actions
+      const paidNow=isPaid(i)||left===0;
+      const facts=i.bbTerm&&!total?'Months not on the statement':left>0?`<b>${peso(pay*left)}</b> left · ends <b>${ym(end)}</b>`:'Fully paid';
+      const status=i.bbWaiting?'<span class="pill">Waiting for next bill</span>':isPaid(i)?'<span class="pill ok">Paid</span>':'';
+      const acts=billed(i)?editBtn(`data-iedit="${i.id}"`,i.name)
+        :(isPaid(i)&&!isHiddenPaid(i)?undoBtn(`data-iundo="${i.id}"`,i.name):'')+editBtn(`data-iedit="${i.id}"`,i.name)+(left>0&&!isPaid(i)?paidBtn(`data-ipaid="${i.id}"`,i.name):'');
       return `<div class="sub">
-        <div class="sub-h"><span class="sub-n"><button class="openw" data-isched="${i.id}" aria-haspopup="dialog" title="Payment schedule">${of?`<span class="plan-of" aria-label="payment ${of.replace('/',' of ')}">${of}</span>`:''}${esc(nm)}${last4Of(i)?`<span class="l4">•••• ${esc(last4Of(i))}</span>`:''}</button></span><span class="pay">${peso(pay)}<span class="muted small">/mo</span></span></div>
-        ${pct!=null?`<div class="bar ${isPaid(i)||left===0?'is-paid':'is-unpaid'}" role="img" aria-label="${total-left} of ${total} paid; ${i.bbWaiting?'waiting for next bill':isPaid(i)?'current payment paid':'current payment unpaid'}"><i style="width:${pct}%"></i></div>`:''}
-        <div class="sub-f"><div class="facts">${total?`<span><b>${peso(pay*left)}</b> to go</span><span>Last payment <b>${ym(end)}</b></span>`:i.bbTerm?'<span>Months not on the statement</span>':`<span><b>${left}</b> left</span><span><b>${peso(pay*left)}</b> to go</span><span>Last payment <b>${ym(end)}</b></span>`}</div>
-        <div class="acts">${i.bbWaiting?'<span class="pill">Waiting for next bill</span>':isPaid(i)?'<span class="pill ok">Paid</span>':''}${billed(i)?'':`${isPaid(i)?`${!isHiddenPaid(i)?undoBtn(`data-iundo="${i.id}"`,i.name):''}`:''}${last4Of(i)?'':`<button class="pill warn ask4" data-iedit4="${i.id}">Add last 4</button>`}${editBtn(`data-iedit="${i.id}"`,i.name)}${left>0&&!isPaid(i)?paidBtn(`data-ipaid="${i.id}"`,i.name):''}`}${billed(i)?editBtn(`data-iedit="${i.id}"`,i.name):''}</div></div>
+        <div class="sub-h"><span class="sub-n"><button class="openw" data-isched="${i.id}" aria-haspopup="dialog" title="Payment schedule">${of?`<span class="plan-of" aria-label="payment ${of.replace('/',' of ')}">${of}</span>`:''}<span class="sub-name">${esc(nm)}</span></button></span><span class="pay">${peso(pay)}<span class="muted small">/mo</span></span></div>
+        <div class="bar ${paidNow?'is-paid':'is-unpaid'}" role="img" aria-label="${runOf?(runOf-left)+' of '+runOf+' paid; ':''}${i.bbWaiting?'waiting for next bill':isPaid(i)?'current payment paid':'current payment unpaid'}"><i style="width:${pct}%"></i></div>
+        <div class="sub-f"><span class="facts">${facts}</span><div class="acts">${status}${acts}</div></div>
       </div>`;
     }).join('');
     monthly+=gm;remaining+=gr;if(gl&&(!last||gl>last))last=gl;
     const r=list[0];
     const fk='l:'+lenderKey(r);
-    return `<div class="lgrp${folded.has(fk)?' folded':''}"><div class="lgrp-h"><h3>${foldBtn(fk,esc(lenderName(r)))}</h3>
-      <span class="muted small"><b>${peso(gm)}</b>/mo · <b>${peso(gr)}</b> to go · until ${ym(gl)}${list.length>1?' · '+list.length+' installments':''}${r.inCard?' · billed with the card':r.inBill?(partOf(r)?' · one bill':' · waiting for next bill'):''}</span></div>${rows}</div>`;
+    return `<div class="lgrp${folded.has(fk)?' folded':''}"><div class="lgrp-h"><h3>${foldBtn(fk,esc(lenderName(r)))}</h3><span class="lgrp-amt">${peso(gm)}<span class="muted small">/mo</span></span></div>
+      <p class="lgrp-sub">${gr>0?`${peso(gr)} left · done by ${ym(gl)}`:'Fully paid'}${r.inCard?' · billed with the card':''}</p>${rows}</div>`;
   }).join('');
   $('#instSum').innerHTML=`<div><span class="label">Per month</span><span class="v">${peso(monthly)}</span></div><div><span class="label">Still to pay</span><span class="v">${peso(remaining)}</span></div><div><span class="label">All done by</span><span class="v">${ym(last)}</span></div>`;
   $('#instList').innerHTML=html||'<p class="empty">No installments yet.</p>';
+  if(maxLeftChanged)setTimeout(save,0);
 }
 
 // ---------- other money ----------
@@ -570,7 +604,9 @@ function nextOn(day){
   return d;
 }
 const usedOf=a=>{const b=billOf(a);return b&&b.kind==='card'&&!isPaid(b)?num(b.amount):0};
-const ucls=p=>p>50?'bad':p>30?'warn':'';
+const UTIL_MAX=20; // a card above 20% of its limit shows red
+const ucls=p=>p>UTIL_MAX?'bad':'';
+const seenPlans=new Set(); // a card's installment list starts folded, to keep the card simple
 function acctForm(a,isNew){
   const b=billOf(a);
   return `<div class="form flat" data-aid="${a.id}">
@@ -588,6 +624,7 @@ function cardPlans(a,bill){
   if(!plans.length)return '';
   const sum=plans.reduce((t,i)=>t+num(i.amount),0),total=num(bill&&bill.amount);
   const fk='c:'+a.key;
+  if(!seenPlans.has(fk)){seenPlans.add(fk);folded.add(fk)}
   return `<div class="cplans${folded.has(fk)?' folded':''}"><div class="cplans-h">${foldBtn(fk,`Installments <span>${plans.length}</span>`)}<span class="num">${peso(sum)}</span></div>${plans.map(i=>`<div class="cplan"><span class="plan-of">${planOf(i)||'—'}</span><span class="cplan-n">${esc(planLabel(i))}</span><span class="num">${peso(num(i.amount))}</span></div>`).join('')}
     <div class="cplan foot"><span>Installments this period</span><span class="num">${peso(sum)}</span></div>
     ${total?`<div class="cplan foot"><span>Rest of the bill</span><span class="num">${peso(Math.max(0,total-sum))}</span></div><div class="cplan tot"><span>Statement total</span><span class="num">${peso(total)}</span></div>`:''}</div>`;
@@ -598,23 +635,20 @@ function renderAccounts(){
     const L=num(a.limit),U=usedOf(a),p=L>0?U/L*100:null;
     if(L>0){lim+=L;used+=U}
     const bill=billOf(a);
-    const facts=[];
-    if(a.stmt)facts.push(`<span>Statement <b>${fmtD(nextOn(num(a.stmt)))}</b></span>`);
-    if(bill)facts.push(`<span>Due <b>${fmtD(dueOf(bill,cycleStart()))}</b></span>`);
-    facts.push(`<span>Using <b>${peso(U)}</b>${L>0?` of ${peso(L)}`:''}</span>`);
-    if(L>0)facts.push(`<span>Available <b>${peso(Math.max(0,L-U))}</b></span>`);
+    // one simple card: name, how much is used of the limit, one bar (red above 20%), when it's due
+    const over=p!==null&&p>UTIL_MAX;
     return `<div class="acct" data-k="card">
       <div class="acct-h"><h3>${esc(a.name)}${a.last4?`<span class="l4">•••• ${esc(a.last4)}</span>`:`<button class="pill warn ask4" data-aedit4="${a.id}">Add last 4</button>`}</h3>
-        <span class="lim">${L>0?peso(L):'—'}<small>credit limit</small></span></div>
-      ${p!==null?`<div class="ubar" role="img" aria-label="${p.toFixed(0)}% of limit used"><i class="${ucls(p)}" style="width:${Math.min(100,p).toFixed(1)}%"></i></div>`:''}
-      <div class="facts">${p!==null?`<span><b>${p.toFixed(0)}%</b> used</span>`:''}${facts.join('')}</div>
+        ${editBtn(`data-aedit="${a.id}"`,a.name)}</div>
+      <div class="acct-use"><span><b>${peso(U)}</b>${L>0?` of ${peso(L)}`:' used · add a limit'}</span>${p!==null?`<span class="${over?'t-bad':'t-ok'}"><b>${p.toFixed(0)}%</b></span>`:''}</div>
+      ${p!==null?`<div class="ubar" role="img" aria-label="${p.toFixed(0)}% of limit used${over?', above 20%':''}"><i class="${ucls(p)}" style="width:${Math.min(100,p/UTIL_MAX*100).toFixed(1)}%"></i></div>`:''}
+      ${bill&&(bill.day||bill.bbDue)?`<div class="facts"><span>Due <b>${fmtD(dueOf(bill,cycleStart()))}</b></span></div>`:''}
       ${cardPlans(a,bill)}
-      <div class="acts">${editBtn(`data-aedit="${a.id}"`,a.name)}</div>
     </div>`;
   }).join('');
   $('#acctList').innerHTML=html||'<p class="empty">No cards yet.</p>';
   const p=lim>0?used/lim*100:null;
-  $('#acctSum').innerHTML=`<div><span class="label">Total limit</span><span class="v">${peso(lim)}</span></div><div><span class="label">Total used</span><span class="v">${peso(used)}</span></div><div><span class="label">Overall usage</span><span class="v" style="color:${p===null?'inherit':p>50?'var(--bad)':p>30?'var(--warn)':'var(--ok)'}">${p===null?'—':p.toFixed(0)+'%'}</span></div>`;
+  $('#acctSum').innerHTML=`<div><span class="label">Total limit</span><span class="v">${peso(lim)}</span></div><div><span class="label">Total used</span><span class="v">${peso(used)}</span></div><div><span class="label">Overall usage</span><span class="v" style="color:${p===null?'inherit':p>UTIL_MAX?'var(--bad)':'var(--ok)'}">${p===null?'—':p.toFixed(0)+'%'}</span></div>`;
 }
 
 // ---------- render ----------
@@ -879,6 +913,7 @@ function selectTab(name){
   document.querySelectorAll('[data-panel]').forEach(p=>p.hidden=p.dataset.panel!==name);
   flushStale();
   if(name==='bbsync')aiCheck();
+  if(name==='ai'){clearTimeout(autoTimer);renderAutoAdvice();refreshAutoAdvice(false)}
   // when the tab bar is stuck to the top, bring the new panel's start into view
   const bar=$('.tabs'),top=bar.getBoundingClientRect().top;
   if(top<=parseFloat(getComputedStyle(bar).top)+1)bar.parentElement.scrollIntoView({block:'start'});
@@ -902,7 +937,7 @@ prepare();rollover();syncInputs();renderAll();
 const bbConf=()=>S.bb||{};
 function fillBB(){const c=bbConf();$('#bbUrl').value=c.url||'';$('#bbKey').value=c.key||'';if(!c.url)bbState('off','Not connected')}
 const squash=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
-const bbState=(cls,txt)=>{const el=$('#bbState');el.className='sync '+cls;el.textContent=txt};
+const bbState=(cls,txt)=>{const el=$('#bbState');el.className='sync '+cls;el.textContent=txt;paintStatus()};
 let bbBusy=false,bbAgain=false;
 // BillBuddy uses Manila calendar days, regardless of this device's timezone.
 const BB_DAY_FORMAT=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'});
@@ -987,6 +1022,7 @@ function refile(it,kind,bank){
 }
 async function syncBillBuddy(){
   if(!cloudReady)return;
+  if(mcpMode){bbState('off','BillBuddy sync runs on your deployed planner. Bills it already added are kept here.');return}
   const {url,key}=bbConf();
   if(!url||!key){bbState('off','Not connected');return}
   if(bbBusy){bbAgain=true;return}bbBusy=true;
@@ -1263,16 +1299,17 @@ setInterval(()=>{if(document.hidden)return;const expired=pruneExpiredBB(),rolled
 // The AI is one model, gpt-6-luna, for loan checks, tab reviews, sorting bills and placing installments alike.
 // The key decides how it's reached: an OpenRouter key (sk-or-…) goes through OpenRouter, any other key straight to
 // OpenAI. No key is refused for how it looks; if it doesn't work, the service's own error is shown.
-const AI_MODEL='gpt-6-luna',AI_WHO='gpt-6-luna';
+const AI_MODEL='gpt-6-luna';let AI_WHO='gpt-6-luna';
 const aiKey=()=>String(S.ai?.openai?.key||'');
 function aiConf(){
+  if(sampleFn)return {key:'',via:'Claude',base:'claude',model:'claude'};
   const key=aiKey(),or=/^sk-or-/.test(key);
   return or?{key,via:'OpenRouter',base:'https://openrouter.ai/api/v1',model:'openai/'+AI_MODEL}
            :{key,via:'OpenAI',base:'https://api.openai.com/v1',model:AI_MODEL};
 }
-const aiReady=()=>!!aiKey();
+const aiReady=()=>!!sampleFn||!!aiKey();
 const aiName=()=>AI_WHO;
-const aiState=(cls,txt)=>{const el=$('#aiState');el.className='sync '+cls;el.textContent=txt};
+const aiState=(cls,txt)=>{const el=$('#aiState');el.className='sync '+cls;el.textContent=txt;paintStatus()};
 
 // ---------- Model AI: what the service says, live ----------
 // The API tab names only what the service itself reported: the model it confirmed for this key (a free model
@@ -1283,6 +1320,7 @@ const aiLast=()=>S.aiLast||null;                  // {model, at}: the last real 
 async function aiCheck(force){
   if(!aiReady()){aiLive=null;paintModel();return}
   if(!force&&aiLive&&Date.now()-aiLive.at<10*60000){paintModel();return}
+  if(sampleFn){aiLive={ok:true,model:'Claude (your account)',name:'',at:Date.now()};paintModel();return}
   const c=aiConf(),auth={Authorization:'Bearer '+c.key};paintModel('checking');
   try{
     let r,j;
@@ -1321,10 +1359,12 @@ function paintModel(checking){
   }
   el.innerHTML=`<span class="mdot ${dot}" aria-hidden="true"></span><span class="mtext"><b>${esc(head)}</b>${sub?`<span class="muted small">${esc(sub)}</span>`:''}</span>`;
   el.setAttribute('aria-label','Model AI: '+head+(sub?', '+sub:''));
+  paintStatus();
 }
 function fillAI(){
+  $('#aiClaudeNote').hidden=!sampleFn;$('#aiKeyField').hidden=!!sampleFn;$('#aiKeyActs').hidden=!!sampleFn;
   $('#aiLimit').value=aiLimit()||'';$('#aiSort').checked=!S.aiSortOff;paintUsage();$('#aiKey').value=aiKey();
-  aiState(aiReady()?'ok':'off',aiReady()?'Key saved · '+aiConf().via:'Not connected');aiNote();setTimeout(paintAllMon,0);paintModel();
+  aiState(aiReady()?'ok':'off',sampleFn?'Using Claude on your account':aiReady()?'Key saved · '+aiConf().via:'Not connected');aiNote();setTimeout(paintAllMon,0);paintModel();
   if(!$('#panel-bbsync').hidden)aiCheck();
 }
 function aiNote(){$('#aiNote').textContent=aiReady()?'Then asks '+AI_WHO:'Add a key in API for AI advice'}
@@ -1442,10 +1482,10 @@ function monitor(tab){
     loans.filter(i=>num(i.left)===1&&!isPaid(i)).forEach(i=>add('ok',i.name+' ends with its next payment'));
     if(!out.length)add('ok',loans.length?'Installments on track':'No installments');
   }else if(tab==='acct'){
-    S.accounts.forEach(a=>{const L=num(a.limit);if(L>0){const p=usedOf(a)/L*100;if(p>50)add('bad',a.name+' at '+p.toFixed(0)+'% of its limit');else if(p>30)add('warn',a.name+' at '+p.toFixed(0)+'% of its limit')}});
+    S.accounts.forEach(a=>{const L=num(a.limit);if(L>0){const p=usedOf(a)/L*100;if(p>UTIL_MAX)add('bad',a.name+' at '+p.toFixed(0)+'% of its limit')}});
     const noL=S.accounts.filter(a=>!(num(a.limit)>0)).length;if(noL)add('warn',plural(noL,'card')+' without a limit');
     const no4=S.accounts.filter(a=>!a.last4).length;if(no4)add('warn',plural(no4,'card')+' missing last 4 digits');
-    if(!out.length)add('ok',S.accounts.length?'Every card under 30%':'No cards');
+    if(!out.length)add('ok',S.accounts.length?'Every card under 20%':'No cards');
   }else if(tab==='money'){
     const C0=C.start,past=S.income.filter(x=>{const d=parseD(x.date);return d&&d<C0}).length,bad=S.income.filter(x=>!(num(x.amount)>0)||!parseD(x.date)).length;
     if(bad)add('warn',bad+' '+(bad===1?'entry needs':'entries need')+' an amount and date');
@@ -1646,6 +1686,61 @@ $('#advisorGoals').addEventListener('input',()=>{S.advisorNotes=$('#advisorGoals
 $('#advisorNew').addEventListener('click',()=>{advisorRun++;advisorConversationEpoch++;S.advisorTurns=[];$('#advisorAsk').disabled=false;
   $('#advisorQuestion').value='';$('#advisorStatus').textContent='New conversation. Saved answers are still reused when relevant numbers match.';save();renderManager()});
 
+// ---------- automatic advice ----------
+// No typing needed: the AI tab shows advice on the whole planner. It is asked for again only when the planner's
+// figures change (bills, cards, installments, income, salary, creditors, goals), so an unchanged planner costs nothing.
+const AUTO_Q='Look at my whole planner as it is now and tell me plainly where I stand and what to do.';
+// Automatic advice has its own short, plain format: a status, one or two simple sentences, and up to three steps.
+// It never asks questions: when something is unknown it works with what the planner has.
+const AUTO_SYSTEM=`You give one person in the Philippines a short, plain money check-up from their budget planner. Amounts are in pesos (₱).
+The planner has done all the arithmetic: use its numbers as they are, never recompute or invent amounts, dates, rates or balances.
+Write for someone with no finance background: everyday words, short sentences, no jargon (no "utilization", "liquidity", "APR", "amortization"). Name the actual bills, cards and loans and use exact amounts and dates.
+Never ask a question and never ask for more information. If something is missing, give the best advice from what is there.
+Put must-pay bills and essentials first, then cards and loans; never suggest new borrowing unless money runs short this cycle.
+status: "good" if everything is covered and nothing is urgent, "watch" if something needs care soon, "act" if a bill is late, money runs short, or a card is above 20% of its limit.
+summary: one or two short sentences on where they stand. steps: up to 3 short things to do, most urgent first, each starting with a verb, with the amount and date when there is one.`;
+const AUTO_SCHEMA={type:'object',additionalProperties:false,required:['status','summary','steps'],properties:{
+  status:{type:'string',enum:['good','watch','act']},summary:{type:'string',maxLength:300},steps:{type:'array',maxItems:3,items:{type:'string',maxLength:160}}}};
+const checkAuto=a=>a&&['good','watch','act'].includes(a.status)&&typeof a.summary==='string'&&a.summary.trim()&&!/\?\s*$/.test(a.summary.trim())
+  ?{status:a.status,summary:a.summary.trim(),steps:strList(a.steps).filter(x=>!/\?\s*$/.test(x)).slice(0,3)}:null;
+const AUTO_LOOK={good:['ok','All good'],watch:['warn','Keep an eye on'],act:['bad','Do this now']};
+function autoAdviceKey(){const s=aiSnapshot();delete s.today;return hashStr('auto-v2|'+JSON.stringify(s)+'|'+String(S.advisorNotes||''))}
+let autoBusy=false,autoTimer=null,autoErr='';
+function renderAutoAdvice(){
+  const el=$('#autoAdvice');if(!el)return;
+  const c=S.autoAdvice,a=c&&checkAuto(c.a),fresh=!!(a&&c.h===autoAdviceKey());
+  const when=c&&c.at?new Date(c.at).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';
+  let head=autoBusy?'Updating…':!aiReady()?'Turn on AI in the API tab to get advice.':fresh?'Updated '+when:a?'Your planner changed · updating soon':'';
+  if(autoErr&&!autoBusy)head=autoErr;
+  const [cls,word]=a?AUTO_LOOK[a.status]:['',''];
+  el.innerHTML=`<div class="aa-h">${a?`<span class="pill ${cls}">${word}</span>`:'<span></span>'}<span class="aa-meta"><span class="muted small" role="status">${esc(head)}</span>${a&&!autoBusy&&aiReady()?'<button class="ghost sm" type="button" id="autoRefresh">Refresh</button>':''}</span></div>`+
+    (a?`<p class="aa-ans">${esc(a.summary)}</p>${a.steps.length?`<ol class="aa-steps">${a.steps.map(x=>`<li>${esc(x)}</li>`).join('')}</ol>`:''}`
+     :autoBusy?'<p class="muted small">Reading your bills, cards and installments…</p>':'');
+}
+async function refreshAutoAdvice(force){
+  if(!cloudReady||autoBusy){renderAutoAdvice();return}
+  if(!aiReady()){renderAutoAdvice();return}
+  const k=autoAdviceKey();
+  if(!force&&S.autoAdvice?.h===k&&checkAuto(S.autoAdvice.a)){autoErr='';renderAutoAdvice();return}
+  autoBusy=true;autoErr='';renderAutoAdvice();
+  const session=aiSession;
+  try{
+    const user=JSON.stringify({question:AUTO_Q,planner:advisorFacts('overview bills budget cards credit debt loans savings')});
+    const r=await aiAsk({name:'auto_advice',purpose:'advisor',system:AUTO_SYSTEM,schema:AUTO_SCHEMA,check:checkAuto,priority:'high',out:500,user});
+    if(session!==aiSession)return;
+    S.autoAdvice={h:k,a:r.a,at:Date.now(),model:r.model};save();
+  }catch(e){if(session===aiSession)autoErr=e.kind?aiError(e).replace(/<[^>]+>/g,''):String(e.message||e)}
+  finally{autoBusy=false;renderAutoAdvice()}
+}
+// asked only while the AI tab is open, a few seconds after the last change, so typing doesn't trigger it
+function scheduleAutoAdvice(){
+  clearTimeout(autoTimer);
+  if($('#panel-ai').hidden||draft)return;
+  renderAutoAdvice();
+  autoTimer=setTimeout(()=>refreshAutoAdvice(false),4000);
+}
+document.addEventListener('click',e=>{if(e.target.closest('#autoRefresh'))refreshAutoAdvice(true)});
+
 
 // ---------- asking the AI ----------
 const aiMemo=new Map();
@@ -1727,7 +1822,29 @@ async function aiAsk(job){
 // OpenAI's chat completions with a strict JSON schema and low reasoning effort. If gpt-6-luna turns down one of
 // those settings, the same request is sent again without it (still gpt-6-luna; no other model is ever used).
 const lunaRefused={effort:false,schema:false}; // settings gpt-6-luna turned down, so later requests skip them
+// Inside a Claude artifact the page can't reach OpenAI; it asks Claude on the viewer's own account instead.
+async function askClaude(job){
+  const prompt=job.system+'\n\nReply with only one JSON object that matches this JSON Schema, and nothing else:\n'+JSON.stringify(job.schema)+'\n\n'+job.user;
+  let raw;
+  try{raw=await sampleFn.json(prompt,{modelTier:job.priority==='low'?'quick':'default',cache:false})}
+  catch(e){
+    if(job.session!=null&&job.session!==aiSession)throw Object.assign(new Error('Account changed'),{kind:'context'});
+    const code=e&&e.code;
+    if(code==='invalid_json')throw Object.assign(new Error('incomplete'),{kind:'incomplete'});
+    if(code==='refused')throw Object.assign(new Error('refusal'),{kind:'refusal'});
+    if(code==='rate_limited')throw Object.assign(new Error('rate'),{kind:'http',status:429});
+    if(code==='not_granted'||code==='sampling_disabled'||code==='not_declared')throw Object.assign(new Error('Allow this page to use Claude (Permissions menu), then try again.'),{kind:'claude'});
+    if(code==='cancelled')throw Object.assign(new Error('Stopped.'),{kind:'claude'});
+    aiSeen(false,null,'Claude did not answer');throw Object.assign(new Error('network'),{kind:'network'});
+  }
+  if(job.session!=null&&job.session!==aiSession)throw Object.assign(new Error('Account changed'),{kind:'context'});
+  const a=job.check(raw);
+  if(!a)throw Object.assign(new Error('incomplete'),{kind:'incomplete'});
+  aiSeen(true,'Claude');
+  return {a,model:'Claude',tokens:null,cost:''};
+}
 async function askOpenAI(c,job){
+  if(c.via==='Claude')return askClaude(job);
   const plainJson=()=>{body.response_format={type:'json_object'};body.messages[0].content=job.system+'\nReply with only a JSON object with the keys '+job.schema.required.join(', ')+'.'};
   const body={model:c.model,max_completion_tokens:aiOutputLimit(job),reasoning_effort:'low',
     messages:[{role:'system',content:job.system},{role:'user',content:job.user}],
@@ -1763,6 +1880,7 @@ const checkLoan=a=>a&&['yes','careful','no'].includes(a.verdict)&&typeof a.headl
 const askAI=R=>aiAsk({name:'loan_advice',purpose:'loan',system:AI_SYSTEM,schema:AI_SCHEMA,check:checkLoan,priority:'high',out:700,
   user:'Should I take this loan? Planner summary:\n'+JSON.stringify(aiSummary(R))});
 function aiError(e){
+  if(e.kind==='claude')return esc(e.message);
   if(e.kind==='context')return 'Your account changed. Ask again in the current planner.';
   if(e.kind==='limit')return e.low?'Tab reviews pause at 70% of today\'s AI limit, so loan checks keep room. Resets tomorrow.':'Today\'s AI limit is used up. It resets tomorrow, or raise it in the API tab.';
   if(e.kind==='refusal')return AI_WHO+' declined to answer this one. The planner\'s check above still applies.';
@@ -1807,14 +1925,18 @@ const newWriter=()=>Math.random().toString(36).slice(2)+Date.now().toString(36);
 async function pushCloud(){
   cloudTimer=null;pushing=true;
   const owner=cloudUser?.id;if(!owner){pushing=false;return}
-  const row={user_id:owner,state:JSON.parse(snapshot())};if(!noWriter)row.writer=newWriter();
-  let {data,error}=await sb.from('planner_state').upsert(row).select('updated_at').single();
-  // the `writer` column isn't there until schema.sql is run again; save without it meanwhile
-  if(error&&!noWriter&&/writer/i.test(error.message||'')){noWriter=true;delete row.writer;({data,error}=await sb.from('planner_state').upsert(row).select('updated_at').single())}
+  let data,error;
+  if(mcpMode)({data,error}=await pushCloudMcp(owner));
+  else{
+    const row={user_id:owner,state:JSON.parse(snapshot())};if(!noWriter)row.writer=newWriter();
+    ({data,error}=await sb.from('planner_state').upsert(row).select('updated_at').single());
+    // the `writer` column isn't there until schema.sql is run again; save without it meanwhile
+    if(error&&!noWriter&&/writer/i.test(error.message||'')){noWriter=true;delete row.writer;({data,error}=await sb.from('planner_state').upsert(row).select('updated_at').single())}
+  }
   pushing=false;
   if(cloudTimer||!cloudReady||cloudUser?.id!==owner)return; // a newer save or account replaced this request
-  if(error){console.warn('Supabase save failed',error);saveFailed(error,owner);return}
-  saveFails=0;cloudAt=data.updated_at;setSync('ok','Saved to your account');
+  if(error){console.warn('Supabase save failed',error);(mcpMode?mcpSaveFailed:saveFailed)(error,owner);return}
+  saveFails=0;cloudAt=data.updated_at;setSync('ok','Saved');
 }
 // A failed save says why and fixes what it can, instead of sending the same request every 5 seconds:
 // an expired sign-in is renewed, a save the database turned away for lacking `writer` is sent with it again,
@@ -1836,7 +1958,97 @@ async function saveFailed(error,owner){
   setSync('off',/fetch|network|load failed/i.test(why)?'Not saved yet: no connection. Retrying…':'Not saved yet ('+why.slice(0,80)+'). Retrying…');
   again(Math.min(60000,5000*saveFails));
 }
+// ---------- inside a Claude artifact: Supabase through the viewer's Supabase connector ----------
+// An artifact page can't reach supabase.co itself, so it runs SQL through the claude.ai Supabase connector
+// as the person viewing it (the project owner). No password is involved; the connector's own sign-in applies.
+const MCP_SERVER='Supabase',MCP_PROJECT=(/^https:\/\/([a-z0-9]+)\.supabase\.co/.exec(CFG.supabaseUrl||'')||[])[1]||'';
+const UUID_RE=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function mcpRows(r){
+  const p=r&&r.payload;
+  if(Array.isArray(p))return p;
+  if(p&&typeof p==='object'){for(const k of ['result','rows','data'])if(Array.isArray(p[k]))return p[k]}
+  // The connector answers in text: the rows sit between <untrusted-data-…> tags, and the whole text may be
+  // a JSON-encoded string (quotes escaped) or wrapped in an object. Try each form until one parses.
+  const seen=[],add=s=>{if(typeof s!=='string'||seen.includes(s))return;seen.push(s);
+    const t=s.trim();if(t.startsWith('"'))try{add(JSON.parse(t))}catch(e){}
+    if(t.startsWith('{'))try{const o=JSON.parse(t);if(o&&typeof o==='object')Object.values(o).forEach(add)}catch(e){}};
+  add(p);if(p&&typeof p==='object')Object.values(p).forEach(add);
+  ((r&&r.content)||[]).forEach(b=>{if(b&&b.type==='text')add(b.text)});
+  const tryRows=t=>{
+    const m=/<untrusted-data-[^>]*>([\s\S]*?)<\/untrusted-data/.exec(t);if(m)t=m[1];
+    const a=t.indexOf('['),b=t.lastIndexOf(']');if(a<0||b<a)return null;
+    const body=t.slice(a,b+1);
+    for(const x of [body,body.replace(/\\"/g,'"')]){try{const v=JSON.parse(x);if(Array.isArray(v))return v}catch(e){}}
+    try{const v=JSON.parse(JSON.parse('"'+body+'"'));if(Array.isArray(v))return v}catch(e){}
+    return null;
+  };
+  for(const s of seen){const v=tryRows(s);if(v)return v}
+  throw Object.assign(new Error('Unexpected reply from Supabase: '+String(seen[0]||'').slice(0,120)),{code:'tool_error'});
+}
+async function runSql(query){
+  return mcpRows(await mcpApi.callTool(MCP_SERVER,'execute_sql',{project_id:MCP_PROJECT,query},{cache:false}));
+}
+function mcpMsg(e){
+  switch(e&&e.code){
+    case 'needs_reauth':return 'Reconnect Supabase in claude.ai Settings → Connectors, then reload.';
+    case 'server_not_connected':return 'Add the Supabase connector in claude.ai Settings → Connectors, then reload.';
+    case 'selection_required':return 'Choose which Supabase connection this page uses, then reload.';
+    case 'not_in_manifest':case 'approval_required':case 'consent_required':case 'not_granted':return 'Allow Supabase for this page (Permissions menu), then reload.';
+    case 'blocked_by_policy':return 'Your organization blocks this Supabase tool.';
+    case 'tool_error':return 'Supabase refused: '+String(e.message||'').slice(0,120);
+    case 'capability_disabled':case 'capability_removed':return 'Connectors are not available in this view. Open the artifact in claude.ai.';
+    default:return 'Could not reach Supabase ['+String(e&&e.code||'no code')+(e&&e.message?': '+String(e.message).slice(0,160):'')+'].';
+  }
+}
+async function pushCloudMcp(owner){
+  if(!UUID_RE.test(owner))return {data:null,error:{code:'tool_error',message:'Invalid planner id'}};
+  const json=snapshot();let tag;
+  do{tag='p'+Math.random().toString(36).slice(2,10)}while(json.includes('$'+tag+'$'));
+  try{
+    const rows=await runSql(`update public.planner_state set state=$${tag}$${json}$${tag}$::jsonb, writer='${newWriter()}' where user_id='${owner}' returning updated_at`);
+    return rows.length?{data:rows[0],error:null}:{data:null,error:{code:'tool_error',message:'Planner not found'}};
+  }catch(e){return {data:null,error:e}}
+}
+function mcpSaveFailed(error,owner){
+  const again=ms=>{if(!cloudTimer&&cloudReady&&cloudUser?.id===owner)cloudTimer=setTimeout(pushCloud,ms)};
+  saveFails++;
+  if(['needs_reauth','server_not_connected','selection_required','not_in_manifest','approval_required','consent_required','not_granted','blocked_by_policy','capability_disabled','capability_removed'].includes(error.code)){setSync('off','Not saved: '+mcpMsg(error));return}
+  setSync('off','Not saved yet ('+mcpMsg(error)+') Retrying…');
+  again(Math.min(60000,10000*saveFails));
+}
+function mcpFail(e){
+  console.warn('Supabase connector failed',e);
+  setSync('off',mcpMsg(e));
+  const el=$('#syncState'),btn=document.createElement('button');
+  btn.className='ghost sm';btn.type='button';btn.textContent='Try again';
+  btn.addEventListener('click',()=>{btn.remove();cloudUser?startCloud(cloudUser):connectMcpPlanner()});
+  el.after(btn);
+}
+async function initMcpCloud(){
+  mcpMode=true;authKnown=true;setSync('busy','Opening your planner…');renderAuth();
+  window.claude.use('sample').then(s=>{if(s){sampleFn=s;AI_WHO='Claude';aiLive=null;fillAI();if(!$('#panel-ai').hidden)refreshAutoAdvice(false)}}).catch(()=>{});
+  mcpApi=await window.claude.use('mcp').catch(()=>null);
+  connectMcpPlanner();
+}
+async function connectMcpPlanner(){
+  setSync('busy','Opening your planner…');
+  if(!mcpApi){setSync('off','The Supabase connector is not available in this view. Open the artifact in claude.ai.');return}
+  if(!MCP_PROJECT){setSync('off','config.js has no Supabase project URL.');return}
+  try{
+    const rows=await runSql('select user_id::text as user_id, updated_at from public.planner_state order by updated_at desc');
+    const ok=rows.filter(r=>r&&UUID_RE.test(String(r.user_id)));
+    if(!ok.length){setSync('off','No saved planner found in Supabase.');return}
+    startCloud({id:String(ok[0].user_id),email:''});
+  }catch(e){mcpFail(e)}
+}
 async function pullCloud(){
+  if(mcpMode){
+    if(!UUID_RE.test(cloudUser?.id||''))throw new Error('Invalid planner id');
+    const rows=await runSql(`select state, updated_at from public.planner_state where user_id='${cloudUser.id}'`);
+    const r=rows[0];if(!r)return null;
+    if(typeof r.state==='string')try{r.state=JSON.parse(r.state)}catch(e){}
+    return r;
+  }
   const {data,error}=await sb.from('planner_state').select('state,updated_at').eq('user_id',cloudUser.id).maybeSingle();
   if(error)throw error;
   return data;
@@ -1848,12 +2060,15 @@ async function startCloud(user){
     const row=await pullCloud();
     if(cloudUser?.id!==user.id)return;
     cloudReady=true;
-    if(row&&row.state&&row.state.ver===DEFAULTS.ver){adopt(row.state);cloudAt=row.updated_at;setSync('ok','Saved to your account')}
+    if(row&&row.state&&row.state.ver===DEFAULTS.ver){adopt(row.state);cloudAt=row.updated_at;setSync('ok','Saved')}
     else{adopt(legacy||clone(DEFAULTS));save()} // a new account starts from this browser's old data, or the installments
     legacy=null;LEGACY_KEYS.forEach(k=>{try{localStorage.removeItem(k)}catch(e){}});
     renderAuth();syncBillBuddy();
+    if(!$('#panel-ai').hidden)refreshAutoAdvice(false);
   }catch(e){
-    console.warn('Supabase load failed',e);setSync('off','Could not reach your account. Trying again…');
+    console.warn('Supabase load failed',e);
+    if(mcpMode&&!e?.retryable){mcpFail(e);return}
+    setSync('off','Could not reach your account. Trying again…');
     setTimeout(()=>{if(cloudUser?.id===user.id&&!cloudReady)startCloud(user)},5000);
   }
 }
@@ -1880,9 +2095,9 @@ function renderAuth(){
   document.body.classList.toggle('locked',!cloudReady);
   const db=$('#draftBtn');db.hidden=!cloudReady;db.textContent=draft?'Close draft':'Draft';db.classList.toggle('on',!!draft);
   db.title=draft?'Close the draft; nothing in it is kept':'Try changes in a copy that is never saved';
-  $('#authBtn').hidden=!cloudUser;
+  $('#authBtn').hidden=!cloudUser||mcpMode;
   $('#authForm').hidden=!sb||!authKnown||!!cloudUser;
-  $('#authWho').textContent=cloudUser?'My planner':'';$('#authWho').title=cloudUser?'Your private planner':'';
+  $('#authWho').textContent='';$('#authWho').title='';
   paintPasswordForm();paintAccountAccess();
 }
 function signedOut(){
@@ -1895,6 +2110,7 @@ function signedOut(){
   setSync('','Sign in to open your planner');renderAuth();
 }
 function initCloud(){
+  if(window.claude&&typeof window.claude.use==='function'){initMcpCloud();return}
   if(!CFG.supabaseUrl||!CFG.supabaseAnonKey||!window.supabase){setSync('off','Cloud saving is not set up. Add your Supabase details to config.js.');renderAuth();return}
   // the sign-in is remembered on this device and renewed automatically, so a known device opens straight in
   sb=window.supabase.createClient(CFG.supabaseUrl,CFG.supabaseAnonKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
@@ -1958,7 +2174,7 @@ function paintPasswordForm(){
 }
 function paintAccountAccess(){
   $('#accountAccess').hidden=!cloudUser||!accessOpen;
-  $('#accessBtn').hidden=!cloudReady;
+  $('#accessBtn').hidden=!cloudReady||mcpMode;
   $('#accessBtn').textContent=cloudUser?.user_metadata?.planner_password_ready?'Account access':'Set password';
   $('#accountCode').value=accountCode(cloudUser?.email||accountIdentity);
 }
@@ -2068,7 +2284,7 @@ $('#draftBtn').addEventListener('click',()=>draft?closeDraft():openDraft());
 // old copy never syncs BillBuddy with outdated rules and saves that to the account.
 const APP_V=(/[?&]v=(\w+)/.exec(document.currentScript?.getAttribute('src')||'')||[])[1];
 async function checkUpdate(){
-  if(!APP_V)return;
+  if(!APP_V||mcpMode)return;
   try{
     const html=await (await fetch(location.pathname,{cache:'no-store'})).text();
     const v=(/app\.js\?v=(\w+)/.exec(html)||[])[1];

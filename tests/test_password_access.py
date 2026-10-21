@@ -213,7 +213,7 @@ class PasswordAccessTest(unittest.TestCase):
         self.restore_existing()
         self.page.evaluate("upsertErrors=[{message:'JWT expired',code:'PGRST303'}];upserts=0;S.salary=50000;save()")
         self.page.wait_for_function("upserts===2",timeout=5000)
-        self.page.wait_for_function("$('#syncState').textContent==='Saved to your account'",timeout=5000)
+        self.page.wait_for_function("$('#syncState').textContent==='Saved'",timeout=5000)
         self.assertIn({'kind':'refresh'},self.page.evaluate('authCalls'))
 
     def test_failed_renewal_and_other_errors_say_why(self):
