@@ -1683,10 +1683,10 @@ async function askFinancialManager(question){
 }
 $('#advisorForm').addEventListener('submit',async event=>{
   event.preventDefault();const question=$('#advisorQuestion').value,run=++advisorRun,session=aiSession;
-  const button=$('#advisorAsk');button.disabled=true;$('#advisorStatus').textContent='Checking your planner and preparing a short answer…';
+  const button=$('#advisorAsk');button.disabled=true;$('#advisorStatus').textContent='Thinking…';
   try{
     const result=await askFinancialManager(question);if(run!==advisorRun||session!==aiSession)return;
-    $('#advisorStatus').textContent=result.local?'Answered locally · 0 AI tokens':result.cached?'Reused saved advice · 0 new AI tokens':'Answered using relevant planner facts · '+(result.cost||'usage recorded in API');
+    $('#advisorStatus').textContent='';$('#advisorQuestion').value='';
   }catch(error){if(run===advisorRun&&session===aiSession)$('#advisorStatus').textContent=error.kind?aiError(error):error.message}
   finally{if(run===advisorRun)button.disabled=false}
 });
@@ -1694,7 +1694,7 @@ document.addEventListener('click',event=>{const prompt=event.target.closest('[da
   $('#advisorQuestion').value=prompt.dataset.advisorPrompt;$('#advisorQuestion').focus()});
 $('#advisorGoals').addEventListener('input',()=>{S.advisorNotes=$('#advisorGoals').value.slice(0,400);save()});
 $('#advisorNew').addEventListener('click',()=>{advisorRun++;advisorConversationEpoch++;S.advisorTurns=[];$('#advisorAsk').disabled=false;
-  $('#advisorQuestion').value='';$('#advisorStatus').textContent='New conversation. Saved answers are still reused when relevant numbers match.';save();renderManager()});
+  $('#advisorQuestion').value='';$('#advisorStatus').textContent='';save();renderManager()});
 
 // ---------- automatic advice ----------
 // No typing needed: the AI tab shows advice on the whole planner. It is asked for again only when the planner's
@@ -1723,9 +1723,10 @@ function renderAutoAdvice(){
   let head=autoBusy?'Updating…':!aiReady()?'Turn on AI in the API tab to get advice.':fresh?'Updated '+when:a?'Your planner changed · updating soon':'';
   if(autoErr&&!autoBusy)head=autoErr;
   const [cls,word]=a?AUTO_LOOK[a.status]:['',''];
-  el.innerHTML=`<div class="aa-h">${a?`<span class="pill ${cls}">${word}</span>`:'<span></span>'}<span class="aa-meta"><span class="muted small" role="status">${esc(head)}</span>${a&&!autoBusy&&aiReady()?'<button class="ghost sm" type="button" id="autoRefresh">Refresh</button>':''}</span></div>`+
+  el.innerHTML=`<div class="aa-h">${a?`<span class="pill ${cls}">${word}</span>`:'<span></span>'}${a&&!autoBusy&&aiReady()?'<button class="ghost sm" type="button" id="autoRefresh">Refresh</button>':''}</div>`+
     (a?`<p class="aa-ans">${esc(a.summary)}</p>${a.steps.length?`<ol class="aa-steps">${a.steps.map(x=>`<li>${esc(x)}</li>`).join('')}</ol>`:''}`
-     :autoBusy?'<p class="muted small">Reading your bills, cards and installments…</p>':'');
+     :autoBusy?'<p class="muted small">Reading your bills, cards and installments…</p>':'')+
+    (head?`<p class="aa-time" role="status">${esc(head)}</p>`:'');
 }
 async function refreshAutoAdvice(force){
   if(!cloudReady||autoBusy){renderAutoAdvice();return}
@@ -1802,7 +1803,7 @@ function paintUsage(){
 const hashStr=t=>{let h=5381;for(let k=0;k<t.length;k++)h=(h*33^t.charCodeAt(k))>>>0;return h.toString(36)};
 const aiPending=new Map(),aiReservations=new Map();
 let aiSession=0;
-function resetAiSession(){aiSession++;advisorRun++;advisorConversationEpoch++;aiMemo.clear();aiPending.clear();$('#advisorQuestion').value='';$('#advisorGoals').value='';$('#advisorAsk').disabled=false;$('#advisorStatus').textContent='Ask about your current planner.'}
+function resetAiSession(){aiSession++;advisorRun++;advisorConversationEpoch++;aiMemo.clear();aiPending.clear();$('#advisorQuestion').value='';$('#advisorGoals').value='';$('#advisorAsk').disabled=false;$('#advisorStatus').textContent=''}
 const aiOutputLimit=job=>Math.max(256,Math.min(1600,Math.round(num(job.out)||700)));
 async function aiAsk(job){
   const c=aiConf(),session=aiSession,owner=cloudUser?.id||null;

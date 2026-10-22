@@ -755,3 +755,28 @@ header .acctbar{flex-wrap:wrap}
 .bills-h{display:flex;align-items:baseline;gap:4px 10px;flex-wrap:wrap;min-width:0}
 .bills-left{font-size:.88rem;color:var(--muted);font-variant-numeric:tabular-nums}
 .bills-left b{color:var(--ink);font-weight:600}
+
+/* ---------- financial manager: minimal ----------
+   The advice is the page; asking a question is one quiet line that opens a small box. */
+.advisor{gap:12px}
+.advisor>h2{margin:0}
+.auto-advice{background:transparent;padding:0;border-radius:0}
+.auto-advice .aa-h{gap:8px}
+.ask-more{border-top:1px solid var(--line);padding-top:4px}
+.ask-more>summary{list-style:none;color:var(--accent);font-weight:600;font-size:.92rem;min-height:44px}
+.ask-more>summary::-webkit-details-marker{display:none}
+.ask-more>summary::before{content:"+";display:inline-grid;place-items:center;width:22px;height:22px;margin-right:8px;border-radius:50%;background:var(--accent-soft);font-weight:700}
+.ask-more[open]>summary::before{content:"−"}
+.advisor-prompts{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:1px solid var(--line);background:transparent;border-radius:999px;padding:6px 12px;font-size:.85rem;min-height:36px}
+@media (pointer:coarse){.chip{min-height:var(--tap)}}
+@media (hover:hover){.chip:hover{border-color:var(--accent);color:var(--accent)}}
+.ask-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}
+.ask-row textarea,.goals textarea{width:100%;min-height:48px;padding:10px 12px;border:1px solid var(--field);border-radius:12px;background:var(--surface);color:var(--ink);font:inherit;line-height:1.4;resize:vertical}
+.ask-row textarea:focus,.goals textarea:focus{border-color:var(--accent);box-shadow:var(--ring);outline:none}
+.ask-row .btn{min-height:48px}
+#advisorStatus:empty{display:none}
+.goals>summary{cursor:pointer;font-size:.85rem;color:var(--muted);min-height:36px;display:flex;align-items:center}
+.goals[open]{display:grid;gap:6px}
+.advisor-turn{padding-top:12px;margin-top:4px}
+.auto-advice .aa-time{margin:0;font-size:.78rem;color:var(--muted)}
