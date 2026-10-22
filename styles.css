@@ -780,3 +780,8 @@ header .acctbar{flex-wrap:wrap}
 .goals[open]{display:grid;gap:6px}
 .advisor-turn{padding-top:12px;margin-top:4px}
 .auto-advice .aa-time{margin:0;font-size:.78rem;color:var(--muted)}
+
+/* foldable headers: the whole row is the tap target. The press "shrink" made the button a new containing block,
+   so its row-wide tap area collapsed to the text mid-tap and the tap was lost; headers don't shrink. */
+.fold:active,button.fold:not(:disabled):active{transform:none!important}
+.grp-h,.lgrp-h,.cplans-h{cursor:pointer;-webkit-user-select:none;user-select:none}

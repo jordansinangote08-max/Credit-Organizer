@@ -674,7 +674,10 @@ function runJobs(jobs,C){jobs.forEach(j=>{if(shown(j)){stale.delete(j);JOBS[j](C
 const folded=new Set();
 const foldBtn=(key,label)=>`<button class="fold" data-fold="${esc(key)}" aria-expanded="${!folded.has(key)}">${label}<i class="chev" aria-hidden="true"></i></button>`;
 document.addEventListener('click',e=>{
-  const f=e.target.closest('[data-fold]');if(!f)return;
+  // a tap anywhere on a foldable header row (name, count, total, empty space) folds it, not only the arrow
+  let f=e.target.closest('[data-fold]');
+  if(!f){const h=e.target.closest('.grp-h,.lgrp-h,.cplans-h');if(!h||e.target.closest('button,a,input,select,textarea'))return;f=h.querySelector('[data-fold]')}
+  if(!f)return;
   const k=f.dataset.fold,box=f.closest('.grp,.lgrp,.sec,.cplans');
   if(folded.has(k))folded.delete(k);else folded.add(k);
   f.setAttribute('aria-expanded',!folded.has(k));box&&box.classList.toggle('folded',folded.has(k));
