@@ -257,7 +257,14 @@ function renderStatus(C){
   const flow=`<div class="flow"><span>Money in <b>${peso(C.avail)}</b></span><span>Bills <b>${peso(C.total)}</b></span>${C.paidAmt>0?`<span>Paid so far <b>${peso(C.paidAmt)}</b></span>`:''}</div>`;
   const more=`<span class="more">Breakdown ${IC.chev}</span>`;
   if(C.gap>0.004){el.className='status bad';el.innerHTML=`<span class="label">Short this cycle</span><span class="big">${peso(C.gap)}</span>${flow}${more}`}
-  else{el.className='status ok';el.innerHTML=`<span class="label">${C.surplus>0.004?'Extra after all bills':'Everything is covered'}</span><span class="big">${peso(Math.max(0,C.surplus))}</span>${flow}${more}`}
+  else{
+    // same figure as "You have ₱X extra" below: what's left after every bill AND the buffer you keep on hand
+    const buf=Math.max(0,num(S.buffer)),extra=C.surplus-buf,bufTxt=buf>0?`<span>Keep on hand <b>${peso(buf)}</b></span>`:'';
+    const flowB=`<div class="flow"><span>Money in <b>${peso(C.avail)}</b></span><span>Bills <b>${peso(C.total)}</b></span>${bufTxt}${C.paidAmt>0?`<span>Paid so far <b>${peso(C.paidAmt)}</b></span>`:''}</div>`;
+    el.className='status ok';
+    el.innerHTML=extra>0.004?`<span class="label">${buf>0?'Extra after bills and buffer':'Extra after all bills'}</span><span class="big">${peso(extra)}</span>${flowB}${more}`
+      :`<span class="label">Everything is covered</span><span class="big">${peso(Math.max(0,C.surplus))}</span>${flowB}${C.surplus>0.004?`<span class="small muted">Left over, within your ${peso(buf)} buffer</span>`:''}${more}`;
+  }
 }
 
 // ---------- this cycle ----------
@@ -683,7 +690,9 @@ function cycleInfo(){
   if(C.paidAmt>0)outRows.push(['Paid so far',peso(C.paidAmt)],['Still to pay',peso(C.total-C.paidAmt)]);
   infoWin(fmtD(C.start)+' – '+fmtD(C.end),
     `<h3 class="ih">Money in</h3>${infoRows(inRows)}<h3 class="ih">Bills</h3>${infoRows(outRows)}`+
-    infoRows([[C.gap>0.004?'Short':'Left over',peso(C.gap>0.004?C.gap:Math.max(0,C.surplus)),'res '+(C.gap>0.004?'bad':'ok')]]));
+    (C.gap>0.004?infoRows([['Short',peso(C.gap),'res bad']])
+      :num(S.buffer)>0?infoRows([['Left after bills',peso(Math.max(0,C.surplus))],['Keep on hand',peso(Math.max(0,num(S.buffer)))],['Extra',peso(Math.max(0,C.surplus-num(S.buffer))),'res ok']])
+      :infoRows([['Left over',peso(Math.max(0,C.surplus)),'res ok']])));
 }
 // every payment still to come on one installment, with its date and what's left after it
 function schedInfo(i){
