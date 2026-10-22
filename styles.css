@@ -733,3 +733,20 @@ header .acctbar{flex-wrap:wrap}
 .auto-advice .aa-ans{font-size:1.02rem;font-weight:500}
 .aa-steps{margin:0;padding-left:22px;display:grid;gap:8px}
 .aa-steps li{padding-left:2px}
+
+/* ---------- phones: nothing may be wider than the screen ----------
+   Grid and flex children default to their content's width, so one long name (a card statement plan) used to
+   stretch the whole list sideways. Every column may shrink; long names wrap onto a second line instead. */
+.loans,.lgrp,.lgrp .sub,#acctList,.acct,.cplans{grid-template-columns:minmax(0,1fr)}
+.lgrp-h h3,.lgrp-h .fold,.sub-h,.sub-n,.sub-n .openw,.sub-name,.acct-h h3{min-width:0;max-width:100%}
+.sub-name{white-space:normal;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
+.lgrp-h .fold{overflow-wrap:anywhere}
+.lgrp-sub{overflow-wrap:anywhere}
+@media (max-width:520px){
+  .lgrp{padding:12px}
+  .lgrp-amt{font-size:1rem}
+  .sub-h{align-items:flex-start;gap:8px}
+  .sub .pay{padding-top:4px}
+  .lgrp .sub-f{flex-wrap:wrap}
+  .sub .acts{margin-left:auto}
+}
