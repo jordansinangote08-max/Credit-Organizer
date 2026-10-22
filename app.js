@@ -387,8 +387,9 @@ function renderItems(){
     return `<div class="grp${folded.has(fk)?' folded':''}" data-c="${esc(c.color)}"><div class="grp-h"><h3>${foldBtn(fk,esc(c.name)+`<span>${its.length}</span>`)}</h3><span class="sub">${peso(due)}</span></div>${its.map(i=>itemRow(i,start)).join('')}</div>`;
   }).join('');
   const left=vis.filter(i=>!isPaid(i)).reduce((s,i)=>s+num(i.amount),0);
+  // "Still to pay" sits beside the Bills heading rather than under the list
+  const bl=$('#billsLeft');if(bl)bl.innerHTML=left>0.004?`Still to pay <b>${peso(left)}</b>`:'All paid';
   $('#itemList').innerHTML=(html||'<p class="empty">Nothing left to pay this cycle.</p>')+
-    `<div class="tot"><span>Still to pay</span><span>${peso(left)}</span></div>`+
     (hidden.length?`<details class="paidlist"><summary>Paid this cycle (${hidden.length})</summary><ul>${hidden.map(i=>`<li><span>${esc(i.name)}</span><span class="num">${peso(num(i.amount))}</span></li>`).join('')}</ul></details>`:'')+
     (later.length?`<details class="paidlist"><summary>Coming in a later cycle (${later.length})</summary><div class="later">${later.map(i=>
       `<div class="laterrow"><span>${esc(i.name||'Untitled bill')} <span class="muted">· ${fmtD(exactDue(i))}, ${exactDue(i).getFullYear()}</span></span><span class="num">${peso(num(i.amount))}</span>${editBtn(`data-edit="${i.id}"`,i.name||"bill")}</div>`).join('')}</div></details>`:'')+

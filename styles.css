@@ -750,3 +750,8 @@ header .acctbar{flex-wrap:wrap}
   .lgrp .sub-f{flex-wrap:wrap}
   .sub .acts{margin-left:auto}
 }
+
+/* Bills header: "Still to pay" beside the heading */
+.bills-h{display:flex;align-items:baseline;gap:4px 10px;flex-wrap:wrap;min-width:0}
+.bills-left{font-size:.88rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.bills-left b{color:var(--ink);font-weight:600}
