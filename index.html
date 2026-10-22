@@ -15,10 +15,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=48">
+<link rel="stylesheet" href="styles.css?v=52">
 <script src="config.js?v=42" defer></script>
 <script src="vendor/supabase-2.116.0.js" defer></script>
-<script src="app.js?v=49" defer></script>
+<script src="app.js?v=53" defer></script>
 </head>
 <body class="locked">
 <div class="app">
@@ -97,9 +97,9 @@
     <section class="panel" role="tabpanel" id="panel-bills" aria-labelledby="tab-bills" data-panel="bills" hidden>
       <div class="mon" id="mon-bills" aria-live="polite"></div>
       <div class="sec">
-        <div class="sec-h"><h2>Bills</h2><div class="row"><button class="ghost ib" id="catBtn" aria-label="Categories" title="Categories"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg></button><button class="ghost ib" id="addBtn" type="button" aria-label="Add bill" title="Add bill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div></div>
+        <div class="sec-h"><div class="bills-h"><h2>Bills</h2><span id="billsLeft" class="bills-left"></span></div><div class="row"><button class="ghost ib" id="catBtn" aria-label="Categories" title="Categories"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg></button><button class="ghost ib" id="addBtn" type="button" aria-label="Add bill" title="Add bill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div></div>
         <div id="itemList"></div>
-        <div class="row" style="justify-content:flex-end"><button class="ghost sm" id="resetBtn" type="button">Reset to starting bills</button></div>
+        <div class="row" style="justify-content:flex-end"><button class="ghost sm" id="resetBtn" type="button" aria-label="Reset to starting bills">Reset</button></div>
         <div id="resetConfirm" class="reco bad" hidden><p class="small">Erase your changes and restore the starting bills and categories?</p><div class="row"><button class="btn" id="resetYes">Yes, reset</button><button class="ghost" id="resetNo">Cancel</button></div></div>
       </div>
     </section>
@@ -173,27 +173,25 @@
 
     <section class="panel" role="tabpanel" id="panel-ai" aria-labelledby="tab-ai" data-panel="ai" hidden>
       <div class="sec advisor">
-        <div><h2>Your financial manager</h2><p class="muted small lead">Advice on your bills, cards, installments and money right now. It updates by itself only when your planner changes, so nothing is spent when nothing changed.</p></div>
+        <h2>Your financial manager</h2>
         <div id="autoAdvice" class="auto-advice" aria-live="polite"></div>
-        <details class="ask-more"><summary>Ask something specific</summary>
-        <form class="form flat" id="advisorForm">
-          <div class="field wide"><label for="advisorQuestion">What would you like to work out?</label>
-            <textarea id="advisorQuestion" rows="3" maxlength="1600" required placeholder="Which debt should I pay first while keeping enough for bills?"></textarea>
-            <span class="hint">English or Filipino, in your own words. Include any money or goal not already in your planner.</span></div>
-          <details class="wide"><summary>Goals and constraints to remember</summary>
-            <div class="field"><label for="advisorGoals">Keep in mind</label><textarea id="advisorGoals" rows="2" maxlength="400" placeholder="e.g. Keep ₱3,000 available for medicine. Avoid new borrowing."></textarea>
-              <span class="hint">Saved with your planner. Editing this uses no AI tokens.</span></div></details>
-          <div class="acts"><span class="muted small" id="advisorStatus" role="status">Short answers. Repeated questions reuse saved advice when the relevant numbers match.</span><button class="btn" id="advisorAsk">Ask</button></div>
-        </form>
-        <div class="advisor-prompts" aria-label="Suggested questions">
-          <button class="ghost sm" type="button" data-advisor-prompt="What should I prioritize before my next payday?">Before payday</button>
-          <button class="ghost sm" type="button" data-advisor-prompt="How can I improve my credit card utilization without missing bills?">Improve credit use</button>
-          <button class="ghost sm" type="button" data-advisor-prompt="Help me plan a safer debt payoff strategy. What information is missing?">Plan debt payoff</button>
-        </div>
-        <div id="advisorConversation" aria-live="polite"></div>
-        <button class="ghost sm" id="advisorNew" type="button">New conversation</button>
+        <details class="ask-more"><summary>Ask a question</summary>
+          <div class="advisor-prompts" aria-label="Suggested questions">
+            <button class="chip" type="button" data-advisor-prompt="What should I prioritize before my next payday?">Before payday</button>
+            <button class="chip" type="button" data-advisor-prompt="How can I keep my credit cards under 20% of their limits without missing bills?">My credit cards</button>
+            <button class="chip" type="button" data-advisor-prompt="Which debt should I pay off first?">Which debt first</button>
+          </div>
+          <form class="ask-row" id="advisorForm">
+            <textarea id="advisorQuestion" rows="2" maxlength="1600" required aria-label="Your question" placeholder="Type in English or Filipino"></textarea>
+            <button class="btn" id="advisorAsk">Ask</button>
+          </form>
+          <p class="muted small" id="advisorStatus" role="status"></p>
+          <div id="advisorConversation" aria-live="polite"></div>
+          <button class="ghost sm" id="advisorNew" type="button">Clear answers</button>
+          <details class="goals"><summary>Things to keep in mind</summary>
+            <textarea id="advisorGoals" rows="2" maxlength="400" aria-label="Things to keep in mind" placeholder="e.g. Keep ₱3,000 for medicine. No new loans."></textarea>
+          </details>
         </details>
-        <p class="note">Advice uses planned figures, not a live bank balance or credit report. You decide what to change; questions do not edit your planner.</p>
       </div>
       <div class="sec">
         <div><h2>Should I take this loan?</h2><p class="muted small lead">Checks a loan against every payday and bill.</p></div>

@@ -257,7 +257,14 @@ function renderStatus(C){
   const flow=`<div class="flow"><span>Money in <b>${peso(C.avail)}</b></span><span>Bills <b>${peso(C.total)}</b></span>${C.paidAmt>0?`<span>Paid so far <b>${peso(C.paidAmt)}</b></span>`:''}</div>`;
   const more=`<span class="more">Breakdown ${IC.chev}</span>`;
   if(C.gap>0.004){el.className='status bad';el.innerHTML=`<span class="label">Short this cycle</span><span class="big">${peso(C.gap)}</span>${flow}${more}`}
-  else{el.className='status ok';el.innerHTML=`<span class="label">${C.surplus>0.004?'Extra after all bills':'Everything is covered'}</span><span class="big">${peso(Math.max(0,C.surplus))}</span>${flow}${more}`}
+  else{
+    // same figure as "You have ₱X extra" below: what's left after every bill AND the buffer you keep on hand
+    const buf=Math.max(0,num(S.buffer)),extra=C.surplus-buf,bufTxt=buf>0?`<span>Keep on hand <b>${peso(buf)}</b></span>`:'';
+    const flowB=`<div class="flow"><span>Money in <b>${peso(C.avail)}</b></span><span>Bills <b>${peso(C.total)}</b></span>${bufTxt}${C.paidAmt>0?`<span>Paid so far <b>${peso(C.paidAmt)}</b></span>`:''}</div>`;
+    el.className='status ok';
+    el.innerHTML=extra>0.004?`<span class="label">${buf>0?'Extra after bills and buffer':'Extra after all bills'}</span><span class="big">${peso(extra)}</span>${flowB}${more}`
+      :`<span class="label">Everything is covered</span><span class="big">${peso(Math.max(0,C.surplus))}</span>${flowB}${C.surplus>0.004?`<span class="small muted">Left over, within your ${peso(buf)} buffer</span>`:''}${more}`;
+  }
 }
 
 // ---------- this cycle ----------
@@ -380,8 +387,9 @@ function renderItems(){
     return `<div class="grp${folded.has(fk)?' folded':''}" data-c="${esc(c.color)}"><div class="grp-h"><h3>${foldBtn(fk,esc(c.name)+`<span>${its.length}</span>`)}</h3><span class="sub">${peso(due)}</span></div>${its.map(i=>itemRow(i,start)).join('')}</div>`;
   }).join('');
   const left=vis.filter(i=>!isPaid(i)).reduce((s,i)=>s+num(i.amount),0);
+  // "Still to pay" sits beside the Bills heading rather than under the list
+  const bl=$('#billsLeft');if(bl)bl.innerHTML=left>0.004?`Still to pay <b>${peso(left)}</b>`:'All paid';
   $('#itemList').innerHTML=(html||'<p class="empty">Nothing left to pay this cycle.</p>')+
-    `<div class="tot"><span>Still to pay</span><span>${peso(left)}</span></div>`+
     (hidden.length?`<details class="paidlist"><summary>Paid this cycle (${hidden.length})</summary><ul>${hidden.map(i=>`<li><span>${esc(i.name)}</span><span class="num">${peso(num(i.amount))}</span></li>`).join('')}</ul></details>`:'')+
     (later.length?`<details class="paidlist"><summary>Coming in a later cycle (${later.length})</summary><div class="later">${later.map(i=>
       `<div class="laterrow"><span>${esc(i.name||'Untitled bill')} <span class="muted">· ${fmtD(exactDue(i))}, ${exactDue(i).getFullYear()}</span></span><span class="num">${peso(num(i.amount))}</span>${editBtn(`data-edit="${i.id}"`,i.name||"bill")}</div>`).join('')}</div></details>`:'')+
@@ -666,7 +674,10 @@ function runJobs(jobs,C){jobs.forEach(j=>{if(shown(j)){stale.delete(j);JOBS[j](C
 const folded=new Set();
 const foldBtn=(key,label)=>`<button class="fold" data-fold="${esc(key)}" aria-expanded="${!folded.has(key)}">${label}<i class="chev" aria-hidden="true"></i></button>`;
 document.addEventListener('click',e=>{
-  const f=e.target.closest('[data-fold]');if(!f)return;
+  // a tap anywhere on a foldable header row (name, count, total, empty space) folds it, not only the arrow
+  let f=e.target.closest('[data-fold]');
+  if(!f){const h=e.target.closest('.grp-h,.lgrp-h,.cplans-h');if(!h||e.target.closest('button,a,input,select,textarea'))return;f=h.querySelector('[data-fold]')}
+  if(!f)return;
   const k=f.dataset.fold,box=f.closest('.grp,.lgrp,.sec,.cplans');
   if(folded.has(k))folded.delete(k);else folded.add(k);
   f.setAttribute('aria-expanded',!folded.has(k));box&&box.classList.toggle('folded',folded.has(k));
@@ -683,7 +694,9 @@ function cycleInfo(){
   if(C.paidAmt>0)outRows.push(['Paid so far',peso(C.paidAmt)],['Still to pay',peso(C.total-C.paidAmt)]);
   infoWin(fmtD(C.start)+' – '+fmtD(C.end),
     `<h3 class="ih">Money in</h3>${infoRows(inRows)}<h3 class="ih">Bills</h3>${infoRows(outRows)}`+
-    infoRows([[C.gap>0.004?'Short':'Left over',peso(C.gap>0.004?C.gap:Math.max(0,C.surplus)),'res '+(C.gap>0.004?'bad':'ok')]]));
+    (C.gap>0.004?infoRows([['Short',peso(C.gap),'res bad']])
+      :num(S.buffer)>0?infoRows([['Left after bills',peso(Math.max(0,C.surplus))],['Keep on hand',peso(Math.max(0,num(S.buffer)))],['Extra',peso(Math.max(0,C.surplus-num(S.buffer))),'res ok']])
+      :infoRows([['Left over',peso(Math.max(0,C.surplus)),'res ok']])));
 }
 // every payment still to come on one installment, with its date and what's left after it
 function schedInfo(i){
@@ -1673,10 +1686,10 @@ async function askFinancialManager(question){
 }
 $('#advisorForm').addEventListener('submit',async event=>{
   event.preventDefault();const question=$('#advisorQuestion').value,run=++advisorRun,session=aiSession;
-  const button=$('#advisorAsk');button.disabled=true;$('#advisorStatus').textContent='Checking your planner and preparing a short answer…';
+  const button=$('#advisorAsk');button.disabled=true;$('#advisorStatus').textContent='Thinking…';
   try{
     const result=await askFinancialManager(question);if(run!==advisorRun||session!==aiSession)return;
-    $('#advisorStatus').textContent=result.local?'Answered locally · 0 AI tokens':result.cached?'Reused saved advice · 0 new AI tokens':'Answered using relevant planner facts · '+(result.cost||'usage recorded in API');
+    $('#advisorStatus').textContent='';$('#advisorQuestion').value='';
   }catch(error){if(run===advisorRun&&session===aiSession)$('#advisorStatus').textContent=error.kind?aiError(error):error.message}
   finally{if(run===advisorRun)button.disabled=false}
 });
@@ -1684,7 +1697,7 @@ document.addEventListener('click',event=>{const prompt=event.target.closest('[da
   $('#advisorQuestion').value=prompt.dataset.advisorPrompt;$('#advisorQuestion').focus()});
 $('#advisorGoals').addEventListener('input',()=>{S.advisorNotes=$('#advisorGoals').value.slice(0,400);save()});
 $('#advisorNew').addEventListener('click',()=>{advisorRun++;advisorConversationEpoch++;S.advisorTurns=[];$('#advisorAsk').disabled=false;
-  $('#advisorQuestion').value='';$('#advisorStatus').textContent='New conversation. Saved answers are still reused when relevant numbers match.';save();renderManager()});
+  $('#advisorQuestion').value='';$('#advisorStatus').textContent='';save();renderManager()});
 
 // ---------- automatic advice ----------
 // No typing needed: the AI tab shows advice on the whole planner. It is asked for again only when the planner's
@@ -1713,9 +1726,10 @@ function renderAutoAdvice(){
   let head=autoBusy?'Updating…':!aiReady()?'Turn on AI in the API tab to get advice.':fresh?'Updated '+when:a?'Your planner changed · updating soon':'';
   if(autoErr&&!autoBusy)head=autoErr;
   const [cls,word]=a?AUTO_LOOK[a.status]:['',''];
-  el.innerHTML=`<div class="aa-h">${a?`<span class="pill ${cls}">${word}</span>`:'<span></span>'}<span class="aa-meta"><span class="muted small" role="status">${esc(head)}</span>${a&&!autoBusy&&aiReady()?'<button class="ghost sm" type="button" id="autoRefresh">Refresh</button>':''}</span></div>`+
+  el.innerHTML=`<div class="aa-h">${a?`<span class="pill ${cls}">${word}</span>`:'<span></span>'}${a&&!autoBusy&&aiReady()?'<button class="ghost sm" type="button" id="autoRefresh">Refresh</button>':''}</div>`+
     (a?`<p class="aa-ans">${esc(a.summary)}</p>${a.steps.length?`<ol class="aa-steps">${a.steps.map(x=>`<li>${esc(x)}</li>`).join('')}</ol>`:''}`
-     :autoBusy?'<p class="muted small">Reading your bills, cards and installments…</p>':'');
+     :autoBusy?'<p class="muted small">Reading your bills, cards and installments…</p>':'')+
+    (head?`<p class="aa-time" role="status">${esc(head)}</p>`:'');
 }
 async function refreshAutoAdvice(force){
   if(!cloudReady||autoBusy){renderAutoAdvice();return}
@@ -1792,7 +1806,7 @@ function paintUsage(){
 const hashStr=t=>{let h=5381;for(let k=0;k<t.length;k++)h=(h*33^t.charCodeAt(k))>>>0;return h.toString(36)};
 const aiPending=new Map(),aiReservations=new Map();
 let aiSession=0;
-function resetAiSession(){aiSession++;advisorRun++;advisorConversationEpoch++;aiMemo.clear();aiPending.clear();$('#advisorQuestion').value='';$('#advisorGoals').value='';$('#advisorAsk').disabled=false;$('#advisorStatus').textContent='Ask about your current planner.'}
+function resetAiSession(){aiSession++;advisorRun++;advisorConversationEpoch++;aiMemo.clear();aiPending.clear();$('#advisorQuestion').value='';$('#advisorGoals').value='';$('#advisorAsk').disabled=false;$('#advisorStatus').textContent=''}
 const aiOutputLimit=job=>Math.max(256,Math.min(1600,Math.round(num(job.out)||700)));
 async function aiAsk(job){
   const c=aiConf(),session=aiSession,owner=cloudUser?.id||null;
