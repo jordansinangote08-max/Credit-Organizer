@@ -785,3 +785,29 @@ header .acctbar{flex-wrap:wrap}
    so its row-wide tap area collapsed to the text mid-tap and the tap was lost; headers don't shrink. */
 .fold:active,button.fold:not(:disabled):active{transform:none!important}
 .grp-h,.lgrp-h,.cplans-h{cursor:pointer;-webkit-user-select:none;user-select:none}
+
+/* ---------- next-cycle preview (eye button): same look, read only ---------- */
+#nextBtn.on{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}
+.previewbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-radius:14px;
+  background:var(--accent-soft);color:var(--ink);font-size:.88rem}
+.previewbar b{font-weight:650}
+/* nothing can be changed: inputs, add/edit/paid/remove buttons and edit links are hidden or inert */
+body.previewing .hero input,body.previewing .hero select{pointer-events:none;border-color:transparent;background:transparent}
+body.previewing .main :is(input,select,textarea){pointer-events:none}
+body.previewing .main :is(.bt,.acts,.add,#addBtn,#catBtn,#resetBtn,#resetConfirm,.ask4,.mon-h .ib,.inc .x,details.sec:has(#srcList)){display:none!important}
+body.previewing .main [data-edit]{pointer-events:none;text-decoration:none}
+body.previewing #tab-ai,body.previewing #tab-bbsync{display:none}
+body.previewing #advice .btn,body.previewing #advice .ghost{display:none}
+
+/* money left from the previous cycle: a normal "money in" line whose amount can be tapped and changed */
+.carry-btn{all:unset;box-sizing:border-box;cursor:pointer;font-variant-numeric:tabular-nums;color:var(--ok);
+  text-decoration:underline dotted;text-underline-offset:4px;text-decoration-color:color-mix(in srgb,currentColor 50%,transparent);min-height:32px;display:inline-flex;align-items:center}
+.carry-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+body.previewing .carry-btn{text-decoration:none;pointer-events:none}
+.carry-a{display:inline-flex;align-items:baseline;gap:1px;cursor:text;color:var(--ok)}
+.carry-a input{width:6em;font:inherit;color:inherit;text-align:right;background:transparent;border:0;border-bottom:1px dashed color-mix(in srgb,currentColor 45%,transparent);border-radius:0;padding:0 0 1px;appearance:textfield;-moz-appearance:textfield}
+.carry-a input::-webkit-inner-spin-button,.carry-a input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.carry-a input:focus{outline:none;border-bottom:2px solid var(--accent)}
+@media (pointer:coarse){.carry-a input{font-size:16px;min-height:32px}}
+body.previewing .carry-a input{border-bottom-color:transparent}
+.cyclebar{background:var(--ok-soft)} .cyclebar span{min-width:0}

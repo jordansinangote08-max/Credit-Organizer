@@ -36,6 +36,7 @@ const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+Stri
 const parseD=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s||'');return m?new Date(+m[1],+m[2]-1,+m[3]):null};
 
 let uid=1,S=clone(DEFAULTS);
+let viewNext=false,preview=null,carryEditing=false; // next-cycle preview: a read-only look at the cycle after this one (see the end)
 // Everything lives in Supabase. Earlier versions kept data in this browser: it moves to the
 // account on its first sign-in (if the account is still empty) and is then deleted here.
 const LEGACY_KEYS=[KEY,KEY+'.tab',KEY+'.billbuddy'];
@@ -76,10 +77,16 @@ function shiftCycle(start,k){
 }
 // The cycle you're living in. Paid once a month, it switches to the upcoming cycle in the last 16 days
 // before payday so you can plan it; paid more often, it's the current one.
-function cycleStart(){
+function naturalStart(){
   const t=new Date();t.setHours(0,0,0,0);
-  const m=payCache(),key='start|'+t.getTime();if(m.has(key))return m.get(key);
-  const v=cycleStartFor(t);m.set(key,v);return v;
+  const m=payCache(),key='start|'+t.getTime();let v=m.get(key);
+  if(!v){v=cycleStartFor(t);m.set(key,v)}
+  return v;
+}
+function cycleStart(){
+  let v=naturalStart();
+  if(S.done&&S.done===keyOf(v))v=shiftCycle(v,1);         // every bill was paid: the next cycle started early
+  return viewNext?shiftCycle(v,1):v;  // the preview shows everything one pay cycle ahead
 }
 function cycleStartFor(t){
   const p0=prevPay(new Date(t.getFullYear(),t.getMonth(),t.getDate()+1));
@@ -203,19 +210,30 @@ function paintStatus(){
 const snapshot=()=>JSON.stringify(S,(k,v)=>k==='id'?undefined:v);
 function save(){
   if(!cloudReady)return;
+  if(viewNext)return;                                   // the next-cycle preview never saves
   if(draft){setSync('draft','Draft · nothing is saved');return}
-  if(!$('#panel-ai').hidden)scheduleAutoAdvice();
   clearTimeout(cloudTimer);setSync('busy','Saving…');
   cloudTimer=setTimeout(pushCloud,mcpMode?2500:700);
 }
 
 // ---------- paid tracking ----------
 const DAY=86400000;
-const cycleKey=()=>{const d=cycleStart();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate()};
+const keyOf=d=>d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();
+const cycleKey=()=>keyOf(cycleStart());
+// Money left from the previous cycle counts as money in at the start of this one. When a new cycle begins it is
+// filled in from what the planner showed left over at the end of the last one; you can change it to what you
+// really have. Stored as {key: the cycle it belongs to, amount}.
+const carryFor=start=>S.carry&&S.carry.key===keyOf(start)?Math.max(0,num(S.carry.amount)):0;
+function trackCarry(C){
+  if(viewNext||draft||!cloudReady)return;
+  const k=cycleKey(),left=cents(Math.max(0,C.surplus));
+  if(S.cycleLeft&&S.cycleLeft.key!==k&&!(S.carry&&S.carry.key===k)){S.carry={key:k,amount:cents(Math.max(0,num(S.cycleLeft.amount))),auto:true};S.cycleLeft={key:k,amount:left};save();return true}
+  if(!S.cycleLeft||S.cycleLeft.key!==k||S.cycleLeft.amount!==left)S.cycleLeft={key:k,amount:left};
+}
 const isPaid=i=>i.bbStatement?i.bbPaidStatement===i.bbStatement:i.paidCycle===cycleKey();
 const paidInCycle=i=>isPaid(i)&&(!i.bbStatementDue||inCycle({...i,bbDue:i.bbStatementDue},cycleStart()));
 const isHiddenPaid=i=>isPaid(i)&&Date.now()-num(i.paidAt)>=DAY;
-function markPaid(i){if(isPaid(i))return;i.paidAt=Date.now();i.paidCycle=cycleKey();if(i.bbStatement){i.bbPaidStatement=i.bbStatement;i.bbPaidDue=i.bbStatementDue}
+function markPaid(i){if(isPaid(i))return;delete S.stay;i.paidAt=Date.now();i.paidCycle=cycleKey();if(i.bbStatement){i.bbPaidStatement=i.bbStatement;i.bbPaidDue=i.bbStatementDue}
   if(i.kind==='loan'){i.prevLeft=num(i.left);i.left=Math.max(0,num(i.left)-1)}
   if(i.bbRef)S.items.filter(y=>y.inBill===i.bbRef&&!isPaid(y)).forEach(markPaid);
   if(i.kind==='card')S.items.filter(y=>y.inCard===i.acct&&!isPaid(y)).forEach(markPaid)}
@@ -223,9 +241,12 @@ function undoPaid(i){if(i.kind==='loan'&&i.prevLeft!=null)i.left=i.prevLeft;dele
   if(i.bbRef)S.items.filter(y=>y.inBill===i.bbRef&&isPaid(y)).forEach(undoPaid);
   if(i.kind==='card')S.items.filter(y=>y.inCard===i.acct&&isPaid(y)).forEach(undoPaid)}
 function rollover(){
-  const key=cycleKey();let changed=false;
+  let changed=purgeClosed();
+  // the calendar has reached the cycle that started early: nothing to shift any more
+  if(S.done&&!S.closed&&S.done!==keyOf(naturalStart())){delete S.done;changed=true}
+  const key=cycleKey(),kept=S.closed&&S.closed.key;     // a cycle closed early keeps its paid marks for 24 hours
   S.items=S.items.filter(i=>{
-    if(!i.paidCycle||i.paidCycle===key)return true;
+    if(!i.paidCycle||i.paidCycle===key||i.paidCycle===kept)return true;
     changed=true;delete i.paidAt;delete i.paidCycle;delete i.prevLeft;
     if(i.kind==='card'&&!i.bbStatement)i.amount=null;
     return !(i.kind==='loan'&&num(i.left)<=0&&!i.bbInst);
@@ -239,7 +260,7 @@ function compute(){
   const end=new Date(next.getFullYear(),next.getMonth(),next.getDate()-1);
   const inc=S.income.filter(x=>num(x.amount)>0).map(x=>({x,d:parseD(x.date)})).filter(o=>o.d&&o.d>=start&&o.d<next);
   const other=inc.reduce((s,o)=>s+num(o.x.amount),0);
-  const avail=num(S.salary)+other;
+  const carry=carryFor(start),avail=num(S.salary)+other+carry;
   const lines=S.items.filter(i=>!billed(i)&&num(i.amount)>0&&inCycle(i,start)).map(i=>{
     const tier=i.kind==='essential'||i.kind==='bill'?1:i.kind==='loan'?2:i.kind==='card'?3:5;
     return {i,tier,date:dueOf(i,start),need:num(i.amount)};
@@ -248,7 +269,7 @@ function compute(){
   const required=lines.filter(l=>l.tier<=3).reduce((s,l)=>s+l.need,0);
   const total=lines.reduce((s,l)=>s+l.need,0);
   const paidAmt=lines.filter(l=>isPaid(l.i)).reduce((s,l)=>s+l.need,0);
-  return {start,next,end,inc,other,avail,lines,required,total,paidAmt,gap:required-avail,surplus:avail-total};
+  return {start,next,end,inc,other,carry,avail,lines,required,total,paidAmt,gap:required-avail,surplus:avail-total};
 }
 
 // ---------- hero ----------
@@ -304,6 +325,7 @@ function renderAdvice(C){
 function renderTimeline(C){
   $('#cycleLabel').textContent=fmtD(C.start)+' – '+fmtD(C.end)+', '+C.end.getFullYear();
   const ev=[{d:C.start,in:true,name:'Salary',amt:num(S.salary)}];
+  if(C.carry>0)ev.unshift({d:C.start,in:true,carry:true,name:'From last cycle',amt:C.carry});
   C.inc.forEach(o=>ev.push({d:o.d,in:true,name:o.x.label||'Other money',amt:num(o.x.amount)}));
   C.lines.forEach(l=>ev.push({d:l.date,in:false,l}));
   const days={};ev.forEach(e=>{const k=e.d.getTime();(days[k]=days[k]||[]).push(e)});
@@ -311,7 +333,12 @@ function renderTimeline(C){
   $('#timeline').innerHTML=Object.keys(days).sort((a,b)=>a-b).map(k=>{
     const d=new Date(+k),es=days[k].sort((a,b)=>b.in-a.in);
     const rows=es.map(e=>{
-      if(e.in){bal+=e.amt;return `<div class="ev in"><span class="nm">${esc(e.name)}</span><span class="r"><span class="a">+${peso(e.amt)}</span></span></div>`}
+      if(e.in){bal+=e.amt;
+        // money from last cycle: its amount can be changed right here (only shown when there is some)
+        if(e.carry)return `<div class="ev in"><span class="nm">${esc(e.name)}</span><span class="r">${carryEditing
+          ?`<label class="a carry-a">+₱<input id="carry" type="number" inputmode="decimal" min="0" step="0.01" value="${cents(e.amt)}" aria-label="Money from last cycle"></label>`
+          :`<button class="a carry-btn" type="button" data-carryedit="1" title="Tap to change" aria-label="Money from last cycle ${peso(e.amt)}, tap to change">+${peso(e.amt)}</button>`}</span></div>`;
+        return `<div class="ev in"><span class="nm">${esc(e.name)}</span><span class="r"><span class="a">+${peso(e.amt)}</span></span></div>`}
       bal-=e.l.need;const paid=isPaid(e.l.i);
       const pill=paid?'<span class="pill ok">Paid</span>':e.l.got>=e.l.need-0.004?'':e.l.got<0.005?'<span class="pill bad">No funds</span>':`<span class="pill warn">Short ${peso(e.l.need-e.l.got)}</span>`;
       return `<div class="ev${paid?' paid':''}" data-c="${esc(catOf(e.l.i)?.color||'slate')}"><span class="nm"><span class="vh">${esc(catOf(e.l.i)?.name||'')}: </span>${esc(e.l.i.name)}</span><span class="r">${pill}<span class="a">−${peso(e.l.need)}</span></span></div>`;
@@ -369,7 +396,7 @@ function itemRow(i,start){
   if(i.kind==='card'){const a=acctOf(i);if(a&&a.last4)meta.push(`<span>•••• ${esc(a.last4)}</span>`)}
   if(paid)meta.unshift(`<span class="t-ok">Paid · clears in ${Math.max(1,Math.ceil((DAY-(Date.now()-num(i.paidAt)))/3600000))}h</span>`);
   return `<div class="bill${paid?' done':''}"><div><button class="nm openw" data-edit="${i.id}" aria-haspopup="dialog" title="Edit">${esc(i.name||'Untitled bill')}</button><div class="mt">${meta.join('')}</div></div>
-    <div class="rt">${amt>0?`<span class="amt">${peso(amt)}</span>`:'<span class="pill warn">Add amount</span>'}
+    <div class="rt">${amt>0?`<span class="amt">${peso(amt)}</span>`:(viewNext?'<span class="pill">Amount not out yet</span>':'<span class="pill warn">Add amount</span>')}
     <div class="bt">${paid?undoBtn(`data-unpaid="${i.id}"`,i.name):amt>0?paidBtn(`data-paid="${i.id}"`,i.name):''}</div></div></div>`;
 }
 function renderItems(){
@@ -689,7 +716,7 @@ const infoRows=rows=>`<ul class="ilist">${rows.map(([a,b,c])=>`<li${c?` class="$
 function cycleInfo(){
   const C=compute(),by=new Map();
   C.lines.forEach(l=>{const c=catOf(l.i),k=c?c.name:'Bills';by.set(k,(by.get(k)||0)+l.need)});
-  const inRows=[['Salary',peso(num(S.salary))],...C.inc.map(o=>[esc(o.x.label||'Other money'),peso(num(o.x.amount))]),['Money in',peso(C.avail),'tot']];
+  const inRows=[...(C.carry>0?[['From last cycle',peso(C.carry)]]:[]),['Salary',peso(num(S.salary))],...C.inc.map(o=>[esc(o.x.label||'Other money'),peso(num(o.x.amount))]),['Money in',peso(C.avail),'tot']];
   const outRows=[...[...by].map(([k,v])=>[esc(k),peso(v)]),['Bills',peso(C.total),'tot']];
   if(C.paidAmt>0)outRows.push(['Paid so far',peso(C.paidAmt)],['Still to pay',peso(C.total-C.paidAmt)]);
   infoWin(fmtD(C.start)+' – '+fmtD(C.end),
@@ -711,7 +738,7 @@ $('#status').addEventListener('click',cycleInfo);
 $('#status').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();cycleInfo()}});
 document.addEventListener('click',e=>{const b=e.target.closest('[data-isched]');if(!b)return;const it=S.items.find(i=>i.id==b.dataset.isched);if(it)schedInfo(it)});
 
-function render(){const C=compute();renderStatus(C);runJobs(['cycle','inst','borrow','ahead','acct'],C)}
+function render(){let C=compute();if(trackClose(C)){C=compute();syncInputs()}if(trackCarry(C))C=compute();paintCycleBar();renderStatus(C);runJobs(['cycle','inst','borrow','ahead','acct'],C)}
 function renderAll(){runJobs(['bills','money','src','ai']);render();renderManager()}
 function flushStale(){if(!stale.size)return;const C=compute();[...stale].forEach(j=>{if(shown(j)){stale.delete(j);JOBS[j](C);paintMon(JOB_PANEL[j]||j)}})}
 window.addEventListener('beforeprint',()=>{const C=compute();Object.keys(JOBS).forEach(j=>JOBS[j](C));stale.clear()});
@@ -733,9 +760,16 @@ function syncInputs(){
   ['salary','payday','payday2','payweekday'].forEach(k=>{const el=$('#'+k);if(document.activeElement!==el)el.value=S[k]??''});
   const f=payFreq();$('#payfreq').value=f;
   $('#pdDays').hidden=f==='week';$('#pd2').hidden=f!=='twice';$('#pdWeek').hidden=f!=='week';
-  $('#salLabel').textContent=f==='month'?'Salary this cycle':'Salary each payday';
+  $('#salLabel').textContent=viewNext?'Salary next cycle':f==='month'?'Salary this cycle':'Salary each payday';
 }
 // the buffer field sits in the Pay ahead window and keeps your typing; everything that depends on it redraws around it
+document.addEventListener('input',e=>{if(e.target.id!=='carry'||viewNext)return;
+  S.carry={key:cycleKey(),amount:Math.max(0,num(e.target.value))};save();
+  const C=compute();renderStatus(C);renderAdvice(C);paintMon('cycle')});   // the list itself redraws when you leave the box
+document.addEventListener('focusout',e=>{if(e.target.id==='carry'){carryEditing=false;setTimeout(render,0)}});
+document.addEventListener('keydown',e=>{if(e.target.id==='carry'&&e.key==='Enter')e.target.blur()});
+document.addEventListener('click',e=>{if(!e.target.closest('[data-carryedit]')||viewNext)return;
+  carryEditing=true;renderTimeline(compute());const f=$('#carry');if(f){f.focus();f.select()}});
 $('#buffer').addEventListener('input',e=>{S.buffer=Math.max(0,num(e.target.value));save();render()});
 document.addEventListener('click',e=>{if(e.target.closest('[data-ahead]')){$('#buffer').value=num(S.buffer);$('#aheadDlg').showModal()}});
 $('#aheadDlg').addEventListener('click',e=>{if(e.target.closest('[data-aheadclose]'))$('#aheadDlg').close()});
@@ -926,7 +960,6 @@ function selectTab(name){
   document.querySelectorAll('[data-panel]').forEach(p=>p.hidden=p.dataset.panel!==name);
   flushStale();
   if(name==='bbsync')aiCheck();
-  if(name==='ai'){clearTimeout(autoTimer);renderAutoAdvice();refreshAutoAdvice(false)}
   // when the tab bar is stuck to the top, bring the new panel's start into view
   const bar=$('.tabs'),top=bar.getBoundingClientRect().top;
   if(top<=parseFloat(getComputedStyle(bar).top)+1)bar.parentElement.scrollIntoView({block:'start'});
@@ -939,9 +972,65 @@ $('.tabs').addEventListener('keydown',e=>{
 });
 
 // ---------- boot ----------
+// ---------- closing a cycle early ----------
+// When every bill this cycle is paid, the planner moves on to the next cycle straight away, and what's left
+// over carries into it as "From last cycle". For 24 hours you can go back to the cycle you finished; after
+// that its data is cleared here and in your account (one-time bills and other money dated in it, its paid
+// marks, installments that ended). Only the money left over stays, carried in the new cycle.
+// S.done = the cycle that was finished early (keeps you in the next one until the calendar gets there);
+// S.closed = {key, start, end, at, left, prevCarry} for the 24 hours you can go back; S.stay = a cycle you went back to (it won't close again
+// until you mark something paid).
+function trackClose(C){
+  if(viewNext||draft||!cloudReady||S.closed||S.done)return false;
+  const k=cycleKey();if(S.stay===k)return false;
+  if(!C.lines.length||!C.lines.every(l=>isPaid(l.i)))return false;
+  const left=cents(Math.max(0,C.surplus)),nk=keyOf(C.next);
+  S.closed={key:k,start:iso(C.start),end:iso(C.end),at:Date.now(),left,prevCarry:S.carry&&S.carry.key===k?S.carry:null};
+  S.done=k;S.carry={key:nk,amount:left};S.cycleLeft={key:nk,amount:0};delete S.reopened;
+  save();return true;
+}
+function purgeClosed(){
+  if(S.reopened&&Date.now()-num(S.reopened.at)>=DAY){delete S.reopened;return true}   // went back and stayed
+  const c=S.closed;if(!c||Date.now()-num(c.at)<DAY)return false;
+  const a=parseD(c.start),b=parseD(c.end),inC=d=>!!d&&d>=a&&d<=b;
+  S.items=S.items.filter(i=>!(repeats(i)&&i.once&&!i.bbDue&&inC(parseD(i.date))));
+  S.income=S.income.filter(x=>!inC(parseD(x.date)));
+  delete S.closed;delete S.stay;                         // S.done stays: you remain in the new cycle
+  return true;                                           // rollover() then clears that cycle's paid marks
+}
+function reopenClosed(){
+  const c=S.closed;if(!c||viewNext||draft)return;
+  if(c.prevCarry)S.carry=c.prevCarry;else delete S.carry;
+  S.cycleLeft={key:c.key,amount:c.left};S.stay=c.key;delete S.closed;delete S.done;
+  S.reopened={key:c.key,start:c.start,end:c.end,at:c.at};   // so "Go to current cycle" can return, same 24 hours
+  save();syncInputs();renderAll();
+}
+// after "Go back": return to the cycle you had moved on to, carrying what's left now
+function goCurrent(){
+  const r=S.reopened;if(!r||viewNext||draft||cycleKey()!==r.key)return;
+  const C=compute(),left=cents(Math.max(0,C.surplus)),nk=keyOf(C.next);
+  S.closed={...r,left,prevCarry:S.carry&&S.carry.key===r.key?S.carry:null};
+  S.done=r.key;S.carry={key:nk,amount:left};S.cycleLeft={key:nk,amount:0};
+  delete S.reopened;delete S.stay;
+  save();syncInputs();renderAll();
+}
+function paintCycleBar(){
+  const bar=$('#cycleBar');if(!bar)return;
+  const r=S.reopened;
+  if(r&&!S.closed&&!viewNext&&Date.now()-num(r.at)<DAY&&cycleKey()===r.key){
+    bar.hidden=false;
+    bar.innerHTML=`<span>You went back to ${fmtD(parseD(r.start))} – ${fmtD(parseD(r.end))}.</span><button class="ghost sm" type="button" id="currentBtn">Go to current cycle</button>`;
+    return;
+  }
+  const c=S.closed,open=!!c&&!viewNext&&Date.now()-num(c.at)<DAY;
+  bar.hidden=!open;if(!open)return;
+  const until=new Date(num(c.at)+DAY),a=parseD(c.start),b=parseD(c.end);
+  bar.innerHTML=`<span>All bills paid · moved to the next cycle. You can go back to ${fmtD(a)} – ${fmtD(b)} until ${until.toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}.</span><button class="ghost sm" type="button" id="reopenBtn">Go back</button>`;
+}
+document.addEventListener('click',e=>{if(e.target.closest('#reopenBtn'))reopenClosed();else if(e.target.closest('#currentBtn'))goCurrent()});
 function adopt(next){
   if(!next||!Array.isArray(next.items)||next.ver!==DEFAULTS.ver)return;
-  S=next;prepare();const expired=pruneExpiredBB();rollover();editingId=null;syncInputs();renderAll();fillBB();fillAI();if(expired)save();
+  S=next;prepare();const expired=pruneExpiredBB(),rolled=rollover();editingId=null;syncInputs();renderAll();fillBB();fillAI();if(expired||rolled)save();
 }
 prepare();rollover();syncInputs();renderAll();
 // ---------- BillBuddy ----------
@@ -1035,6 +1124,7 @@ function refile(it,kind,bank){
 }
 async function syncBillBuddy(){
   if(!cloudReady)return;
+  if(viewNext)return;
   if(mcpMode){bbState('off','BillBuddy sync runs on your deployed planner. Bills it already added are kept here.');return}
   const {url,key}=bbConf();
   if(!url||!key){bbState('off','Not connected');return}
@@ -1389,7 +1479,7 @@ $('#aiLimit').addEventListener('change',()=>{const v=Math.round(num($('#aiLimit'
 fillAI();
 
 // the money in, and everything due, in the pay cycle that starts on `start`
-const incomeIn=start=>{const end=shiftCycle(start,1);return S.income.reduce((s,x)=>{const d=parseD(x.date);return s+(d&&d>=start&&d<end?num(x.amount):0)},0)};
+const incomeIn=start=>{const end=shiftCycle(start,1);return carryFor(start)+S.income.reduce((s,x)=>{const d=parseD(x.date);return s+(d&&d>=start&&d<end?num(x.amount):0)},0)};
 const dueIn=start=>S.items.filter(i=>i.kind!=='loan'&&num(i.amount)>0&&inCycle(i,start)).reduce((s,i)=>s+num(i.amount),0)+loansIn(start);
 function loanPlan(f){
   const r=f.rate/100;
@@ -1640,7 +1730,7 @@ async function advisorDigest(value){
 function renderManager(){
   const el=$('#advisorConversation');if(!el)return;
   const turns=Array.isArray(S.advisorTurns)?S.advisorTurns.slice(-6):[];
-  if(document.activeElement!==$('#advisorGoals'))$('#advisorGoals').value=S.advisorNotes||'';
+  if(document.activeElement!==$('#advisorGoals')&&$('#advisorGoals'))$('#advisorGoals').value=S.advisorNotes||'';
   el.innerHTML=turns.map(t=>{const a=t.result?.a;if(!a)return '';
     return `<article class="advisor-turn"><p class="advisor-question">${esc(t.question)}</p><p>${esc(a.answer)}</p>
       ${a.actions?.length?`<p class="label">Next steps</p><ul>${a.actions.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
@@ -1684,76 +1774,10 @@ async function askFinancialManager(question){
   S.advisorTurns=repeat?[...turns.slice(0,-1),turn]:[...turns,turn].slice(-6);
   save();renderManager();return {...result,cached};
 }
-$('#advisorForm').addEventListener('submit',async event=>{
-  event.preventDefault();const question=$('#advisorQuestion').value,run=++advisorRun,session=aiSession;
-  const button=$('#advisorAsk');button.disabled=true;$('#advisorStatus').textContent='Thinking…';
-  try{
-    const result=await askFinancialManager(question);if(run!==advisorRun||session!==aiSession)return;
-    $('#advisorStatus').textContent='';$('#advisorQuestion').value='';
-  }catch(error){if(run===advisorRun&&session===aiSession)$('#advisorStatus').textContent=error.kind?aiError(error):error.message}
-  finally{if(run===advisorRun)button.disabled=false}
-});
-document.addEventListener('click',event=>{const prompt=event.target.closest('[data-advisor-prompt]');if(!prompt)return;
-  $('#advisorQuestion').value=prompt.dataset.advisorPrompt;$('#advisorQuestion').focus()});
-$('#advisorGoals').addEventListener('input',()=>{S.advisorNotes=$('#advisorGoals').value.slice(0,400);save()});
-$('#advisorNew').addEventListener('click',()=>{advisorRun++;advisorConversationEpoch++;S.advisorTurns=[];$('#advisorAsk').disabled=false;
-  $('#advisorQuestion').value='';$('#advisorStatus').textContent='';save();renderManager()});
+// The financial manager's screen was removed; askFinancialManager() stays for the AI helpers and tests.
 
-// ---------- automatic advice ----------
-// No typing needed: the AI tab shows advice on the whole planner. It is asked for again only when the planner's
-// figures change (bills, cards, installments, income, salary, creditors, goals), so an unchanged planner costs nothing.
-const AUTO_Q='Look at my whole planner as it is now and tell me plainly where I stand and what to do.';
-// Automatic advice has its own short, plain format: a status, one or two simple sentences, and up to three steps.
-// It never asks questions: when something is unknown it works with what the planner has.
-const AUTO_SYSTEM=`You give one person in the Philippines a short, plain money check-up from their budget planner. Amounts are in pesos (₱).
-The planner has done all the arithmetic: use its numbers as they are, never recompute or invent amounts, dates, rates or balances.
-Write for someone with no finance background: everyday words, short sentences, no jargon (no "utilization", "liquidity", "APR", "amortization"). Name the actual bills, cards and loans and use exact amounts and dates.
-Never ask a question and never ask for more information. If something is missing, give the best advice from what is there.
-Put must-pay bills and essentials first, then cards and loans; never suggest new borrowing unless money runs short this cycle.
-status: "good" if everything is covered and nothing is urgent, "watch" if something needs care soon, "act" if a bill is late, money runs short, or a card is above 20% of its limit.
-summary: one or two short sentences on where they stand. steps: up to 3 short things to do, most urgent first, each starting with a verb, with the amount and date when there is one.`;
-const AUTO_SCHEMA={type:'object',additionalProperties:false,required:['status','summary','steps'],properties:{
-  status:{type:'string',enum:['good','watch','act']},summary:{type:'string',maxLength:300},steps:{type:'array',maxItems:3,items:{type:'string',maxLength:160}}}};
-const checkAuto=a=>a&&['good','watch','act'].includes(a.status)&&typeof a.summary==='string'&&a.summary.trim()&&!/\?\s*$/.test(a.summary.trim())
-  ?{status:a.status,summary:a.summary.trim(),steps:strList(a.steps).filter(x=>!/\?\s*$/.test(x)).slice(0,3)}:null;
-const AUTO_LOOK={good:['ok','All good'],watch:['warn','Keep an eye on'],act:['bad','Do this now']};
-function autoAdviceKey(){const s=aiSnapshot();delete s.today;return hashStr('auto-v2|'+JSON.stringify(s)+'|'+String(S.advisorNotes||''))}
-let autoBusy=false,autoTimer=null,autoErr='';
-function renderAutoAdvice(){
-  const el=$('#autoAdvice');if(!el)return;
-  const c=S.autoAdvice,a=c&&checkAuto(c.a),fresh=!!(a&&c.h===autoAdviceKey());
-  const when=c&&c.at?new Date(c.at).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';
-  let head=autoBusy?'Updating…':!aiReady()?'Turn on AI in the API tab to get advice.':fresh?'Updated '+when:a?'Your planner changed · updating soon':'';
-  if(autoErr&&!autoBusy)head=autoErr;
-  const [cls,word]=a?AUTO_LOOK[a.status]:['',''];
-  el.innerHTML=`<div class="aa-h">${a?`<span class="pill ${cls}">${word}</span>`:'<span></span>'}${a&&!autoBusy&&aiReady()?'<button class="ghost sm" type="button" id="autoRefresh">Refresh</button>':''}</div>`+
-    (a?`<p class="aa-ans">${esc(a.summary)}</p>${a.steps.length?`<ol class="aa-steps">${a.steps.map(x=>`<li>${esc(x)}</li>`).join('')}</ol>`:''}`
-     :autoBusy?'<p class="muted small">Reading your bills, cards and installments…</p>':'')+
-    (head?`<p class="aa-time" role="status">${esc(head)}</p>`:'');
-}
-async function refreshAutoAdvice(force){
-  if(!cloudReady||autoBusy){renderAutoAdvice();return}
-  if(!aiReady()){renderAutoAdvice();return}
-  const k=autoAdviceKey();
-  if(!force&&S.autoAdvice?.h===k&&checkAuto(S.autoAdvice.a)){autoErr='';renderAutoAdvice();return}
-  autoBusy=true;autoErr='';renderAutoAdvice();
-  const session=aiSession;
-  try{
-    const user=JSON.stringify({question:AUTO_Q,planner:advisorFacts('overview bills budget cards credit debt loans savings')});
-    const r=await aiAsk({name:'auto_advice',purpose:'advisor',system:AUTO_SYSTEM,schema:AUTO_SCHEMA,check:checkAuto,priority:'high',out:500,user});
-    if(session!==aiSession)return;
-    S.autoAdvice={h:k,a:r.a,at:Date.now(),model:r.model};save();
-  }catch(e){if(session===aiSession)autoErr=e.kind?aiError(e).replace(/<[^>]+>/g,''):String(e.message||e)}
-  finally{autoBusy=false;renderAutoAdvice()}
-}
-// asked only while the AI tab is open, a few seconds after the last change, so typing doesn't trigger it
-function scheduleAutoAdvice(){
-  clearTimeout(autoTimer);
-  if($('#panel-ai').hidden||draft)return;
-  renderAutoAdvice();
-  autoTimer=setTimeout(()=>refreshAutoAdvice(false),4000);
-}
-document.addEventListener('click',e=>{if(e.target.closest('#autoRefresh'))refreshAutoAdvice(true)});
+
+
 
 
 // ---------- asking the AI ----------
@@ -1806,7 +1830,7 @@ function paintUsage(){
 const hashStr=t=>{let h=5381;for(let k=0;k<t.length;k++)h=(h*33^t.charCodeAt(k))>>>0;return h.toString(36)};
 const aiPending=new Map(),aiReservations=new Map();
 let aiSession=0;
-function resetAiSession(){aiSession++;advisorRun++;advisorConversationEpoch++;aiMemo.clear();aiPending.clear();$('#advisorQuestion').value='';$('#advisorGoals').value='';$('#advisorAsk').disabled=false;$('#advisorStatus').textContent=''}
+function resetAiSession(){aiSession++;advisorRun++;advisorConversationEpoch++;aiMemo.clear();aiPending.clear()}
 const aiOutputLimit=job=>Math.max(256,Math.min(1600,Math.round(num(job.out)||700)));
 async function aiAsk(job){
   const c=aiConf(),session=aiSession,owner=cloudUser?.id||null;
@@ -2040,7 +2064,7 @@ function mcpFail(e){
 }
 async function initMcpCloud(){
   mcpMode=true;authKnown=true;setSync('busy','Opening your planner…');renderAuth();
-  window.claude.use('sample').then(s=>{if(s){sampleFn=s;AI_WHO='Claude';aiLive=null;fillAI();if(!$('#panel-ai').hidden)refreshAutoAdvice(false)}}).catch(()=>{});
+  window.claude.use('sample').then(s=>{if(s){sampleFn=s;AI_WHO='Claude';aiLive=null;fillAI()}}).catch(()=>{});
   mcpApi=await window.claude.use('mcp').catch(()=>null);
   connectMcpPlanner();
 }
@@ -2078,7 +2102,6 @@ async function startCloud(user){
     else{adopt(legacy||clone(DEFAULTS));save()} // a new account starts from this browser's old data, or the installments
     legacy=null;LEGACY_KEYS.forEach(k=>{try{localStorage.removeItem(k)}catch(e){}});
     renderAuth();syncBillBuddy();
-    if(!$('#panel-ai').hidden)refreshAutoAdvice(false);
   }catch(e){
     console.warn('Supabase load failed',e);
     if(mcpMode&&!e?.retryable){mcpFail(e);return}
@@ -2093,7 +2116,7 @@ document.addEventListener('visibilitychange',async()=>{
   checkUpdate();
   if(cloudReady&&pruneExpiredBB()){save();renderAll()}
   syncBillBuddy();
-  if(!cloudReady||cloudTimer||pushing||draft)return;
+  if(!cloudReady||cloudTimer||pushing||draft||viewNext)return;
   try{
     const row=await pullCloud();
     // only a copy saved after ours, and only when no save of ours is waiting or on its way
@@ -2107,7 +2130,9 @@ document.addEventListener('visibilitychange',async()=>{
 let authKnown=false; // false until Supabase has checked this device for a saved sign-in
 function renderAuth(){
   document.body.classList.toggle('locked',!cloudReady);
-  const db=$('#draftBtn');db.hidden=!cloudReady;db.textContent=draft?'Close draft':'Draft';db.classList.toggle('on',!!draft);
+  const nb=$('#nextBtn');nb.hidden=!cloudReady||!!draft;nb.classList.toggle('on',viewNext);nb.setAttribute('aria-pressed',viewNext);
+  nb.title=viewNext?'Back to this cycle':'See next cycle';nb.setAttribute('aria-label',nb.title);
+  const db=$('#draftBtn');db.hidden=!cloudReady||viewNext;db.textContent=draft?'Close draft':'Draft';db.classList.toggle('on',!!draft);
   db.title=draft?'Close the draft; nothing in it is kept':'Try changes in a copy that is never saved';
   $('#authBtn').hidden=!cloudUser||mcpMode;
   $('#authForm').hidden=!sb||!authKnown||!!cloudUser;
@@ -2292,6 +2317,45 @@ function closeDraft(){
 }
 function closeDialogs(){document.querySelectorAll('dialog[open]').forEach(d=>d.close())}
 $('#draftBtn').addEventListener('click',()=>draft?closeDraft():openDraft());
+
+// ---------- next-cycle preview ----------
+// The eye button shows the pay cycle after this one, read only: the same tabs and layout, with this cycle's
+// bills treated as paid (so installments move to their next payment and recurring bills come round again),
+// next cycle's salary and other money, and what's left. Nothing in it can be edited or saved; the eye again,
+// or "Back", returns to this cycle exactly as it was.
+async function openPreview(){
+  if(!cloudReady||draft||viewNext)return;
+  if(cloudTimer){clearTimeout(cloudTimer);await pushCloud()}   // a change still waiting to save is saved first
+  closeDialogs();
+  const main=S,start=cycleStart(),leftNow=cents(Math.max(0,compute().surplus));
+  S=clone(main);
+  // everything still due this cycle counts as paid, as it will be by the time the next cycle starts
+  S.items.filter(i=>!isPaid(i)&&!billed(i)&&inCycle(i,start)&&num(i.amount)>0).forEach(markPaid);
+  preview={main};viewNext=true;
+  S.carry={key:cycleKey(),amount:leftNow};                 // what's left this cycle carries into the next
+  rollover();                                               // next cycle: last cycle's "paid" marks clear
+  S.items.forEach(i=>{if(i.bbStatement){i.bbStatement+='|next';delete i.bbPaidStatement}});
+  document.body.classList.add('previewing');
+  if(['ai','bbsync'].includes(document.querySelector('.tab[aria-selected="true"]')?.dataset.tab))selectTab('cycle');
+  syncInputs();renderAll();renderAuth();paintPreview();
+}
+function closePreview(){
+  if(!viewNext)return;
+  closeDialogs();
+  S=preview.main;preview=null;viewNext=false;
+  document.body.classList.remove('previewing');
+  syncInputs();renderAll();renderAuth();paintPreview();setSync('ok','Saved');
+}
+function paintPreview(){
+  $('#tab-cycle').textContent=viewNext?'Next cycle':'This cycle';
+  const bar=$('#previewBar');if(!bar)return;
+  bar.hidden=!viewNext;if(!viewNext)return;
+  const C=compute();
+  bar.innerHTML=`<span><b>Next cycle</b> · ${fmtD(C.start)} – ${fmtD(C.end)} · view only</span>`;
+  setSync('draft','Next cycle · view only');
+}
+$('#nextBtn').addEventListener('click',()=>viewNext?closePreview():openPreview());
+document.addEventListener('click',e=>{if(e.target.closest('#previewBack'))closePreview()});
 
 // ---------- updates ----------
 // A tab left open keeps running the code it loaded with. When a newer version is published, reload, so an

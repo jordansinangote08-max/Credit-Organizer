@@ -16,6 +16,14 @@ Plain static files, no build step. Open `index.html` or serve the folder (e.g. `
 
 Under the salary, **Payday** sets your pay schedule: once a month on one day, twice a month on two days (like the 15th and 30th), or every week on a weekday. A pay cycle runs from one payday to the day before the next, and each bill, installment and card counts in the cycle its due date falls in. Paid once a month, the planner switches to the upcoming cycle in the last 16 days before payday so you can plan it; paid more often, it shows the cycle you're in. The Plan tab shows one row per pay cycle. Each schedule remembers its own days, so switching back and forth keeps them.
 
+## Finishing a cycle early
+
+When every bill in the current cycle is marked paid, the planner moves to the next cycle right away. What was left over carries into it as **From last cycle** (a money-in line at the top of *Money in and out*; tap the amount to change it). A green bar offers **Go back** for 24 hours, which returns to the finished cycle with everything as it was. After 24 hours that cycle's data is cleared here and in Supabase: its one-time bills and other money, its paid marks and installments that ended. Only the money left over stays, carried in the new cycle. The planner stays in the new cycle until the calendar reaches it.
+
+## Next-cycle preview
+
+The eye button beside **Draft** shows the cycle after the current one, read only, with this cycle's bills treated as paid and its leftover carried in. Tap the eye again to return.
+
 ## Bills and categories
 
 **Add bill**, or the pencil on a bill, opens a small window with its form. Edits save as you type; a new bill is kept only when you tap **Add** (closing the window any other way leaves it out). Adding or editing an installment opens the same window from the Installments tab. Adding or editing a card, and adding other money or a creditor, open the same kind of window. Due days and statement days are picked on a calendar: the field shows the next date, and the day you pick repeats every month.
@@ -39,57 +47,6 @@ When this cycle's money covers every bill with some to spare, This cycle says ho
 The top of each tab (This cycle, Bills, Installments, Credit cards, Income, Borrow, Plan) lists what needs attention: money running out, bills past due or due soon, cards over 30% or 50% of their limit, missing last 4 digits, installments without payments left, expensive debt, entries from past cycles. The planner works these out itself as you go, free and instantly. With an AI key set, the ✨ button asks the AI to review that tab: it gets the tab's checks plus a snapshot of the whole planner, so its advice rests on the same numbers. A review is kept for the day until the numbers change, so looking again costs nothing.
 
 **Daily AI limit.** Every AI use is counted in the API tab, by purpose (loan checks, tab reviews, sorting bills, placing installments), with the last week's totals. In the API tab, set how many tokens the AI may use per day (about 2,000 a question; empty means no limit). The meter shows today's use. When the limit is reached the AI stops until the next day. Loan checks come first: tab reviews pause at 70% of the limit, so there's always room to check a loan.
-
-## Your financial manager
-
-Open **AI → Your financial manager** and ask a question in English, Filipino or
-Taglish: budgeting before payday, debt payoff priorities, credit card usage,
-savings tradeoffs, or whether borrowing fits the plan. It uses the same
-**gpt-6-luna** connection configured in API (OpenAI or OpenRouter). The existing
-loan calculator below still performs exact affordability scenarios locally.
-
-Add optional **Goals and constraints to remember**, such as protecting medicine
-money or avoiding new borrowing. These stay with the signed-in planner. Editing
-notes or suggested questions does not call the AI. Advice never edits bills,
-marks payments or executes transactions.
-
-Token-saving behavior:
-
-- Simple buffer, planned-remainder and next-payday questions are answered locally,
-  including without an AI key. These use zero AI tokens.
-- Broader advice sends a compact allowlist of calculated cashflow and relevant
-  records, not the entire saved planner, API keys or BillBuddy credentials.
-  It includes up to 12 urgent unpaid obligations, up to 12 relevant cards or
-  installment records, and up to eight creditor offers only when relevant.
-  Omitted counts are explicit. Prior conversation is limited to two short turns;
-  saved goals preserve important constraints without replaying a full transcript.
-- The manager requests a concise answer, three actions and two tradeoffs, with
-  a 700-completion-token allowance and low reasoning effort. Other AI jobs now
-  honor their own bounded output allowance instead of always allowing 4,000.
-- Up to 12 hashed-context answer entries and six conversation turns are saved
-  with the planner. Exact repeats reuse answers across page loads when the
-  relevant data, date, goals, provider, model and advisor policy match.
-  Changed facts require a new answer. **New conversation** clears the visible
-  conversation while retaining the private answer cache; it never automatically
-  sends a replacement request.
-- Identical simultaneous requests share one provider call. Pending requests
-  reserve estimated tokens against the API-tab daily budget. The estimate
-  includes the schema and output cap; actual provider-reported usage replaces
-  it after the response, including failed-to-parse or cut-off answers. Invalid
-  answers are not automatically retried. Existing one-time setting-negotiation
-  retries for unsupported schema/reasoning options remain limited to HTTP 400.
-
-The advisor treats figures as planned cashflow, not verified cash or savings.
-Unpaid statement amounts are distinguished from current balances and actual
-credit utilization. Missing APRs, minimums and balances stay unknown. Its
-instructions prioritize essentials and liquidity, ask for material missing
-information and prohibit promises of score changes, approvals or investment
-returns. Changed data or accounts during a request prevents the old answer from
-being saved into the current conversation. Tests use synthetic data and mocked
-provider responses; they do not certify the quality of a live model answer.
-
-No new database migration is needed: notes, conversations and cached answers
-use the existing owner-protected `planner_state` row. No new key is needed.
 
 ## AI: should I take this loan?
 
@@ -118,7 +75,7 @@ The key is saved in your account and used straight from the device, so give it a
 The same files also run as a published Claude artifact. There the page can't reach outside servers, so `app.js` detects `window.claude` and switches modes:
 
 - **Planner data** loads and saves through the viewer's claude.ai **Supabase** connector (`execute_sql` on the project in `config.js`), with no password. It opens the most recently updated row in `planner_state`.
-- **AI** uses Claude on the viewer's account instead of an OpenAI/OpenRouter key.
+- **AI** (loan checks, tab reviews) uses Claude on the viewer's account instead of an OpenAI/OpenRouter key.
 - **BillBuddy** doesn't sync there; bills it already added are kept.
 
 On the deployed site nothing changes: no `window.claude`, so the normal Supabase sign-in and OpenAI paths run.

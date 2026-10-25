@@ -15,17 +15,17 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=52">
+<link rel="stylesheet" href="styles.css?v=56">
 <script src="config.js?v=42" defer></script>
 <script src="vendor/supabase-2.116.0.js" defer></script>
-<script src="app.js?v=53" defer></script>
+<script src="app.js?v=61" defer></script>
 </head>
 <body class="locked">
 <div class="app">
   <aside class="side">
     <header>
       <h1>Paycheck and Debt Planner</h1>
-      <div class="acctbar"><p id="syncState" class="sync">Loading…</p><span id="authWho" class="muted small"></span><button class="ghost sm" id="accessBtn" hidden>Set password</button><button class="ghost sm" id="draftBtn" title="Try changes in a copy that is never saved" hidden>Draft</button><button class="ghost sm ib" id="authBtn" aria-label="Sign out" title="Sign out" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 012 2v12a2 2 0 01-2 2h-3"/><path d="M10 17l5-5-5-5"/><path d="M15 12H4"/></svg></button></div>
+      <div class="acctbar"><p id="syncState" class="sync">Loading…</p><span id="authWho" class="muted small"></span><button class="ghost sm" id="accessBtn" hidden>Set password</button><button class="ghost sm ib" id="nextBtn" type="button" aria-label="See next cycle" title="See next cycle" aria-pressed="false" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="ghost sm" id="draftBtn" title="Try changes in a copy that is never saved" hidden>Draft</button><button class="ghost sm ib" id="authBtn" aria-label="Sign out" title="Sign out" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 012 2v12a2 2 0 01-2 2h-3"/><path d="M10 17l5-5-5-5"/><path d="M15 12H4"/></svg></button></div>
     </header>
     <form id="authForm" class="authform" hidden>
       <h2 id="authTitle">Open your planner</h2>
@@ -55,6 +55,8 @@
       <p class="muted small" id="accountMsg" role="status"></p>
     </section>
 
+    <div id="previewBar" class="previewbar" role="status" hidden></div>
+    <div id="cycleBar" class="previewbar cyclebar" role="status" hidden></div>
     <section class="hero" aria-label="This pay cycle">
       <div class="salrow">
         <div>
@@ -172,27 +174,6 @@
     </section>
 
     <section class="panel" role="tabpanel" id="panel-ai" aria-labelledby="tab-ai" data-panel="ai" hidden>
-      <div class="sec advisor">
-        <h2>Your financial manager</h2>
-        <div id="autoAdvice" class="auto-advice" aria-live="polite"></div>
-        <details class="ask-more"><summary>Ask a question</summary>
-          <div class="advisor-prompts" aria-label="Suggested questions">
-            <button class="chip" type="button" data-advisor-prompt="What should I prioritize before my next payday?">Before payday</button>
-            <button class="chip" type="button" data-advisor-prompt="How can I keep my credit cards under 20% of their limits without missing bills?">My credit cards</button>
-            <button class="chip" type="button" data-advisor-prompt="Which debt should I pay off first?">Which debt first</button>
-          </div>
-          <form class="ask-row" id="advisorForm">
-            <textarea id="advisorQuestion" rows="2" maxlength="1600" required aria-label="Your question" placeholder="Type in English or Filipino"></textarea>
-            <button class="btn" id="advisorAsk">Ask</button>
-          </form>
-          <p class="muted small" id="advisorStatus" role="status"></p>
-          <div id="advisorConversation" aria-live="polite"></div>
-          <button class="ghost sm" id="advisorNew" type="button">Clear answers</button>
-          <details class="goals"><summary>Things to keep in mind</summary>
-            <textarea id="advisorGoals" rows="2" maxlength="400" aria-label="Things to keep in mind" placeholder="e.g. Keep ₱3,000 for medicine. No new loans."></textarea>
-          </details>
-        </details>
-      </div>
       <div class="sec">
         <div><h2>Should I take this loan?</h2><p class="muted small lead">Checks a loan against every payday and bill.</p></div>
         <form class="form flat" id="aiForm" novalidate>
