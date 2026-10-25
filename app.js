@@ -207,7 +207,6 @@ function save(){
   if(!cloudReady)return;
   if(viewNext)return;                                   // the next-cycle preview never saves
   if(draft){setSync('draft','Draft · nothing is saved');return}
-  if(!$('#panel-ai').hidden)scheduleAutoAdvice();
   clearTimeout(cloudTimer);setSync('busy','Saving…');
   cloudTimer=setTimeout(pushCloud,mcpMode?2500:700);
 }
@@ -929,7 +928,6 @@ function selectTab(name){
   document.querySelectorAll('[data-panel]').forEach(p=>p.hidden=p.dataset.panel!==name);
   flushStale();
   if(name==='bbsync')aiCheck();
-  if(name==='ai'){clearTimeout(autoTimer);renderAutoAdvice();refreshAutoAdvice(false)}
   // when the tab bar is stuck to the top, bring the new panel's start into view
   const bar=$('.tabs'),top=bar.getBoundingClientRect().top;
   if(top<=parseFloat(getComputedStyle(bar).top)+1)bar.parentElement.scrollIntoView({block:'start'});
@@ -1644,7 +1642,7 @@ async function advisorDigest(value){
 function renderManager(){
   const el=$('#advisorConversation');if(!el)return;
   const turns=Array.isArray(S.advisorTurns)?S.advisorTurns.slice(-6):[];
-  if(document.activeElement!==$('#advisorGoals'))$('#advisorGoals').value=S.advisorNotes||'';
+  if(document.activeElement!==$('#advisorGoals')&&$('#advisorGoals'))$('#advisorGoals').value=S.advisorNotes||'';
   el.innerHTML=turns.map(t=>{const a=t.result?.a;if(!a)return '';
     return `<article class="advisor-turn"><p class="advisor-question">${esc(t.question)}</p><p>${esc(a.answer)}</p>
       ${a.actions?.length?`<p class="label">Next steps</p><ul>${a.actions.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
@@ -1688,76 +1686,10 @@ async function askFinancialManager(question){
   S.advisorTurns=repeat?[...turns.slice(0,-1),turn]:[...turns,turn].slice(-6);
   save();renderManager();return {...result,cached};
 }
-$('#advisorForm').addEventListener('submit',async event=>{
-  event.preventDefault();const question=$('#advisorQuestion').value,run=++advisorRun,session=aiSession;
-  const button=$('#advisorAsk');button.disabled=true;$('#advisorStatus').textContent='Thinking…';
-  try{
-    const result=await askFinancialManager(question);if(run!==advisorRun||session!==aiSession)return;
-    $('#advisorStatus').textContent='';$('#advisorQuestion').value='';
-  }catch(error){if(run===advisorRun&&session===aiSession)$('#advisorStatus').textContent=error.kind?aiError(error):error.message}
-  finally{if(run===advisorRun)button.disabled=false}
-});
-document.addEventListener('click',event=>{const prompt=event.target.closest('[data-advisor-prompt]');if(!prompt)return;
-  $('#advisorQuestion').value=prompt.dataset.advisorPrompt;$('#advisorQuestion').focus()});
-$('#advisorGoals').addEventListener('input',()=>{S.advisorNotes=$('#advisorGoals').value.slice(0,400);save()});
-$('#advisorNew').addEventListener('click',()=>{advisorRun++;advisorConversationEpoch++;S.advisorTurns=[];$('#advisorAsk').disabled=false;
-  $('#advisorQuestion').value='';$('#advisorStatus').textContent='';save();renderManager()});
+// The financial manager's screen was removed; askFinancialManager() stays for the AI helpers and tests.
 
-// ---------- automatic advice ----------
-// No typing needed: the AI tab shows advice on the whole planner. It is asked for again only when the planner's
-// figures change (bills, cards, installments, income, salary, creditors, goals), so an unchanged planner costs nothing.
-const AUTO_Q='Look at my whole planner as it is now and tell me plainly where I stand and what to do.';
-// Automatic advice has its own short, plain format: a status, one or two simple sentences, and up to three steps.
-// It never asks questions: when something is unknown it works with what the planner has.
-const AUTO_SYSTEM=`You give one person in the Philippines a short, plain money check-up from their budget planner. Amounts are in pesos (₱).
-The planner has done all the arithmetic: use its numbers as they are, never recompute or invent amounts, dates, rates or balances.
-Write for someone with no finance background: everyday words, short sentences, no jargon (no "utilization", "liquidity", "APR", "amortization"). Name the actual bills, cards and loans and use exact amounts and dates.
-Never ask a question and never ask for more information. If something is missing, give the best advice from what is there.
-Put must-pay bills and essentials first, then cards and loans; never suggest new borrowing unless money runs short this cycle.
-status: "good" if everything is covered and nothing is urgent, "watch" if something needs care soon, "act" if a bill is late, money runs short, or a card is above 20% of its limit.
-summary: one or two short sentences on where they stand. steps: up to 3 short things to do, most urgent first, each starting with a verb, with the amount and date when there is one.`;
-const AUTO_SCHEMA={type:'object',additionalProperties:false,required:['status','summary','steps'],properties:{
-  status:{type:'string',enum:['good','watch','act']},summary:{type:'string',maxLength:300},steps:{type:'array',maxItems:3,items:{type:'string',maxLength:160}}}};
-const checkAuto=a=>a&&['good','watch','act'].includes(a.status)&&typeof a.summary==='string'&&a.summary.trim()&&!/\?\s*$/.test(a.summary.trim())
-  ?{status:a.status,summary:a.summary.trim(),steps:strList(a.steps).filter(x=>!/\?\s*$/.test(x)).slice(0,3)}:null;
-const AUTO_LOOK={good:['ok','All good'],watch:['warn','Keep an eye on'],act:['bad','Do this now']};
-function autoAdviceKey(){const s=aiSnapshot();delete s.today;return hashStr('auto-v2|'+JSON.stringify(s)+'|'+String(S.advisorNotes||''))}
-let autoBusy=false,autoTimer=null,autoErr='';
-function renderAutoAdvice(){
-  const el=$('#autoAdvice');if(!el)return;
-  const c=S.autoAdvice,a=c&&checkAuto(c.a),fresh=!!(a&&c.h===autoAdviceKey());
-  const when=c&&c.at?new Date(c.at).toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';
-  let head=autoBusy?'Updating…':!aiReady()?'Turn on AI in the API tab to get advice.':fresh?'Updated '+when:a?'Your planner changed · updating soon':'';
-  if(autoErr&&!autoBusy)head=autoErr;
-  const [cls,word]=a?AUTO_LOOK[a.status]:['',''];
-  el.innerHTML=`<div class="aa-h">${a?`<span class="pill ${cls}">${word}</span>`:'<span></span>'}${a&&!autoBusy&&aiReady()?'<button class="ghost sm" type="button" id="autoRefresh">Refresh</button>':''}</div>`+
-    (a?`<p class="aa-ans">${esc(a.summary)}</p>${a.steps.length?`<ol class="aa-steps">${a.steps.map(x=>`<li>${esc(x)}</li>`).join('')}</ol>`:''}`
-     :autoBusy?'<p class="muted small">Reading your bills, cards and installments…</p>':'')+
-    (head?`<p class="aa-time" role="status">${esc(head)}</p>`:'');
-}
-async function refreshAutoAdvice(force){
-  if(!cloudReady||autoBusy||viewNext){renderAutoAdvice();return}
-  if(!aiReady()){renderAutoAdvice();return}
-  const k=autoAdviceKey();
-  if(!force&&S.autoAdvice?.h===k&&checkAuto(S.autoAdvice.a)){autoErr='';renderAutoAdvice();return}
-  autoBusy=true;autoErr='';renderAutoAdvice();
-  const session=aiSession;
-  try{
-    const user=JSON.stringify({question:AUTO_Q,planner:advisorFacts('overview bills budget cards credit debt loans savings')});
-    const r=await aiAsk({name:'auto_advice',purpose:'advisor',system:AUTO_SYSTEM,schema:AUTO_SCHEMA,check:checkAuto,priority:'high',out:500,user});
-    if(session!==aiSession)return;
-    S.autoAdvice={h:k,a:r.a,at:Date.now(),model:r.model};save();
-  }catch(e){if(session===aiSession)autoErr=e.kind?aiError(e).replace(/<[^>]+>/g,''):String(e.message||e)}
-  finally{autoBusy=false;renderAutoAdvice()}
-}
-// asked only while the AI tab is open, a few seconds after the last change, so typing doesn't trigger it
-function scheduleAutoAdvice(){
-  clearTimeout(autoTimer);
-  if($('#panel-ai').hidden||draft)return;
-  renderAutoAdvice();
-  autoTimer=setTimeout(()=>refreshAutoAdvice(false),4000);
-}
-document.addEventListener('click',e=>{if(e.target.closest('#autoRefresh'))refreshAutoAdvice(true)});
+
+
 
 
 // ---------- asking the AI ----------
@@ -1810,7 +1742,7 @@ function paintUsage(){
 const hashStr=t=>{let h=5381;for(let k=0;k<t.length;k++)h=(h*33^t.charCodeAt(k))>>>0;return h.toString(36)};
 const aiPending=new Map(),aiReservations=new Map();
 let aiSession=0;
-function resetAiSession(){aiSession++;advisorRun++;advisorConversationEpoch++;aiMemo.clear();aiPending.clear();$('#advisorQuestion').value='';$('#advisorGoals').value='';$('#advisorAsk').disabled=false;$('#advisorStatus').textContent=''}
+function resetAiSession(){aiSession++;advisorRun++;advisorConversationEpoch++;aiMemo.clear();aiPending.clear()}
 const aiOutputLimit=job=>Math.max(256,Math.min(1600,Math.round(num(job.out)||700)));
 async function aiAsk(job){
   const c=aiConf(),session=aiSession,owner=cloudUser?.id||null;
@@ -2044,7 +1976,7 @@ function mcpFail(e){
 }
 async function initMcpCloud(){
   mcpMode=true;authKnown=true;setSync('busy','Opening your planner…');renderAuth();
-  window.claude.use('sample').then(s=>{if(s){sampleFn=s;AI_WHO='Claude';aiLive=null;fillAI();if(!$('#panel-ai').hidden)refreshAutoAdvice(false)}}).catch(()=>{});
+  window.claude.use('sample').then(s=>{if(s){sampleFn=s;AI_WHO='Claude';aiLive=null;fillAI()}}).catch(()=>{});
   mcpApi=await window.claude.use('mcp').catch(()=>null);
   connectMcpPlanner();
 }
@@ -2082,7 +2014,6 @@ async function startCloud(user){
     else{adopt(legacy||clone(DEFAULTS));save()} // a new account starts from this browser's old data, or the installments
     legacy=null;LEGACY_KEYS.forEach(k=>{try{localStorage.removeItem(k)}catch(e){}});
     renderAuth();syncBillBuddy();
-    if(!$('#panel-ai').hidden)refreshAutoAdvice(false);
   }catch(e){
     console.warn('Supabase load failed',e);
     if(mcpMode&&!e?.retryable){mcpFail(e);return}

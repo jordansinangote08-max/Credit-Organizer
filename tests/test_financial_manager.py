@@ -1,4 +1,4 @@
-"""Financial manager with local calculations and mocked GPT responses; no live keys."""
+"""Financial manager logic (its screen was removed) with local calculations and mocked GPT responses; no live keys."""
 import json
 from pathlib import Path
 import unittest
@@ -140,18 +140,6 @@ class FinancialManagerTest(unittest.TestCase):
         }''')
         self.assertEqual(result, {'other': 'limit', 'used': 157, 'count': 2})
 
-    def test_new_conversation_does_not_restore_late_answer(self):
-        result = self.page.evaluate('''async () => {
-          let release;window.fetch=()=>new Promise(resolve=>release=resolve);
-          const pending=askFinancialManager('How should I manage debt?').catch(e=>e.kind);
-          while(!release)await new Promise(resolve=>setTimeout(resolve,0));
-          document.querySelector('#advisorNew').click();
-          release({ok:true,status:200,json:async()=>({model:'gpt-6-luna',usage:{total_tokens:157},
-            choices:[{finish_reason:'stop',message:{content:JSON.stringify(advisorReply)}}]})});
-          return {error:await pending,turns:S.advisorTurns.length,used:aiUsed()};
-        }''')
-        self.assertEqual(result, {'error': 'context', 'turns': 0, 'used': 157})
-
     def test_stale_account_response_never_appears_or_charges_the_new_owner(self):
         result = self.page.evaluate('''async () => {
           let release;window.fetch=()=>new Promise(resolve=>release=resolve);
@@ -163,22 +151,6 @@ class FinancialManagerTest(unittest.TestCase):
           return {error:await pending,turns:S.advisorTurns.length,used:aiUsed()};
         }''')
         self.assertEqual(result, {'error': 'context', 'turns': 0, 'used': 0})
-
-    def test_manager_ui_safe_rendering_and_mobile_desktop_layout(self):
-        self.page.evaluate("advisorReply.answer='Review <img src=x onerror=alert(1)> safely.'")
-        self.page.locator('.ask-more > summary').click()  # typed questions sit under "Ask something specific"
-        self.page.locator('#advisorQuestion').fill('What should I prioritize before payday?')
-        self.page.locator('#advisorAsk').click()
-        self.page.wait_for_function('S.advisorTurns.length===1')
-        self.assertEqual(self.page.locator('#advisorConversation img').count(), 0)
-        for name,width in [('mobile',390),('desktop',1280)]:
-            self.page.set_viewport_size({'width':width,'height':900})
-            self.page.add_style_tag(content='.panel{animation:none!important}')
-            self.page.locator('#tab-ai').click()
-            self.page.evaluate('window.scrollTo(0,0)')
-            self.assertTrue(self.page.evaluate('document.documentElement.scrollWidth<=innerWidth'))
-            self.page.screenshot(path=f'/workspace/.cloud-setup/financial-manager-{name}.png',full_page=True)
-
 
 if __name__ == '__main__':
     unittest.main()

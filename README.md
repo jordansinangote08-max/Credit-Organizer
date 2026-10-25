@@ -40,57 +40,6 @@ The top of each tab (This cycle, Bills, Installments, Credit cards, Income, Borr
 
 **Daily AI limit.** Every AI use is counted in the API tab, by purpose (loan checks, tab reviews, sorting bills, placing installments), with the last week's totals. In the API tab, set how many tokens the AI may use per day (about 2,000 a question; empty means no limit). The meter shows today's use. When the limit is reached the AI stops until the next day. Loan checks come first: tab reviews pause at 70% of the limit, so there's always room to check a loan.
 
-## Your financial manager
-
-Open **AI → Your financial manager** and ask a question in English, Filipino or
-Taglish: budgeting before payday, debt payoff priorities, credit card usage,
-savings tradeoffs, or whether borrowing fits the plan. It uses the same
-**gpt-6-luna** connection configured in API (OpenAI or OpenRouter). The existing
-loan calculator below still performs exact affordability scenarios locally.
-
-Add optional **Goals and constraints to remember**, such as protecting medicine
-money or avoiding new borrowing. These stay with the signed-in planner. Editing
-notes or suggested questions does not call the AI. Advice never edits bills,
-marks payments or executes transactions.
-
-Token-saving behavior:
-
-- Simple buffer, planned-remainder and next-payday questions are answered locally,
-  including without an AI key. These use zero AI tokens.
-- Broader advice sends a compact allowlist of calculated cashflow and relevant
-  records, not the entire saved planner, API keys or BillBuddy credentials.
-  It includes up to 12 urgent unpaid obligations, up to 12 relevant cards or
-  installment records, and up to eight creditor offers only when relevant.
-  Omitted counts are explicit. Prior conversation is limited to two short turns;
-  saved goals preserve important constraints without replaying a full transcript.
-- The manager requests a concise answer, three actions and two tradeoffs, with
-  a 700-completion-token allowance and low reasoning effort. Other AI jobs now
-  honor their own bounded output allowance instead of always allowing 4,000.
-- Up to 12 hashed-context answer entries and six conversation turns are saved
-  with the planner. Exact repeats reuse answers across page loads when the
-  relevant data, date, goals, provider, model and advisor policy match.
-  Changed facts require a new answer. **New conversation** clears the visible
-  conversation while retaining the private answer cache; it never automatically
-  sends a replacement request.
-- Identical simultaneous requests share one provider call. Pending requests
-  reserve estimated tokens against the API-tab daily budget. The estimate
-  includes the schema and output cap; actual provider-reported usage replaces
-  it after the response, including failed-to-parse or cut-off answers. Invalid
-  answers are not automatically retried. Existing one-time setting-negotiation
-  retries for unsupported schema/reasoning options remain limited to HTTP 400.
-
-The advisor treats figures as planned cashflow, not verified cash or savings.
-Unpaid statement amounts are distinguished from current balances and actual
-credit utilization. Missing APRs, minimums and balances stay unknown. Its
-instructions prioritize essentials and liquidity, ask for material missing
-information and prohibit promises of score changes, approvals or investment
-returns. Changed data or accounts during a request prevents the old answer from
-being saved into the current conversation. Tests use synthetic data and mocked
-provider responses; they do not certify the quality of a live model answer.
-
-No new database migration is needed: notes, conversations and cached answers
-use the existing owner-protected `planner_state` row. No new key is needed.
-
 ## AI: should I take this loan?
 
 The **AI** tab checks a loan before you take it. Pick a creditor from the Borrow tab to fill in its interest, rate type, months and upfront fee (the check then shows what you receive after the fee, and warns if you ask for more than that creditor offers), or type your own terms: the amount, installments or a one-time payment, the interest, and when it's due. The planner first does the maths itself: it lays the loan's payments over your coming pay cycles next to every bill, installment, card and income you've entered, and works out the most you can borrow on those terms while every cycle keeps your buffer. That part is exact, free and needs no key.
@@ -118,7 +67,7 @@ The key is saved in your account and used straight from the device, so give it a
 The same files also run as a published Claude artifact. There the page can't reach outside servers, so `app.js` detects `window.claude` and switches modes:
 
 - **Planner data** loads and saves through the viewer's claude.ai **Supabase** connector (`execute_sql` on the project in `config.js`), with no password. It opens the most recently updated row in `planner_state`.
-- **AI** uses Claude on the viewer's account instead of an OpenAI/OpenRouter key.
+- **AI** (loan checks, tab reviews) uses Claude on the viewer's account instead of an OpenAI/OpenRouter key.
 - **BillBuddy** doesn't sync there; bills it already added are kept.
 
 On the deployed site nothing changes: no `window.claude`, so the normal Supabase sign-in and OpenAI paths run.
