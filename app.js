@@ -316,7 +316,8 @@ function renderAdvice(C){
 }
 function renderTimeline(C){
   $('#cycleLabel').textContent=fmtD(C.start)+' – '+fmtD(C.end)+', '+C.end.getFullYear();
-  const cf=$('#carry');if(cf&&document.activeElement!==cf)cf.value=C.carry?C.carry:'';
+  // the row only shows when there is money from last cycle; with none, nothing is shown
+  const cf=$('#carry');if(cf&&document.activeElement!==cf){cf.value=C.carry?C.carry:'';cf.closest('.carryrow').hidden=!(C.carry>0)}
   const ev=[{d:C.start,in:true,name:'Salary',amt:num(S.salary)}];
   if(C.carry>0)ev.unshift({d:C.start,in:true,name:'From last cycle',amt:C.carry});
   C.inc.forEach(o=>ev.push({d:o.d,in:true,name:o.x.label||'Other money',amt:num(o.x.amount)}));
@@ -751,6 +752,7 @@ function syncInputs(){
   $('#salLabel').textContent=viewNext?'Salary next cycle':f==='month'?'Salary this cycle':'Salary each payday';
 }
 // the buffer field sits in the Pay ahead window and keeps your typing; everything that depends on it redraws around it
+$('#carry').addEventListener('blur',()=>{if(!viewNext)setTimeout(render,0)});  // cleared to nothing: the row goes away
 $('#carry').addEventListener('input',e=>{if(viewNext)return;S.carry={key:cycleKey(),amount:Math.max(0,num(e.target.value))};save();render()});
 $('#buffer').addEventListener('input',e=>{S.buffer=Math.max(0,num(e.target.value));save();render()});
 document.addEventListener('click',e=>{if(e.target.closest('[data-ahead]')){$('#buffer').value=num(S.buffer);$('#aheadDlg').showModal()}});
