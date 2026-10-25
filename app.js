@@ -213,7 +213,18 @@ function save(){
 
 // ---------- paid tracking ----------
 const DAY=86400000;
-const cycleKey=()=>{const d=cycleStart();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate()};
+const keyOf=d=>d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();
+const cycleKey=()=>keyOf(cycleStart());
+// Money left from the previous cycle counts as money in at the start of this one. When a new cycle begins it is
+// filled in from what the planner showed left over at the end of the last one; you can change it to what you
+// really have. Stored as {key: the cycle it belongs to, amount}.
+const carryFor=start=>S.carry&&S.carry.key===keyOf(start)?Math.max(0,num(S.carry.amount)):0;
+function trackCarry(C){
+  if(viewNext||draft||!cloudReady)return;
+  const k=cycleKey(),left=cents(Math.max(0,C.surplus));
+  if(S.cycleLeft&&S.cycleLeft.key!==k&&!(S.carry&&S.carry.key===k)){S.carry={key:k,amount:cents(Math.max(0,num(S.cycleLeft.amount))),auto:true};S.cycleLeft={key:k,amount:left};save();return true}
+  if(!S.cycleLeft||S.cycleLeft.key!==k||S.cycleLeft.amount!==left)S.cycleLeft={key:k,amount:left};
+}
 const isPaid=i=>i.bbStatement?i.bbPaidStatement===i.bbStatement:i.paidCycle===cycleKey();
 const paidInCycle=i=>isPaid(i)&&(!i.bbStatementDue||inCycle({...i,bbDue:i.bbStatementDue},cycleStart()));
 const isHiddenPaid=i=>isPaid(i)&&Date.now()-num(i.paidAt)>=DAY;
@@ -241,7 +252,7 @@ function compute(){
   const end=new Date(next.getFullYear(),next.getMonth(),next.getDate()-1);
   const inc=S.income.filter(x=>num(x.amount)>0).map(x=>({x,d:parseD(x.date)})).filter(o=>o.d&&o.d>=start&&o.d<next);
   const other=inc.reduce((s,o)=>s+num(o.x.amount),0);
-  const avail=num(S.salary)+other;
+  const carry=carryFor(start),avail=num(S.salary)+other+carry;
   const lines=S.items.filter(i=>!billed(i)&&num(i.amount)>0&&inCycle(i,start)).map(i=>{
     const tier=i.kind==='essential'||i.kind==='bill'?1:i.kind==='loan'?2:i.kind==='card'?3:5;
     return {i,tier,date:dueOf(i,start),need:num(i.amount)};
@@ -250,7 +261,7 @@ function compute(){
   const required=lines.filter(l=>l.tier<=3).reduce((s,l)=>s+l.need,0);
   const total=lines.reduce((s,l)=>s+l.need,0);
   const paidAmt=lines.filter(l=>isPaid(l.i)).reduce((s,l)=>s+l.need,0);
-  return {start,next,end,inc,other,avail,lines,required,total,paidAmt,gap:required-avail,surplus:avail-total};
+  return {start,next,end,inc,other,carry,avail,lines,required,total,paidAmt,gap:required-avail,surplus:avail-total};
 }
 
 // ---------- hero ----------
@@ -305,7 +316,9 @@ function renderAdvice(C){
 }
 function renderTimeline(C){
   $('#cycleLabel').textContent=fmtD(C.start)+' – '+fmtD(C.end)+', '+C.end.getFullYear();
+  const cf=$('#carry');if(cf&&document.activeElement!==cf)cf.value=C.carry?C.carry:'';
   const ev=[{d:C.start,in:true,name:'Salary',amt:num(S.salary)}];
+  if(C.carry>0)ev.unshift({d:C.start,in:true,name:'From last cycle',amt:C.carry});
   C.inc.forEach(o=>ev.push({d:o.d,in:true,name:o.x.label||'Other money',amt:num(o.x.amount)}));
   C.lines.forEach(l=>ev.push({d:l.date,in:false,l}));
   const days={};ev.forEach(e=>{const k=e.d.getTime();(days[k]=days[k]||[]).push(e)});
@@ -691,7 +704,7 @@ const infoRows=rows=>`<ul class="ilist">${rows.map(([a,b,c])=>`<li${c?` class="$
 function cycleInfo(){
   const C=compute(),by=new Map();
   C.lines.forEach(l=>{const c=catOf(l.i),k=c?c.name:'Bills';by.set(k,(by.get(k)||0)+l.need)});
-  const inRows=[['Salary',peso(num(S.salary))],...C.inc.map(o=>[esc(o.x.label||'Other money'),peso(num(o.x.amount))]),['Money in',peso(C.avail),'tot']];
+  const inRows=[...(C.carry>0?[['From last cycle',peso(C.carry)]]:[]),['Salary',peso(num(S.salary))],...C.inc.map(o=>[esc(o.x.label||'Other money'),peso(num(o.x.amount))]),['Money in',peso(C.avail),'tot']];
   const outRows=[...[...by].map(([k,v])=>[esc(k),peso(v)]),['Bills',peso(C.total),'tot']];
   if(C.paidAmt>0)outRows.push(['Paid so far',peso(C.paidAmt)],['Still to pay',peso(C.total-C.paidAmt)]);
   infoWin(fmtD(C.start)+' – '+fmtD(C.end),
@@ -713,7 +726,7 @@ $('#status').addEventListener('click',cycleInfo);
 $('#status').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();cycleInfo()}});
 document.addEventListener('click',e=>{const b=e.target.closest('[data-isched]');if(!b)return;const it=S.items.find(i=>i.id==b.dataset.isched);if(it)schedInfo(it)});
 
-function render(){const C=compute();renderStatus(C);runJobs(['cycle','inst','borrow','ahead','acct'],C)}
+function render(){let C=compute();if(trackCarry(C))C=compute();renderStatus(C);runJobs(['cycle','inst','borrow','ahead','acct'],C)}
 function renderAll(){runJobs(['bills','money','src','ai']);render();renderManager()}
 function flushStale(){if(!stale.size)return;const C=compute();[...stale].forEach(j=>{if(shown(j)){stale.delete(j);JOBS[j](C);paintMon(JOB_PANEL[j]||j)}})}
 window.addEventListener('beforeprint',()=>{const C=compute();Object.keys(JOBS).forEach(j=>JOBS[j](C));stale.clear()});
@@ -738,6 +751,7 @@ function syncInputs(){
   $('#salLabel').textContent=viewNext?'Salary next cycle':f==='month'?'Salary this cycle':'Salary each payday';
 }
 // the buffer field sits in the Pay ahead window and keeps your typing; everything that depends on it redraws around it
+$('#carry').addEventListener('input',e=>{if(viewNext)return;S.carry={key:cycleKey(),amount:Math.max(0,num(e.target.value))};save();render()});
 $('#buffer').addEventListener('input',e=>{S.buffer=Math.max(0,num(e.target.value));save();render()});
 document.addEventListener('click',e=>{if(e.target.closest('[data-ahead]')){$('#buffer').value=num(S.buffer);$('#aheadDlg').showModal()}});
 $('#aheadDlg').addEventListener('click',e=>{if(e.target.closest('[data-aheadclose]'))$('#aheadDlg').close()});
@@ -1391,7 +1405,7 @@ $('#aiLimit').addEventListener('change',()=>{const v=Math.round(num($('#aiLimit'
 fillAI();
 
 // the money in, and everything due, in the pay cycle that starts on `start`
-const incomeIn=start=>{const end=shiftCycle(start,1);return S.income.reduce((s,x)=>{const d=parseD(x.date);return s+(d&&d>=start&&d<end?num(x.amount):0)},0)};
+const incomeIn=start=>{const end=shiftCycle(start,1);return carryFor(start)+S.income.reduce((s,x)=>{const d=parseD(x.date);return s+(d&&d>=start&&d<end?num(x.amount):0)},0)};
 const dueIn=start=>S.items.filter(i=>i.kind!=='loan'&&num(i.amount)>0&&inCycle(i,start)).reduce((s,i)=>s+num(i.amount),0)+loansIn(start);
 function loanPlan(f){
   const r=f.rate/100;
@@ -2239,11 +2253,12 @@ async function openPreview(){
   if(!cloudReady||draft||viewNext)return;
   if(cloudTimer){clearTimeout(cloudTimer);await pushCloud()}   // a change still waiting to save is saved first
   closeDialogs();
-  const main=S,start=cycleStart();
+  const main=S,start=cycleStart(),leftNow=cents(Math.max(0,compute().surplus));
   S=clone(main);
   // everything still due this cycle counts as paid, as it will be by the time the next cycle starts
   S.items.filter(i=>!isPaid(i)&&!billed(i)&&inCycle(i,start)&&num(i.amount)>0).forEach(markPaid);
   preview={main};viewNext=true;
+  S.carry={key:cycleKey(),amount:leftNow};                 // what's left this cycle carries into the next
   rollover();                                               // next cycle: last cycle's "paid" marks clear
   S.items.forEach(i=>{if(i.bbStatement){i.bbStatement+='|next';delete i.bbPaidStatement}});
   document.body.classList.add('previewing');

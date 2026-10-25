@@ -798,3 +798,15 @@ body.previewing .main :is(.bt,.acts,.add,#addBtn,#catBtn,#resetBtn,#resetConfirm
 body.previewing .main [data-edit]{pointer-events:none;text-decoration:none}
 body.previewing #tab-ai,body.previewing #tab-bbsync{display:none}
 body.previewing #advice .btn,body.previewing #advice .ghost{display:none}
+
+/* money left from the previous cycle, at the top of "Money in and out" */
+.carryrow{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:4px 10px;padding:8px 12px;border-radius:12px;background:var(--sunk);font-size:.9rem}
+.carryrow label{font-weight:600}
+.carryrow .bufin{display:flex;align-items:center;gap:6px;justify-self:end}
+.carryrow input{width:8.5em;font:inherit;font-variant-numeric:tabular-nums;text-align:right;background:var(--surface);border:1px solid var(--field);border-radius:10px;padding:6px 10px;min-height:40px;color:var(--ink)}
+.carryrow input:focus{border-color:var(--accent);box-shadow:var(--ring);outline:none}
+.carryrow .note{grid-column:1/-1;font-size:.78rem;color:var(--muted)}
+@media (pointer:coarse){.carryrow input{font-size:16px;min-height:var(--tap)}}
+.sec.folded .carryrow{display:none}
+body.previewing .carryrow .note{display:none}
+body.previewing .carryrow input{border-color:transparent;background:transparent}
