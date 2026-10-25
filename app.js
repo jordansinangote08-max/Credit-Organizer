@@ -738,7 +738,9 @@ $('#status').addEventListener('click',cycleInfo);
 $('#status').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();cycleInfo()}});
 document.addEventListener('click',e=>{const b=e.target.closest('[data-isched]');if(!b)return;const it=S.items.find(i=>i.id==b.dataset.isched);if(it)schedInfo(it)});
 
-function render(){let C=compute();if(trackClose(C)){C=compute();syncInputs()}if(trackCarry(C))C=compute();paintCycleBar();renderStatus(C);runJobs(['cycle','inst','borrow','ahead','acct'],C)}
+function render(){
+  if(S.closed&&!viewNext&&!draft&&cloudReady&&closedHasUnpaid()){reopenClosed();return}   // reopenClosed redraws everything
+  let C=compute();if(trackClose(C)){C=compute();syncInputs()}if(trackCarry(C))C=compute();paintCycleBar(C);renderStatus(C);runJobs(['cycle','inst','borrow','ahead','acct'],C)}
 function renderAll(){runJobs(['bills','money','src','ai']);render();renderManager()}
 function flushStale(){if(!stale.size)return;const C=compute();[...stale].forEach(j=>{if(shown(j)){stale.delete(j);JOBS[j](C);paintMon(JOB_PANEL[j]||j)}})}
 window.addEventListener('beforeprint',()=>{const C=compute();Object.keys(JOBS).forEach(j=>JOBS[j](C));stale.clear()});
@@ -990,7 +992,7 @@ function trackClose(C){
   save();return true;
 }
 function purgeClosed(){
-  if(S.reopened&&Date.now()-num(S.reopened.at)>=DAY){delete S.reopened;return true}   // went back and stayed
+  if(S.reopened&&Date.now()-num(S.reopened.at)>=DAY){delete S.reopened;delete S.stay;return true}   // went back and stayed
   const c=S.closed;if(!c||Date.now()-num(c.at)<DAY)return false;
   const a=parseD(c.start),b=parseD(c.end),inC=d=>!!d&&d>=a&&d<=b;
   S.items=S.items.filter(i=>!(repeats(i)&&i.once&&!i.bbDue&&inC(parseD(i.date))));
@@ -1014,10 +1016,18 @@ function goCurrent(){
   delete S.reopened;delete S.stay;
   save();syncInputs();renderAll();
 }
-function paintCycleBar(){
+// The finished cycle got an unpaid bill (you marked one unpaid, or BillBuddy brought a new one): it isn't
+// finished any more, so the planner goes back to it.
+function closedHasUnpaid(){
+  const c=S.closed;if(!c)return false;
+  const start=parseD(c.start),paidThen=i=>i.bbStatement?i.bbPaidStatement===i.bbStatement:i.paidCycle===c.key;
+  return S.items.some(i=>!billed(i)&&num(i.amount)>0&&inCycle(i,start)&&!paidThen(i));
+}
+function paintCycleBar(C){
   const bar=$('#cycleBar');if(!bar)return;
-  const r=S.reopened;
-  if(r&&!S.closed&&!viewNext&&Date.now()-num(r.at)<DAY&&cycleKey()===r.key){
+  const r=S.reopened,allPaid=!!C&&C.lines.length>0&&C.lines.every(l=>isPaid(l.i));
+  // "Go to current cycle" only while every bill in this cycle is paid; unpaid bills hide it
+  if(r&&!S.closed&&!viewNext&&Date.now()-num(r.at)<DAY&&cycleKey()===r.key&&allPaid){
     bar.hidden=false;
     bar.innerHTML=`<span>You went back to ${fmtD(parseD(r.start))} – ${fmtD(parseD(r.end))}.</span><button class="ghost sm" type="button" id="currentBtn">Go to current cycle</button>`;
     return;
