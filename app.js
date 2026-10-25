@@ -2287,7 +2287,7 @@ function paintPreview(){
   const bar=$('#previewBar');if(!bar)return;
   bar.hidden=!viewNext;if(!viewNext)return;
   const C=compute();
-  bar.innerHTML=`<span><b>Next cycle</b> · ${fmtD(C.start)} – ${fmtD(C.end)} · view only</span><button class="ghost sm" type="button" id="previewBack">Back</button>`;
+  bar.innerHTML=`<span><b>Next cycle</b> · ${fmtD(C.start)} – ${fmtD(C.end)} · view only</span>`;
   setSync('draft','Next cycle · view only');
 }
 $('#nextBtn').addEventListener('click',()=>viewNext?closePreview():openPreview());
