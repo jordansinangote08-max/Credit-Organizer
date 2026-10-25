@@ -986,10 +986,11 @@ function trackClose(C){
   if(!C.lines.length||!C.lines.every(l=>isPaid(l.i)))return false;
   const left=cents(Math.max(0,C.surplus)),nk=keyOf(C.next);
   S.closed={key:k,start:iso(C.start),end:iso(C.end),at:Date.now(),left,prevCarry:S.carry&&S.carry.key===k?S.carry:null};
-  S.done=k;S.carry={key:nk,amount:left};S.cycleLeft={key:nk,amount:0};
+  S.done=k;S.carry={key:nk,amount:left};S.cycleLeft={key:nk,amount:0};delete S.reopened;
   save();return true;
 }
 function purgeClosed(){
+  if(S.reopened&&Date.now()-num(S.reopened.at)>=DAY){delete S.reopened;return true}   // went back and stayed
   const c=S.closed;if(!c||Date.now()-num(c.at)<DAY)return false;
   const a=parseD(c.start),b=parseD(c.end),inC=d=>!!d&&d>=a&&d<=b;
   S.items=S.items.filter(i=>!(repeats(i)&&i.once&&!i.bbDue&&inC(parseD(i.date))));
@@ -1001,16 +1002,32 @@ function reopenClosed(){
   const c=S.closed;if(!c||viewNext||draft)return;
   if(c.prevCarry)S.carry=c.prevCarry;else delete S.carry;
   S.cycleLeft={key:c.key,amount:c.left};S.stay=c.key;delete S.closed;delete S.done;
+  S.reopened={key:c.key,start:c.start,end:c.end,at:c.at};   // so "Go to current cycle" can return, same 24 hours
+  save();syncInputs();renderAll();
+}
+// after "Go back": return to the cycle you had moved on to, carrying what's left now
+function goCurrent(){
+  const r=S.reopened;if(!r||viewNext||draft||cycleKey()!==r.key)return;
+  const C=compute(),left=cents(Math.max(0,C.surplus)),nk=keyOf(C.next);
+  S.closed={...r,left,prevCarry:S.carry&&S.carry.key===r.key?S.carry:null};
+  S.done=r.key;S.carry={key:nk,amount:left};S.cycleLeft={key:nk,amount:0};
+  delete S.reopened;delete S.stay;
   save();syncInputs();renderAll();
 }
 function paintCycleBar(){
   const bar=$('#cycleBar');if(!bar)return;
+  const r=S.reopened;
+  if(r&&!S.closed&&!viewNext&&Date.now()-num(r.at)<DAY&&cycleKey()===r.key){
+    bar.hidden=false;
+    bar.innerHTML=`<span>You went back to ${fmtD(parseD(r.start))} – ${fmtD(parseD(r.end))}.</span><button class="ghost sm" type="button" id="currentBtn">Go to current cycle</button>`;
+    return;
+  }
   const c=S.closed,open=!!c&&!viewNext&&Date.now()-num(c.at)<DAY;
   bar.hidden=!open;if(!open)return;
   const until=new Date(num(c.at)+DAY),a=parseD(c.start),b=parseD(c.end);
   bar.innerHTML=`<span>All bills paid · moved to the next cycle. You can go back to ${fmtD(a)} – ${fmtD(b)} until ${until.toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}.</span><button class="ghost sm" type="button" id="reopenBtn">Go back</button>`;
 }
-document.addEventListener('click',e=>{if(e.target.closest('#reopenBtn'))reopenClosed()});
+document.addEventListener('click',e=>{if(e.target.closest('#reopenBtn'))reopenClosed();else if(e.target.closest('#currentBtn'))goCurrent()});
 function adopt(next){
   if(!next||!Array.isArray(next.items)||next.ver!==DEFAULTS.ver)return;
   S=next;prepare();const expired=pruneExpiredBB(),rolled=rollover();editingId=null;syncInputs();renderAll();fillBB();fillAI();if(expired||rolled)save();
