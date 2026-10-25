@@ -16,6 +16,14 @@ Plain static files, no build step. Open `index.html` or serve the folder (e.g. `
 
 Under the salary, **Payday** sets your pay schedule: once a month on one day, twice a month on two days (like the 15th and 30th), or every week on a weekday. A pay cycle runs from one payday to the day before the next, and each bill, installment and card counts in the cycle its due date falls in. Paid once a month, the planner switches to the upcoming cycle in the last 16 days before payday so you can plan it; paid more often, it shows the cycle you're in. The Plan tab shows one row per pay cycle. Each schedule remembers its own days, so switching back and forth keeps them.
 
+## Finishing a cycle early
+
+When every bill in the current cycle is marked paid, the planner moves to the next cycle right away. What was left over carries into it as **From last cycle** (a money-in line at the top of *Money in and out*; tap the amount to change it). A green bar offers **Go back** for 24 hours, which returns to the finished cycle with everything as it was. After 24 hours that cycle's data is cleared here and in Supabase: its one-time bills and other money, its paid marks and installments that ended. Only the money left over stays, carried in the new cycle. The planner stays in the new cycle until the calendar reaches it.
+
+## Next-cycle preview
+
+The eye button beside **Draft** shows the cycle after the current one, read only, with this cycle's bills treated as paid and its leftover carried in. Tap the eye again to return.
+
 ## Bills and categories
 
 **Add bill**, or the pencil on a bill, opens a small window with its form. Edits save as you type; a new bill is kept only when you tap **Add** (closing the window any other way leaves it out). Adding or editing an installment opens the same window from the Installments tab. Adding or editing a card, and adding other money or a creditor, open the same kind of window. Due days and statement days are picked on a calendar: the field shows the next date, and the day you pick repeats every month.

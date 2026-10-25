@@ -810,3 +810,4 @@ body.previewing .carry-btn{text-decoration:none;pointer-events:none}
 .carry-a input:focus{outline:none;border-bottom:2px solid var(--accent)}
 @media (pointer:coarse){.carry-a input{font-size:16px;min-height:32px}}
 body.previewing .carry-a input{border-bottom-color:transparent}
+.cyclebar{background:var(--ok-soft)} .cyclebar span{min-width:0}

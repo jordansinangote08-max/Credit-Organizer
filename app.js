@@ -77,10 +77,15 @@ function shiftCycle(start,k){
 }
 // The cycle you're living in. Paid once a month, it switches to the upcoming cycle in the last 16 days
 // before payday so you can plan it; paid more often, it's the current one.
-function cycleStart(){
+function naturalStart(){
   const t=new Date();t.setHours(0,0,0,0);
   const m=payCache(),key='start|'+t.getTime();let v=m.get(key);
   if(!v){v=cycleStartFor(t);m.set(key,v)}
+  return v;
+}
+function cycleStart(){
+  let v=naturalStart();
+  if(S.done&&S.done===keyOf(v))v=shiftCycle(v,1);         // every bill was paid: the next cycle started early
   return viewNext?shiftCycle(v,1):v;  // the preview shows everything one pay cycle ahead
 }
 function cycleStartFor(t){
@@ -228,7 +233,7 @@ function trackCarry(C){
 const isPaid=i=>i.bbStatement?i.bbPaidStatement===i.bbStatement:i.paidCycle===cycleKey();
 const paidInCycle=i=>isPaid(i)&&(!i.bbStatementDue||inCycle({...i,bbDue:i.bbStatementDue},cycleStart()));
 const isHiddenPaid=i=>isPaid(i)&&Date.now()-num(i.paidAt)>=DAY;
-function markPaid(i){if(isPaid(i))return;i.paidAt=Date.now();i.paidCycle=cycleKey();if(i.bbStatement){i.bbPaidStatement=i.bbStatement;i.bbPaidDue=i.bbStatementDue}
+function markPaid(i){if(isPaid(i))return;delete S.stay;i.paidAt=Date.now();i.paidCycle=cycleKey();if(i.bbStatement){i.bbPaidStatement=i.bbStatement;i.bbPaidDue=i.bbStatementDue}
   if(i.kind==='loan'){i.prevLeft=num(i.left);i.left=Math.max(0,num(i.left)-1)}
   if(i.bbRef)S.items.filter(y=>y.inBill===i.bbRef&&!isPaid(y)).forEach(markPaid);
   if(i.kind==='card')S.items.filter(y=>y.inCard===i.acct&&!isPaid(y)).forEach(markPaid)}
@@ -236,9 +241,12 @@ function undoPaid(i){if(i.kind==='loan'&&i.prevLeft!=null)i.left=i.prevLeft;dele
   if(i.bbRef)S.items.filter(y=>y.inBill===i.bbRef&&isPaid(y)).forEach(undoPaid);
   if(i.kind==='card')S.items.filter(y=>y.inCard===i.acct&&isPaid(y)).forEach(undoPaid)}
 function rollover(){
-  const key=cycleKey();let changed=false;
+  let changed=purgeClosed();
+  // the calendar has reached the cycle that started early: nothing to shift any more
+  if(S.done&&!S.closed&&S.done!==keyOf(naturalStart())){delete S.done;changed=true}
+  const key=cycleKey(),kept=S.closed&&S.closed.key;     // a cycle closed early keeps its paid marks for 24 hours
   S.items=S.items.filter(i=>{
-    if(!i.paidCycle||i.paidCycle===key)return true;
+    if(!i.paidCycle||i.paidCycle===key||i.paidCycle===kept)return true;
     changed=true;delete i.paidAt;delete i.paidCycle;delete i.prevLeft;
     if(i.kind==='card'&&!i.bbStatement)i.amount=null;
     return !(i.kind==='loan'&&num(i.left)<=0&&!i.bbInst);
@@ -730,7 +738,7 @@ $('#status').addEventListener('click',cycleInfo);
 $('#status').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();cycleInfo()}});
 document.addEventListener('click',e=>{const b=e.target.closest('[data-isched]');if(!b)return;const it=S.items.find(i=>i.id==b.dataset.isched);if(it)schedInfo(it)});
 
-function render(){let C=compute();if(trackCarry(C))C=compute();renderStatus(C);runJobs(['cycle','inst','borrow','ahead','acct'],C)}
+function render(){let C=compute();if(trackClose(C)){C=compute();syncInputs()}if(trackCarry(C))C=compute();paintCycleBar();renderStatus(C);runJobs(['cycle','inst','borrow','ahead','acct'],C)}
 function renderAll(){runJobs(['bills','money','src','ai']);render();renderManager()}
 function flushStale(){if(!stale.size)return;const C=compute();[...stale].forEach(j=>{if(shown(j)){stale.delete(j);JOBS[j](C);paintMon(JOB_PANEL[j]||j)}})}
 window.addEventListener('beforeprint',()=>{const C=compute();Object.keys(JOBS).forEach(j=>JOBS[j](C));stale.clear()});
@@ -964,9 +972,48 @@ $('.tabs').addEventListener('keydown',e=>{
 });
 
 // ---------- boot ----------
+// ---------- closing a cycle early ----------
+// When every bill this cycle is paid, the planner moves on to the next cycle straight away, and what's left
+// over carries into it as "From last cycle". For 24 hours you can go back to the cycle you finished; after
+// that its data is cleared here and in your account (one-time bills and other money dated in it, its paid
+// marks, installments that ended). Only the money left over stays, carried in the new cycle.
+// S.done = the cycle that was finished early (keeps you in the next one until the calendar gets there);
+// S.closed = {key, start, end, at, left, prevCarry} for the 24 hours you can go back; S.stay = a cycle you went back to (it won't close again
+// until you mark something paid).
+function trackClose(C){
+  if(viewNext||draft||!cloudReady||S.closed||S.done)return false;
+  const k=cycleKey();if(S.stay===k)return false;
+  if(!C.lines.length||!C.lines.every(l=>isPaid(l.i)))return false;
+  const left=cents(Math.max(0,C.surplus)),nk=keyOf(C.next);
+  S.closed={key:k,start:iso(C.start),end:iso(C.end),at:Date.now(),left,prevCarry:S.carry&&S.carry.key===k?S.carry:null};
+  S.done=k;S.carry={key:nk,amount:left};S.cycleLeft={key:nk,amount:0};
+  save();return true;
+}
+function purgeClosed(){
+  const c=S.closed;if(!c||Date.now()-num(c.at)<DAY)return false;
+  const a=parseD(c.start),b=parseD(c.end),inC=d=>!!d&&d>=a&&d<=b;
+  S.items=S.items.filter(i=>!(repeats(i)&&i.once&&!i.bbDue&&inC(parseD(i.date))));
+  S.income=S.income.filter(x=>!inC(parseD(x.date)));
+  delete S.closed;delete S.stay;                         // S.done stays: you remain in the new cycle
+  return true;                                           // rollover() then clears that cycle's paid marks
+}
+function reopenClosed(){
+  const c=S.closed;if(!c||viewNext||draft)return;
+  if(c.prevCarry)S.carry=c.prevCarry;else delete S.carry;
+  S.cycleLeft={key:c.key,amount:c.left};S.stay=c.key;delete S.closed;delete S.done;
+  save();syncInputs();renderAll();
+}
+function paintCycleBar(){
+  const bar=$('#cycleBar');if(!bar)return;
+  const c=S.closed,open=!!c&&!viewNext&&Date.now()-num(c.at)<DAY;
+  bar.hidden=!open;if(!open)return;
+  const until=new Date(num(c.at)+DAY),a=parseD(c.start),b=parseD(c.end);
+  bar.innerHTML=`<span>All bills paid · moved to the next cycle. You can go back to ${fmtD(a)} – ${fmtD(b)} until ${until.toLocaleString('en-PH',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}.</span><button class="ghost sm" type="button" id="reopenBtn">Go back</button>`;
+}
+document.addEventListener('click',e=>{if(e.target.closest('#reopenBtn'))reopenClosed()});
 function adopt(next){
   if(!next||!Array.isArray(next.items)||next.ver!==DEFAULTS.ver)return;
-  S=next;prepare();const expired=pruneExpiredBB();rollover();editingId=null;syncInputs();renderAll();fillBB();fillAI();if(expired)save();
+  S=next;prepare();const expired=pruneExpiredBB(),rolled=rollover();editingId=null;syncInputs();renderAll();fillBB();fillAI();if(expired||rolled)save();
 }
 prepare();rollover();syncInputs();renderAll();
 // ---------- BillBuddy ----------
