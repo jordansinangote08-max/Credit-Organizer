@@ -36,6 +36,7 @@ const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+Stri
 const parseD=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s||'');return m?new Date(+m[1],+m[2]-1,+m[3]):null};
 
 let uid=1,S=clone(DEFAULTS);
+let viewNext=false,preview=null; // next-cycle preview: a read-only look at the cycle after this one (see the end)
 // Everything lives in Supabase. Earlier versions kept data in this browser: it moves to the
 // account on its first sign-in (if the account is still empty) and is then deleted here.
 const LEGACY_KEYS=[KEY,KEY+'.tab',KEY+'.billbuddy'];
@@ -78,8 +79,9 @@ function shiftCycle(start,k){
 // before payday so you can plan it; paid more often, it's the current one.
 function cycleStart(){
   const t=new Date();t.setHours(0,0,0,0);
-  const m=payCache(),key='start|'+t.getTime();if(m.has(key))return m.get(key);
-  const v=cycleStartFor(t);m.set(key,v);return v;
+  const m=payCache(),key='start|'+t.getTime();let v=m.get(key);
+  if(!v){v=cycleStartFor(t);m.set(key,v)}
+  return viewNext?shiftCycle(v,1):v;  // the preview shows everything one pay cycle ahead
 }
 function cycleStartFor(t){
   const p0=prevPay(new Date(t.getFullYear(),t.getMonth(),t.getDate()+1));
@@ -203,6 +205,7 @@ function paintStatus(){
 const snapshot=()=>JSON.stringify(S,(k,v)=>k==='id'?undefined:v);
 function save(){
   if(!cloudReady)return;
+  if(viewNext)return;                                   // the next-cycle preview never saves
   if(draft){setSync('draft','Draft · nothing is saved');return}
   if(!$('#panel-ai').hidden)scheduleAutoAdvice();
   clearTimeout(cloudTimer);setSync('busy','Saving…');
@@ -369,7 +372,7 @@ function itemRow(i,start){
   if(i.kind==='card'){const a=acctOf(i);if(a&&a.last4)meta.push(`<span>•••• ${esc(a.last4)}</span>`)}
   if(paid)meta.unshift(`<span class="t-ok">Paid · clears in ${Math.max(1,Math.ceil((DAY-(Date.now()-num(i.paidAt)))/3600000))}h</span>`);
   return `<div class="bill${paid?' done':''}"><div><button class="nm openw" data-edit="${i.id}" aria-haspopup="dialog" title="Edit">${esc(i.name||'Untitled bill')}</button><div class="mt">${meta.join('')}</div></div>
-    <div class="rt">${amt>0?`<span class="amt">${peso(amt)}</span>`:'<span class="pill warn">Add amount</span>'}
+    <div class="rt">${amt>0?`<span class="amt">${peso(amt)}</span>`:(viewNext?'<span class="pill">Amount not out yet</span>':'<span class="pill warn">Add amount</span>')}
     <div class="bt">${paid?undoBtn(`data-unpaid="${i.id}"`,i.name):amt>0?paidBtn(`data-paid="${i.id}"`,i.name):''}</div></div></div>`;
 }
 function renderItems(){
@@ -733,7 +736,7 @@ function syncInputs(){
   ['salary','payday','payday2','payweekday'].forEach(k=>{const el=$('#'+k);if(document.activeElement!==el)el.value=S[k]??''});
   const f=payFreq();$('#payfreq').value=f;
   $('#pdDays').hidden=f==='week';$('#pd2').hidden=f!=='twice';$('#pdWeek').hidden=f!=='week';
-  $('#salLabel').textContent=f==='month'?'Salary this cycle':'Salary each payday';
+  $('#salLabel').textContent=viewNext?'Salary next cycle':f==='month'?'Salary this cycle':'Salary each payday';
 }
 // the buffer field sits in the Pay ahead window and keeps your typing; everything that depends on it redraws around it
 $('#buffer').addEventListener('input',e=>{S.buffer=Math.max(0,num(e.target.value));save();render()});
@@ -1035,6 +1038,7 @@ function refile(it,kind,bank){
 }
 async function syncBillBuddy(){
   if(!cloudReady)return;
+  if(viewNext)return;
   if(mcpMode){bbState('off','BillBuddy sync runs on your deployed planner. Bills it already added are kept here.');return}
   const {url,key}=bbConf();
   if(!url||!key){bbState('off','Not connected');return}
@@ -1732,7 +1736,7 @@ function renderAutoAdvice(){
     (head?`<p class="aa-time" role="status">${esc(head)}</p>`:'');
 }
 async function refreshAutoAdvice(force){
-  if(!cloudReady||autoBusy){renderAutoAdvice();return}
+  if(!cloudReady||autoBusy||viewNext){renderAutoAdvice();return}
   if(!aiReady()){renderAutoAdvice();return}
   const k=autoAdviceKey();
   if(!force&&S.autoAdvice?.h===k&&checkAuto(S.autoAdvice.a)){autoErr='';renderAutoAdvice();return}
@@ -2093,7 +2097,7 @@ document.addEventListener('visibilitychange',async()=>{
   checkUpdate();
   if(cloudReady&&pruneExpiredBB()){save();renderAll()}
   syncBillBuddy();
-  if(!cloudReady||cloudTimer||pushing||draft)return;
+  if(!cloudReady||cloudTimer||pushing||draft||viewNext)return;
   try{
     const row=await pullCloud();
     // only a copy saved after ours, and only when no save of ours is waiting or on its way
@@ -2107,7 +2111,9 @@ document.addEventListener('visibilitychange',async()=>{
 let authKnown=false; // false until Supabase has checked this device for a saved sign-in
 function renderAuth(){
   document.body.classList.toggle('locked',!cloudReady);
-  const db=$('#draftBtn');db.hidden=!cloudReady;db.textContent=draft?'Close draft':'Draft';db.classList.toggle('on',!!draft);
+  const nb=$('#nextBtn');nb.hidden=!cloudReady||!!draft;nb.classList.toggle('on',viewNext);nb.setAttribute('aria-pressed',viewNext);
+  nb.title=viewNext?'Back to this cycle':'See next cycle';nb.setAttribute('aria-label',nb.title);
+  const db=$('#draftBtn');db.hidden=!cloudReady||viewNext;db.textContent=draft?'Close draft':'Draft';db.classList.toggle('on',!!draft);
   db.title=draft?'Close the draft; nothing in it is kept':'Try changes in a copy that is never saved';
   $('#authBtn').hidden=!cloudUser||mcpMode;
   $('#authForm').hidden=!sb||!authKnown||!!cloudUser;
@@ -2292,6 +2298,44 @@ function closeDraft(){
 }
 function closeDialogs(){document.querySelectorAll('dialog[open]').forEach(d=>d.close())}
 $('#draftBtn').addEventListener('click',()=>draft?closeDraft():openDraft());
+
+// ---------- next-cycle preview ----------
+// The eye button shows the pay cycle after this one, read only: the same tabs and layout, with this cycle's
+// bills treated as paid (so installments move to their next payment and recurring bills come round again),
+// next cycle's salary and other money, and what's left. Nothing in it can be edited or saved; the eye again,
+// or "Back", returns to this cycle exactly as it was.
+async function openPreview(){
+  if(!cloudReady||draft||viewNext)return;
+  if(cloudTimer){clearTimeout(cloudTimer);await pushCloud()}   // a change still waiting to save is saved first
+  closeDialogs();
+  const main=S,start=cycleStart();
+  S=clone(main);
+  // everything still due this cycle counts as paid, as it will be by the time the next cycle starts
+  S.items.filter(i=>!isPaid(i)&&!billed(i)&&inCycle(i,start)&&num(i.amount)>0).forEach(markPaid);
+  preview={main};viewNext=true;
+  rollover();                                               // next cycle: last cycle's "paid" marks clear
+  S.items.forEach(i=>{if(i.bbStatement){i.bbStatement+='|next';delete i.bbPaidStatement}});
+  document.body.classList.add('previewing');
+  if(['ai','bbsync'].includes(document.querySelector('.tab[aria-selected="true"]')?.dataset.tab))selectTab('cycle');
+  syncInputs();renderAll();renderAuth();paintPreview();
+}
+function closePreview(){
+  if(!viewNext)return;
+  closeDialogs();
+  S=preview.main;preview=null;viewNext=false;
+  document.body.classList.remove('previewing');
+  syncInputs();renderAll();renderAuth();paintPreview();setSync('ok','Saved');
+}
+function paintPreview(){
+  $('#tab-cycle').textContent=viewNext?'Next cycle':'This cycle';
+  const bar=$('#previewBar');if(!bar)return;
+  bar.hidden=!viewNext;if(!viewNext)return;
+  const C=compute();
+  bar.innerHTML=`<span><b>Next cycle</b> · ${fmtD(C.start)} – ${fmtD(C.end)} · view only</span><button class="ghost sm" type="button" id="previewBack">Back</button>`;
+  setSync('draft','Next cycle · view only');
+}
+$('#nextBtn').addEventListener('click',()=>viewNext?closePreview():openPreview());
+document.addEventListener('click',e=>{if(e.target.closest('#previewBack'))closePreview()});
 
 // ---------- updates ----------
 // A tab left open keeps running the code it loaded with. When a newer version is published, reload, so an

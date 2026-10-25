@@ -15,17 +15,17 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=52">
+<link rel="stylesheet" href="styles.css?v=53">
 <script src="config.js?v=42" defer></script>
 <script src="vendor/supabase-2.116.0.js" defer></script>
-<script src="app.js?v=53" defer></script>
+<script src="app.js?v=54" defer></script>
 </head>
 <body class="locked">
 <div class="app">
   <aside class="side">
     <header>
       <h1>Paycheck and Debt Planner</h1>
-      <div class="acctbar"><p id="syncState" class="sync">Loading…</p><span id="authWho" class="muted small"></span><button class="ghost sm" id="accessBtn" hidden>Set password</button><button class="ghost sm" id="draftBtn" title="Try changes in a copy that is never saved" hidden>Draft</button><button class="ghost sm ib" id="authBtn" aria-label="Sign out" title="Sign out" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 012 2v12a2 2 0 01-2 2h-3"/><path d="M10 17l5-5-5-5"/><path d="M15 12H4"/></svg></button></div>
+      <div class="acctbar"><p id="syncState" class="sync">Loading…</p><span id="authWho" class="muted small"></span><button class="ghost sm" id="accessBtn" hidden>Set password</button><button class="ghost sm ib" id="nextBtn" type="button" aria-label="See next cycle" title="See next cycle" aria-pressed="false" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="ghost sm" id="draftBtn" title="Try changes in a copy that is never saved" hidden>Draft</button><button class="ghost sm ib" id="authBtn" aria-label="Sign out" title="Sign out" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 012 2v12a2 2 0 01-2 2h-3"/><path d="M10 17l5-5-5-5"/><path d="M15 12H4"/></svg></button></div>
     </header>
     <form id="authForm" class="authform" hidden>
       <h2 id="authTitle">Open your planner</h2>
@@ -55,6 +55,7 @@
       <p class="muted small" id="accountMsg" role="status"></p>
     </section>
 
+    <div id="previewBar" class="previewbar" role="status" hidden></div>
     <section class="hero" aria-label="This pay cycle">
       <div class="salrow">
         <div>

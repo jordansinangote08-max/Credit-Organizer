@@ -785,3 +785,16 @@ header .acctbar{flex-wrap:wrap}
    so its row-wide tap area collapsed to the text mid-tap and the tap was lost; headers don't shrink. */
 .fold:active,button.fold:not(:disabled):active{transform:none!important}
 .grp-h,.lgrp-h,.cplans-h{cursor:pointer;-webkit-user-select:none;user-select:none}
+
+/* ---------- next-cycle preview (eye button): same look, read only ---------- */
+#nextBtn.on{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}
+.previewbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-radius:14px;
+  background:var(--accent-soft);color:var(--ink);font-size:.88rem}
+.previewbar b{font-weight:650}
+/* nothing can be changed: inputs, add/edit/paid/remove buttons and edit links are hidden or inert */
+body.previewing .hero input,body.previewing .hero select{pointer-events:none;border-color:transparent;background:transparent}
+body.previewing .main :is(input,select,textarea){pointer-events:none}
+body.previewing .main :is(.bt,.acts,.add,#addBtn,#catBtn,#resetBtn,#resetConfirm,.ask4,.mon-h .ib,.inc .x,details.sec:has(#srcList)){display:none!important}
+body.previewing .main [data-edit]{pointer-events:none;text-decoration:none}
+body.previewing #tab-ai,body.previewing #tab-bbsync{display:none}
+body.previewing #advice .btn,body.previewing #advice .ghost{display:none}
