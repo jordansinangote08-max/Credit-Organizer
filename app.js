@@ -36,7 +36,7 @@ const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+Stri
 const parseD=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s||'');return m?new Date(+m[1],+m[2]-1,+m[3]):null};
 
 let uid=1,S=clone(DEFAULTS);
-let viewNext=false,preview=null; // next-cycle preview: a read-only look at the cycle after this one (see the end)
+let viewNext=false,preview=null,carryEditing=false; // next-cycle preview: a read-only look at the cycle after this one (see the end)
 // Everything lives in Supabase. Earlier versions kept data in this browser: it moves to the
 // account on its first sign-in (if the account is still empty) and is then deleted here.
 const LEGACY_KEYS=[KEY,KEY+'.tab',KEY+'.billbuddy'];
@@ -316,10 +316,8 @@ function renderAdvice(C){
 }
 function renderTimeline(C){
   $('#cycleLabel').textContent=fmtD(C.start)+' – '+fmtD(C.end)+', '+C.end.getFullYear();
-  // the row only shows when there is money from last cycle; with none, nothing is shown
-  const cf=$('#carry');if(cf&&document.activeElement!==cf){cf.value=C.carry?C.carry:'';cf.closest('.carryrow').hidden=!(C.carry>0)}
   const ev=[{d:C.start,in:true,name:'Salary',amt:num(S.salary)}];
-  if(C.carry>0)ev.unshift({d:C.start,in:true,name:'From last cycle',amt:C.carry});
+  if(C.carry>0)ev.unshift({d:C.start,in:true,carry:true,name:'From last cycle',amt:C.carry});
   C.inc.forEach(o=>ev.push({d:o.d,in:true,name:o.x.label||'Other money',amt:num(o.x.amount)}));
   C.lines.forEach(l=>ev.push({d:l.date,in:false,l}));
   const days={};ev.forEach(e=>{const k=e.d.getTime();(days[k]=days[k]||[]).push(e)});
@@ -327,7 +325,12 @@ function renderTimeline(C){
   $('#timeline').innerHTML=Object.keys(days).sort((a,b)=>a-b).map(k=>{
     const d=new Date(+k),es=days[k].sort((a,b)=>b.in-a.in);
     const rows=es.map(e=>{
-      if(e.in){bal+=e.amt;return `<div class="ev in"><span class="nm">${esc(e.name)}</span><span class="r"><span class="a">+${peso(e.amt)}</span></span></div>`}
+      if(e.in){bal+=e.amt;
+        // money from last cycle: its amount can be changed right here (only shown when there is some)
+        if(e.carry)return `<div class="ev in"><span class="nm">${esc(e.name)}</span><span class="r">${carryEditing
+          ?`<label class="a carry-a">+₱<input id="carry" type="number" inputmode="decimal" min="0" step="0.01" value="${cents(e.amt)}" aria-label="Money from last cycle"></label>`
+          :`<button class="a carry-btn" type="button" data-carryedit="1" title="Tap to change" aria-label="Money from last cycle ${peso(e.amt)}, tap to change">+${peso(e.amt)}</button>`}</span></div>`;
+        return `<div class="ev in"><span class="nm">${esc(e.name)}</span><span class="r"><span class="a">+${peso(e.amt)}</span></span></div>`}
       bal-=e.l.need;const paid=isPaid(e.l.i);
       const pill=paid?'<span class="pill ok">Paid</span>':e.l.got>=e.l.need-0.004?'':e.l.got<0.005?'<span class="pill bad">No funds</span>':`<span class="pill warn">Short ${peso(e.l.need-e.l.got)}</span>`;
       return `<div class="ev${paid?' paid':''}" data-c="${esc(catOf(e.l.i)?.color||'slate')}"><span class="nm"><span class="vh">${esc(catOf(e.l.i)?.name||'')}: </span>${esc(e.l.i.name)}</span><span class="r">${pill}<span class="a">−${peso(e.l.need)}</span></span></div>`;
@@ -752,8 +755,13 @@ function syncInputs(){
   $('#salLabel').textContent=viewNext?'Salary next cycle':f==='month'?'Salary this cycle':'Salary each payday';
 }
 // the buffer field sits in the Pay ahead window and keeps your typing; everything that depends on it redraws around it
-$('#carry').addEventListener('blur',()=>{if(!viewNext)setTimeout(render,0)});  // cleared to nothing: the row goes away
-$('#carry').addEventListener('input',e=>{if(viewNext)return;S.carry={key:cycleKey(),amount:Math.max(0,num(e.target.value))};save();render()});
+document.addEventListener('input',e=>{if(e.target.id!=='carry'||viewNext)return;
+  S.carry={key:cycleKey(),amount:Math.max(0,num(e.target.value))};save();
+  const C=compute();renderStatus(C);renderAdvice(C);paintMon('cycle')});   // the list itself redraws when you leave the box
+document.addEventListener('focusout',e=>{if(e.target.id==='carry'){carryEditing=false;setTimeout(render,0)}});
+document.addEventListener('keydown',e=>{if(e.target.id==='carry'&&e.key==='Enter')e.target.blur()});
+document.addEventListener('click',e=>{if(!e.target.closest('[data-carryedit]')||viewNext)return;
+  carryEditing=true;renderTimeline(compute());const f=$('#carry');if(f){f.focus();f.select()}});
 $('#buffer').addEventListener('input',e=>{S.buffer=Math.max(0,num(e.target.value));save();render()});
 document.addEventListener('click',e=>{if(e.target.closest('[data-ahead]')){$('#buffer').value=num(S.buffer);$('#aheadDlg').showModal()}});
 $('#aheadDlg').addEventListener('click',e=>{if(e.target.closest('[data-aheadclose]'))$('#aheadDlg').close()});
