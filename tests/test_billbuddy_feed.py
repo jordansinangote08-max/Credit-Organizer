@@ -3,6 +3,7 @@
 Run both repositories side by side, or set BILLBUDDY_REPO to its checkout.
 All Supabase rows and authentication are synthetic; no external calls are made.
 """
+from datetime import datetime, timezone
 import importlib.util
 from http.server import ThreadingHTTPServer
 import os
@@ -79,6 +80,11 @@ class FeedIntegrationTest(unittest.TestCase):
                 self.assertEqual(len(queries), 3)
                 rows.pop(0)  # Delete EastWest in the BillBuddy source database.
                 self.page.clock.run_for(3100)
+                self.page.clock.run_for(1000)
+                # due Oct 15, in the pay cycle Sep 24 - Oct 23: it stays in the planner until that cycle ends
+                self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).map(i=>i.bbKey).sort()'), ['eastwest', 'rcbc'])
+                self.page.clock.set_system_time(datetime(2026, 10, 24, 16, 0, tzinfo=timezone.utc))
+                self.page.clock.run_for(4100)
                 self.page.wait_for_function('S.items.filter(i=>i.bbDue).length===1')
                 self.assertEqual(self.page.evaluate('S.items.find(i=>i.bbDue).bbKey'), 'rcbc')
                 self.page.clock.run_for(1000)
@@ -86,11 +92,9 @@ class FeedIntegrationTest(unittest.TestCase):
                 self.assertTrue(self.page.evaluate('S.items.some(i=>i.name==="Manual rent")'))
                 self.assertEqual(self.page.evaluate('S.accounts.length'), 2)
                 self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbInst&&i.bbWaiting).length'), 1)
-                rows.clear()  # An empty but complete snapshot must remove the last imported bill.
-                self.page.clock.run_for(3100)
-                self.page.wait_for_function('S.items.filter(i=>i.bbDue).length===0')
-                self.page.clock.run_for(1000)
-                self.assertEqual(self.page.evaluate('savedPlanner.state.items.filter(i=>i.bbDue).length'), 0)
+                rows.clear()  # RCBC is due Oct 28, in the cycle that just started, so it stays after BillBuddy drops it
+                self.page.clock.run_for(4100)
+                self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).map(i=>i.bbKey)'), ['rcbc'])
             finally:
                 server.shutdown()
                 server.server_close()

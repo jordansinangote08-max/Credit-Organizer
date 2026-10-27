@@ -58,8 +58,9 @@ class SyncTest(unittest.TestCase):
             amount:1000,due_date:'2026-10-14',installments:[{label:'Laptop',term:3,of:12,amount:100}]}]);
         }''')
         self.assertEqual(self.page.evaluate("S.items.filter(i=>i.bbDue).length"), 1)
-        self.assertEqual(self.page.evaluate("bbCutoff()"), '2026-10-14')
         self.page.clock.set_system_time(datetime(2026, 10, 15, 16, 0, tzinfo=timezone.utc))
+        self.assertFalse(self.page.evaluate('pruneExpiredBB()'))   # past due, but its pay cycle runs to Oct 23
+        self.page.clock.set_system_time(datetime(2026, 10, 24, 16, 0, tzinfo=timezone.utc))
         self.assertTrue(self.page.evaluate('pruneExpiredBB()'))
         self.assertEqual(self.page.evaluate("S.items.filter(i=>i.bbDue).length"), 0)
         self.assertEqual(self.page.evaluate('S.accounts.length'), 1)
@@ -81,7 +82,7 @@ class SyncTest(unittest.TestCase):
             return {select:()=>({single:async()=>({data:{updated_at:'2026-10-15T00:00:00Z'},error:null})})};
           }})};
           const next=clone(S);
-          next.items=[{name:'Expired utility',kind:'bill',amount:100,bbDue:'2026-10-13'},
+          next.items=[{name:'Expired utility',kind:'bill',amount:100,bbDue:'2026-09-20'},
                       {name:'Manual rent',kind:'bill',amount:50,day:14}];
           adopt(next);
         }''')
@@ -100,7 +101,7 @@ class SyncTest(unittest.TestCase):
 
     def test_expired_loan_keeps_schedule_link_without_recreating_bill(self):
         self.page.evaluate('''() => {
-          S.items=[{id:1,kind:'loan',bbDue:'2026-10-13',bbRef:'parent',amount:200},
+          S.items=[{id:1,kind:'loan',bbDue:'2026-09-20',bbRef:'parent',amount:200},
                    {id:2,kind:'loan',inBill:'parent',bbInst:'Lparent|loan|12',amount:100,left:6}];
           pruneExpiredBB();
         }''')
@@ -162,6 +163,9 @@ class SyncTest(unittest.TestCase):
         self.page.evaluate('b=>{applyBB([b]);markPaid(S.items.find(i=>i.bbDue))}', statement)
         keys = self.page.evaluate('S.items.filter(i=>i.bbInst).map(i=>i.bbInst)')
         self.page.evaluate('applyBB([],{reconcile:true})')
+        self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).length'), 1)  # kept while its cycle lasts
+        self.page.clock.set_system_time(datetime(2026, 11, 24, 16, 0, tzinfo=timezone.utc))
+        self.page.evaluate('applyBB([],{reconcile:true})')
         self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).length'), 0)
         self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbInst).length'), 2)
         self.assertTrue(self.page.evaluate('S.items.every(i=>i.bbWaiting&&billed(i))'))
@@ -200,18 +204,24 @@ class SyncTest(unittest.TestCase):
         self.page.evaluate('b=>applyBB([b])', statement)
         self.page.clock.set_system_time(datetime(2026, 10, 27, 16, 0, tzinfo=timezone.utc))
         self.page.evaluate('pruneExpiredBB()')
+        self.assertEqual(self.page.evaluate('S.items.length'), 2)  # still this pay cycle
+        self.page.clock.set_system_time(datetime(2026, 11, 24, 16, 0, tzinfo=timezone.utc))
+        self.page.evaluate('pruneExpiredBB()')
         self.assertEqual(self.page.evaluate('S.items.length'), 1)
         self.assertEqual(self.page.evaluate('S.items[0].left'), 10)
         self.assertTrue(self.page.evaluate('!!S.items[0].bbInst&&billed(S.items[0])'))
 
-    def test_complete_snapshot_removes_only_missing_imports(self):
+    def test_complete_snapshot_keeps_missing_imports_until_the_cycle_ends(self):
         self.page.evaluate('''() => {
           S.items.push({id:uid++,name:'Manual rent',kind:'bill',amount:50,day:26});
           applyBB([{bank:'BPI',account_key:'bpi',amount:100,due_date:'2026-10-26'},
                    {bank:'RCBC',account_key:'rcbc',amount:200,due_date:'2026-10-26'}]);
           applyBB([{bank:'RCBC',account_key:'rcbc',amount:200,due_date:'2026-10-26'}],{reconcile:true});
         }''')
-        self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).map(i=>i.bbKey)'), ['rcbc'])
+        self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).map(i=>i.bbKey)'), ['bpi', 'rcbc'])
+        self.page.clock.set_system_time(datetime(2026, 11, 24, 16, 0, tzinfo=timezone.utc))
+        self.page.evaluate("applyBB([{bank:'RCBC',account_key:'rcbc',amount:300,due_date:'2026-11-26',statement_id:'nov'}],{reconcile:true})")
+        self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).map(i=>i.bbKey+" "+i.bbDue)'), ['rcbc 2026-11-26'])
         self.assertTrue(self.page.evaluate("S.items.some(i=>i.name==='Manual rent')"))
 
     def test_partial_snapshot_does_not_remove_other_bills(self):
@@ -250,7 +260,7 @@ class SyncTest(unittest.TestCase):
         self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbInst).length'), 2)
         self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbInst).map(planOf)'), ['3/12', '6/12'])
 
-    def test_open_planner_polls_complete_snapshot_and_removes_bill(self):
+    def test_open_planner_polls_complete_snapshot_and_keeps_bill_this_cycle(self):
         self.page.evaluate('b=>applyBB([b])', self.union_statement())
         self.page.evaluate('''() => {
           cloudReady=true;draft={};S.bb={url:'https://fixture.invalid/api/bills',key:'test-only'};
@@ -259,7 +269,7 @@ class SyncTest(unittest.TestCase):
         }''')
         self.page.clock.run_for(3100)
         self.assertGreaterEqual(self.page.evaluate('feedRequests'), 1)
-        self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).length'), 0)
+        self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).length'), 1)
         self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbInst).length'), 2)
 
     def test_incomplete_count_never_removes_existing_bills(self):
@@ -288,24 +298,22 @@ class SyncTest(unittest.TestCase):
         }''')
         self.assertEqual(self.page.evaluate('S.items.find(i=>i.bbDue).amount'), 0)
 
-    def test_october_15_bill_expires_at_start_of_october_16_manila(self):
+    def test_october_15_bill_leaves_when_its_pay_cycle_ends(self):
         self.page.evaluate('''() => {
           cloudReady=true;draft={};
           S.items.push({id:uid++,name:'Manual rent',kind:'bill',amount:50,day:15});
           applyBB([{bank:'EastWest',type:'credit_card',account_key:'eastwest',amount:13274.10,
             due_date:'2026-10-15',installments:[{label:'Laptop',term:3,of:12,amount:100}]}]);
         }''')
-        self.page.clock.set_system_time(datetime(2026, 10, 15, 15, 59, 59, tzinfo=timezone.utc))
-        self.page.evaluate('scheduleBBExpiry()')
+        # this device is in New York: the cycle Sep 24 - Oct 23 ends at its midnight, 04:00 UTC
+        self.page.clock.set_system_time(datetime(2026, 10, 24, 3, 59, 0, tzinfo=timezone.utc))
+        self.page.clock.run_for(1000)
         self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).length'), 1)
-        self.assertEqual(self.page.evaluate('bbCutoff()'), '2026-10-15')
-        self.page.clock.run_for(1500)
-        self.assertEqual(self.page.evaluate('bbCutoff()'), '2026-10-16')
+        self.page.clock.run_for(120000)   # the minute check after the cycle changes
         self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).length'), 0)
         self.assertEqual(self.page.evaluate('S.accounts.length'), 1)
         self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbInst).length'), 1)
         self.assertTrue(self.page.evaluate("S.items.some(i=>i.name==='Manual rent')"))
-
 
     def test_billbuddy_bill_only_lets_name_and_category_change(self):
         self.page.evaluate('''() => {
@@ -326,5 +334,37 @@ class SyncTest(unittest.TestCase):
           $('#billBody .form').append(f);f.dispatchEvent(new Event('input',{bubbles:true}))}''')
         self.assertEqual(self.page.evaluate('S.items.find(i=>i.bbDue).amount'), 2500)
 
-if __name__ == '__main__':
-    unittest.main()
+    def test_paid_statement_stays_paid_after_billbuddy_drops_it_until_next_cycle(self):
+        self.page.evaluate("applyBB([{bank:'Meralco',type:'utility',account_key:'meralco',amount:2500,due_date:'2026-10-28'}]);markPaid(S.items.find(i=>i.bbDue))")
+        self.page.clock.set_system_time(datetime(2026, 10, 30, 16, 0, tzinfo=timezone.utc))
+        self.page.evaluate('applyBB([],{reconcile:true});pruneExpiredBB()')   # BillBuddy deleted it after the due date
+        it = self.page.evaluate("(i=>({amount:i.amount,due:i.bbDue,paid:isPaid(i)}))(S.items.find(i=>i.bbDue))")
+        self.assertEqual(it, {'amount': 2500, 'due': '2026-10-28', 'paid': True})
+        self.page.clock.set_system_time(datetime(2026, 11, 23, 16, 0, tzinfo=timezone.utc))   # Nov 23: last day of the cycle
+        self.page.evaluate('pruneExpiredBB()')
+        self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).length'), 1)
+        self.page.clock.set_system_time(datetime(2026, 11, 24, 16, 0, tzinfo=timezone.utc))
+        self.page.evaluate('pruneExpiredBB()')
+        self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).length'), 0)
+
+    def test_next_statement_keeps_the_previous_one_as_its_own_record(self):
+        self.page.evaluate("""() => {
+          applyBB([{bank:'BPI',type:'credit_card',account_key:'bpi',last4:'1234',statement_id:'oct',amount:1000,due_date:'2026-10-28'}]);
+          markPaid(S.items.find(i=>i.bbDue));
+          applyBB([{bank:'BPI',type:'credit_card',account_key:'bpi',last4:'1234',statement_id:'nov',amount:1500,due_date:'2026-11-28'}],{reconcile:true});
+        }""")
+        rows = self.page.evaluate("S.items.filter(i=>i.bbDue).map(i=>({due:i.bbDue,amount:i.amount,paid:isPaid(i),old:!!i.bbOld,last4:last4Of(i)})).sort((a,b)=>a.due<b.due?-1:1)")
+        self.assertEqual(rows, [{'due': '2026-10-28', 'amount': 1000, 'paid': True, 'old': True, 'last4': '1234'},
+                                {'due': '2026-11-28', 'amount': 1500, 'paid': False, 'old': False, 'last4': '1234'}])
+        self.assertEqual(self.page.evaluate('S.accounts.length'), 1)
+        self.page.evaluate("applyBB([{bank:'BPI',type:'credit_card',account_key:'bpi',last4:'1234',statement_id:'nov',amount:1500,due_date:'2026-11-28'}],{reconcile:true})")
+        self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).length'), 2)   # a repeat sync adds nothing
+        self.page.clock.set_system_time(datetime(2026, 11, 24, 16, 0, tzinfo=timezone.utc))
+        self.page.evaluate('pruneExpiredBB()')
+        self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).map(i=>i.bbDue)'), ['2026-11-28'])
+
+    def test_finishing_the_cycle_early_keeps_statements_until_the_calendar_cycle_ends(self):
+        self.page.evaluate("applyBB([{bank:'Meralco',type:'utility',account_key:'meralco',amount:2500,due_date:'2026-10-28'}])")
+        self.page.clock.set_system_time(datetime(2026, 10, 30, 16, 0, tzinfo=timezone.utc))
+        self.page.evaluate("S.done=cycleKey();pruneExpiredBB()")
+        self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).length'), 1)

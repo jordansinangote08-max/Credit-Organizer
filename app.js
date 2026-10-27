@@ -236,10 +236,10 @@ const isHiddenPaid=i=>isPaid(i)&&Date.now()-num(i.paidAt)>=DAY;
 function markPaid(i){if(isPaid(i))return;delete S.stay;i.paidAt=Date.now();i.paidCycle=cycleKey();if(i.bbStatement){i.bbPaidStatement=i.bbStatement;i.bbPaidDue=i.bbStatementDue}
   if(i.kind==='loan'){i.prevLeft=num(i.left);i.left=Math.max(0,num(i.left)-1)}
   if(i.bbRef)S.items.filter(y=>y.inBill===i.bbRef&&!isPaid(y)).forEach(markPaid);
-  if(i.kind==='card')S.items.filter(y=>y.inCard===i.acct&&!isPaid(y)).forEach(markPaid)}
+  if(i.kind==='card'&&i.acct)S.items.filter(y=>y.inCard===i.acct&&!isPaid(y)).forEach(markPaid)}
 function undoPaid(i){if(i.kind==='loan'&&i.prevLeft!=null)i.left=i.prevLeft;delete i.paidAt;delete i.paidCycle;delete i.prevLeft;delete i.bbPaidStatement;delete i.bbPaidDue;
   if(i.bbRef)S.items.filter(y=>y.inBill===i.bbRef&&isPaid(y)).forEach(undoPaid);
-  if(i.kind==='card')S.items.filter(y=>y.inCard===i.acct&&isPaid(y)).forEach(undoPaid)}
+  if(i.kind==='card'&&i.acct)S.items.filter(y=>y.inCard===i.acct&&isPaid(y)).forEach(undoPaid)}
 function rollover(){
   let changed=purgeClosed();
   // the calendar has reached the cycle that started early: nothing to shift any more
@@ -392,7 +392,7 @@ function itemRow(i,start){
   if(repeats(i)&&i.once&&!i.bbDue)meta.push('<span>One-time</span>');
   else if(repeats(i)&&untilYm(i.until)){const u=untilYm(i.until);meta.push(`<span>Until ${MON[u%100-1]} ${Math.floor(u/100)}</span>`)}
   if(i.kind==='loan'&&num(i.left))meta.push(`<span>${num(i.left)} left</span>`);
-  if(i.kind!=='card'&&i.bbLast4)meta.push(`<span>•••• ${esc(i.bbLast4)}</span>`);
+  if(i.bbLast4&&(i.kind!=='card'||!acctOf(i)))meta.push(`<span>•••• ${esc(i.bbLast4)}</span>`);
   if(i.kind==='card'){const a=acctOf(i);if(a&&a.last4)meta.push(`<span>•••• ${esc(a.last4)}</span>`)}
   if(paid)meta.unshift(`<span class="t-ok">Paid · clears in ${Math.max(1,Math.ceil((DAY-(Date.now()-num(i.paidAt)))/3600000))}h</span>`);
   return `<div class="bill${paid?' done':''}"><div><button class="nm openw" data-edit="${i.id}" aria-haspopup="dialog" title="Edit">${esc(i.name||'Untitled bill')}</button><div class="mt">${meta.join('')}</div></div>
@@ -800,7 +800,7 @@ function setKind(it,kind){
   if(it.kind===kind)return;
   if(kind==='loan'||kind==='card'){if(it.once){const d=parseD(it.date);if(d)it.day=d.getDate()}delete it.once;delete it.date;delete it.until}
   if(it.kind==='card'&&kind!=='card'){delete it.acct;it.noAcct=true}
-  if(kind==='card')delete it.noAcct;
+  if(kind==='card'&&!it.bbOld)delete it.noAcct;
   if(kind==='loan'){if(it.left===undefined)it.left=null;if(it.total===undefined)it.total=null}
   it.kind=kind;
 }
@@ -1070,13 +1070,29 @@ function scheduleBBExpiry(){
   },Math.max(1,midnight-Date.now()));
 }
 const bbExpired=(due,cutoff)=>/^\d{4}-\d{2}-\d{2}$/.test(due||'')&&due<cutoff;
+// BillBuddy drops a statement the day after it's due; the planner keeps it, paid or not, until the pay cycle
+// it is due in is over by the calendar: due Oct 28 in the cycle Oct 25 – Nov 24, it stays until Nov 25. That is
+// the real cycle, not the one shown early (16 days before a monthly payday) or after finishing it early.
+const bbKeepFrom=()=>{const t=new Date();t.setHours(0,0,0,0);return prevPay(new Date(t.getFullYear(),t.getMonth(),t.getDate()+1))};
+const bbKept=i=>{const d=parseD(i.bbDue);return !d||d>=bbKeepFrom()};
 function pruneExpiredBB(){
-  const cutoff=bbCutoff(),expired=S.items.filter(i=>bbExpired(i.bbDue,cutoff));
+  const expired=S.items.filter(i=>i.bbDue&&!bbKept(i));
   expired.forEach(retireBBStatement);
   return expired.length>0;
 }
+// The next statement for an account arrived while the previous one is still kept: the previous one stays
+// as a record of its own (amount, due date, paid mark) and the account's bill moves on to the new one.
+function keepOldStatement(it,b){
+  const statement=String(b.statement_id||b.due_date);
+  if(!it.bbDue||!it.bbStatement||it.bbStatement===statement||!(it.bbDue<b.due_date)||!bbKept(it))return false;
+  const old={...it,id:uid++,bbOld:true};
+  ['bbKey','bbRef','acct','bbUnsure','bbAi'].forEach(k=>delete old[k]);
+  if(it.kind==='card'){old.noAcct=true;if(last4Of(it))old.bbLast4=last4Of(it)}
+  S.items.push(old);return true;
+}
 // A monthly statement is temporary; its installment plans are permanent.
 function retireBBStatement(it){
+  if(it.bbOld){S.items=S.items.filter(i=>i!==it);return}   // a kept earlier statement owns nothing else
   const account=it.kind==='card'&&acctOf(it);
   if(account&&it.bbKey)account.bbKey=it.bbKey;
   // Upgrade older one-plan loans whose schedule lived on the statement itself.
@@ -1165,14 +1181,14 @@ function applyBB(bills,{reconcile=false}={}){
   let changed=pruneExpiredBB();const claimed=new Set();
   if(reconcile){
     const keys=new Set(bills.map(b=>b.account_key).filter(Boolean)),dates=new Set(bills.map(b=>b.due_date+'|'+squash(b.bank)));
-    S.items.filter(i=>i.bbDue&&!i.bbInst&&!(i.bbKey?keys.has(i.bbKey):dates.has(i.bbDue+'|'+squash(i.name.replace(/ (CC|Loan)$/,''))))).forEach(i=>{retireBBStatement(i);changed=true});
+    S.items.filter(i=>i.bbDue&&!i.bbInst&&!(i.bbKey?keys.has(i.bbKey):dates.has(i.bbDue+'|'+squash(i.name.replace(/ (CC|Loan)$/,''))))&&!bbKept(i)).forEach(i=>{retireBBStatement(i);changed=true});
   }
   const byKey=new Map(S.items.filter(i=>i.bbKey).map(i=>[i.bbKey,i]));
   bills.forEach(b=>{
     const bank=squash(b.bank),due=parseD(b.due_date),amt=num(b.amount);
     if(!bank||!due||!Number.isFinite(amt)||amt<0)return;
     const kind=bbKind(b),l4=String(b.last4||'').replace(/\D/g,'').slice(-4),key=b.account_key||null;
-    const ofBank=i=>squash(i.name).includes(bank),free=i=>!billed(i)&&!i.bbInst&&!claimed.has(i)&&(!i.bbKey||i.bbKey===key);
+    const ofBank=i=>squash(i.name).includes(bank),free=i=>!billed(i)&&!i.bbInst&&!i.bbOld&&!claimed.has(i)&&(!i.bbKey||i.bbKey===key);
     // same account as last time, then same last 4 digits (same type first, then any), then same bank and type
     // (several loans at one bank: the one with this amount, then this due day)
     let it=(key&&byKey.has(key)&&!claimed.has(byKey.get(key))&&byKey.get(key))
@@ -1181,7 +1197,7 @@ function applyBB(bills,{reconcile=false}={}){
       ||(()=>{const c=S.items.filter(i=>i.kind===kind&&free(i)&&ofBank(i)&&!(l4&&last4Of(i)));
         return c.find(i=>near(i.amount,amt))||c.find(i=>num(i.day)===due.getDate())||(c.length===1?c[0]:null)})();
     // an earlier sync filed this statement under the wrong type (a loan as "UnionBank CC"): fix or drop that copy
-    const wrong=S.items.filter(i=>i!==it&&!billed(i)&&i.kind!==kind&&!claimed.has(i)&&i.bbDue===b.due_date&&near(i.amount,amt)&&ofBank(i));
+    const wrong=S.items.filter(i=>i!==it&&!billed(i)&&!i.bbOld&&i.kind!==kind&&!claimed.has(i)&&i.bbDue===b.due_date&&near(i.amount,amt)&&ofBank(i));
     if(wrong.length){changed=true;if(!it){it=wrong.shift();refile(it,kind,b.bank)}wrong.forEach(removeItem)}
     // the last 4 digits decide which card it is: a card in Credit cards with these digits and no bill
     // (its bill was removed, or an older sync gave the card a second account) gets this bill back,
@@ -1201,6 +1217,7 @@ function applyBB(bills,{reconcile=false}={}){
       S.items.push(it);ensureLinks();changed=true;
     }
     claimed.add(it);
+    if(keepOldStatement(it,b))changed=true;
     if(key&&it.bbKey!==key){it.bbKey=key;changed=true}
     const account=it.kind==='card'&&acctOf(it);
     if(key&&account&&account.bbKey!==key){account.bbKey=key;changed=true}
@@ -1220,7 +1237,7 @@ function applyBB(bills,{reconcile=false}={}){
   // copies an older sync made before bill types were sent (e.g. a loan saved as "UnionBank CC"), even from an
   // earlier statement: filled in by BillBuddy, not matched this time, and the same amount as a bill of
   // another type from that bank
-  if(bills.some(bbTyped))S.items.filter(i=>!billed(i)&&!claimed.has(i)&&i.bbDue&&!i.bbKey).forEach(i=>{
+  if(bills.some(bbTyped))S.items.filter(i=>!billed(i)&&!claimed.has(i)&&i.bbDue&&!i.bbKey&&!i.bbOld).forEach(i=>{
     if(bills.some(b=>bbTyped(b)&&bbKind(b)!==i.kind&&squash(i.name).includes(squash(b.bank))&&near(i.amount,b.amount))){removeItem(i);changed=true}
   });
   if(changed){ensureLinks();save();if(editingId==null)renderItems();render()}

@@ -137,13 +137,16 @@ How it syncs:
 - A BillBuddy card is recognised by its last 4 digits: if a card in Credit cards has the same last 4, the bill goes onto that card under the name you gave it, even after you removed its bill. A second copy an older sync made of that card is folded back in.
 - BillBuddy's link and key are saved in your account too, so every signed-in device syncs with it.
 
-**Bill expiration.** BillBuddy and the planner use Manila days for imported
-statements: a bill due October 15 remains through October 15 and disappears
-at **00:00 on October 16 in Manila**. A timer removes expired imports at Manila
-midnight even when the feed is offline. The planner also checks on sync,
-account load, every visible minute, and when the app resumes. Expired imported
-statements are also removed from
-the planner's saved Supabase state. Your manually entered bills, card accounts,
+**Bill expiration.** BillBuddy deletes an imported statement at **00:00 Manila
+time the day after it's due**. The planner keeps its own copy, paid or not, with
+its amount, due date and paid mark, until the **pay cycle the bill is due in is
+over by the calendar**: due October 28 in the cycle October 25 – November 24, it
+stays until November 25. That is the real cycle, from payday to the day before
+the next one, not the cycle the planner shows early (16 days before a monthly
+payday) or after you finish a cycle early. When the next statement for the same
+card or loan arrives first, the earlier one stays as its own record until then.
+The planner checks on sync, account load, every visible minute, and when the
+app resumes, and saves the removal to your Supabase account. Your manually entered bills, card accounts,
 and future installment schedules are retained. Installments keep a stable link
 to their lender even when their enclosing statement disappears, and show
 **Waiting for next bill**. They stay out of Bills until the next statement
@@ -154,8 +157,8 @@ to the statement, so a new bill starts unpaid even within the same pay cycle.
 
 While visible, the planner checks BillBuddy every **3 seconds**. A successful
 complete feed (`complete: true` with `count` matching the list) removes
-statements deleted in BillBuddy and saves the removal to your planner account,
-while preserving installment history. Failed, invalid, or partial feeds never
+statements deleted in BillBuddy once their pay cycle is over (see above) and
+saves the removal to your planner account, while preserving installment history. Failed, invalid, or partial feeds never
 clear other bills. Background tabs pause polling; the app refreshes when you
 return. Both apps need their matching updates deployed. BillBuddy's API reads
 its base `bills` table with the Vercel `OWNER_UID` matching its scanner; it does
