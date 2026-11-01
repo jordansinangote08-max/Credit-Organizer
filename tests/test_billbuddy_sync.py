@@ -378,6 +378,9 @@ class SyncTest(unittest.TestCase):
           const l=compute().lines.find(x=>x.i.name==='EastWest Everyday');return Math.round((l.need-l.got)*100)/100;
         }""")
         self.assertEqual(short, 8614.61)   # 15,614.61 - (10,000 - 3,000), the same gap as the running balance
+        self.assertEqual(self.page.evaluate('Math.round(compute().gap*100)/100'), 8614.61)   # the "Short this cycle" headline too
+        self.page.evaluate('undoPaid(S.items[0])')
+        self.assertEqual(self.page.evaluate('Math.round(compute().gap*100)/100'), 5614.61)   # unpaid, it can still be cut
 
 
 if __name__ == '__main__':

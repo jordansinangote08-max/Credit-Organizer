@@ -267,7 +267,8 @@ function compute(){
   }).sort((a,b)=>a.tier-b.tier||a.date-b.date);
   // money for bills already paid is spent, so it comes off first; what's left goes to unpaid bills by priority
   let left=avail;[...lines.filter(l=>isPaid(l.i)),...lines.filter(l=>!isPaid(l.i))].forEach(l=>{l.got=Math.max(0,Math.min(l.need,left));left-=l.got});
-  const required=lines.filter(l=>l.tier<=3).reduce((s,l)=>s+l.need,0);
+  // must-pay bills, plus any bill already paid: a paid "Can be cut" bill's money is spent too
+  const required=lines.filter(l=>l.tier<=3||isPaid(l.i)).reduce((s,l)=>s+l.need,0);
   const total=lines.reduce((s,l)=>s+l.need,0);
   const paidAmt=lines.filter(l=>isPaid(l.i)).reduce((s,l)=>s+l.need,0);
   return {start,next,end,inc,other,carry,avail,lines,required,total,paidAmt,gap:required-avail,surplus:avail-total};
