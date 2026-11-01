@@ -368,3 +368,17 @@ class SyncTest(unittest.TestCase):
         self.page.clock.set_system_time(datetime(2026, 10, 30, 16, 0, tzinfo=timezone.utc))
         self.page.evaluate("S.done=cycleKey();pruneExpiredBB()")
         self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).length'), 1)
+
+    def test_short_pill_counts_money_already_spent_on_paid_bills(self):
+        # a paid "Can be cut" bill due first used to leave its money free for the card in the priority split
+        short = self.page.evaluate("""() => {
+          S.salary=10000;S.items=[{id:uid++,name:'Wala lang',kind:'flex',amount:3000,day:26},
+            {id:uid++,name:'EastWest Everyday',kind:'card',amount:15614.61,day:16,noAcct:true}];
+          markPaid(S.items[0]);
+          const l=compute().lines.find(x=>x.i.name==='EastWest Everyday');return Math.round((l.need-l.got)*100)/100;
+        }""")
+        self.assertEqual(short, 8614.61)   # 15,614.61 - (10,000 - 3,000), the same gap as the running balance
+
+
+if __name__ == '__main__':
+    unittest.main()

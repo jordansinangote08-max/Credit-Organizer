@@ -265,7 +265,8 @@ function compute(){
     const tier=i.kind==='essential'||i.kind==='bill'?1:i.kind==='loan'?2:i.kind==='card'?3:5;
     return {i,tier,date:dueOf(i,start),need:num(i.amount)};
   }).sort((a,b)=>a.tier-b.tier||a.date-b.date);
-  let left=avail;lines.forEach(l=>{l.got=Math.max(0,Math.min(l.need,left));left-=l.got});
+  // money for bills already paid is spent, so it comes off first; what's left goes to unpaid bills by priority
+  let left=avail;[...lines.filter(l=>isPaid(l.i)),...lines.filter(l=>!isPaid(l.i))].forEach(l=>{l.got=Math.max(0,Math.min(l.need,left));left-=l.got});
   const required=lines.filter(l=>l.tier<=3).reduce((s,l)=>s+l.need,0);
   const total=lines.reduce((s,l)=>s+l.need,0);
   const paidAmt=lines.filter(l=>isPaid(l.i)).reduce((s,l)=>s+l.need,0);
