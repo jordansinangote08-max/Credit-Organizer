@@ -816,3 +816,38 @@ body.previewing .carry-btn{text-decoration:none;pointer-events:none}
 @media (pointer:coarse){.carry-a input{font-size:16px;min-height:32px}}
 body.previewing .carry-a input{border-bottom-color:transparent}
 .cyclebar{background:var(--ok-soft)} .cyclebar span{min-width:0}
+
+/* ---------- Apple-style finish ----------
+   Windows are sheets on a phone: they rise from the bottom edge and leave the same way (where the browser can
+   animate a closing dialog; elsewhere they close at once). Big numbers tighten their tracking as iOS does, the
+   tab bar separates with a soft shadow instead of a hard line, and Increase Contrast swaps glass for solid. */
+:root{--ease-sheet:cubic-bezier(.32,.72,0,1)}
+.status .big,.money input,.reco-total{letter-spacing:-.02em}
+.day{grid-template-columns:3.6rem minmax(0,1fr)}
+.day .d{white-space:nowrap}
+.tabs{border-bottom-color:transparent;box-shadow:0 10px 18px -16px rgb(0 0 0 / .45)}
+@media (min-width:1024px){.tabs{border-bottom-color:var(--glass-edge)}}
+@media (max-width:640px){
+  .dlg,#billDlg,#sheetDlg{width:100%;max-width:none;margin:auto 0 0;border-radius:24px 24px 0 0;border-bottom:0;
+    max-height:calc(100dvh - var(--safe-t) - 24px)}
+  .dlg-in,#billDlg .dlg-in,#sheetDlg .dlg-in{max-height:calc(100dvh - var(--safe-t) - 24px);overflow:auto;overscroll-behavior:contain;
+    padding-bottom:calc(18px + var(--safe-b))}
+  .dlg-h{position:sticky;top:-18px;margin:-18px -18px 0;padding:18px 18px 4px;z-index:1;background:inherit}
+}
+@media (max-width:640px) and (prefers-reduced-motion:no-preference){
+  .dlg[open]{animation:sheet-in 380ms var(--ease-sheet)}
+  .dlg[open]::backdrop{animation:scrim-in 380ms var(--ease-sheet)}
+  .dlg{transition:transform 260ms var(--ease-sheet),display 260ms allow-discrete,overlay 260ms allow-discrete}
+  .dlg:not([open]){transform:translateY(100%)}
+  @keyframes sheet-in{from{transform:translateY(100%)}}
+  @keyframes scrim-in{from{opacity:0}}
+}
+@media (max-width:640px) and (prefers-reduced-motion:reduce){
+  .dlg[open]{animation:scrim-in 200ms ease}
+  @keyframes scrim-in{from{opacity:0}}
+}
+@media (prefers-contrast:more){
+  :root{--line:color-mix(in srgb,var(--ink) 35%,transparent)}
+  .hero,.sec,.authform,.tabs,.dlg{background:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none;border:1px solid var(--muted)}
+  .tab[aria-selected="true"]{outline:1.5px solid var(--ink)}
+}
