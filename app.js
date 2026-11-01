@@ -2243,7 +2243,7 @@ function paintPasswordForm(){
 function paintAccountAccess(){
   $('#accountAccess').hidden=!cloudUser||!accessOpen;
   $('#accessBtn').hidden=!cloudReady||mcpMode;
-  $('#accessBtn').textContent=cloudUser?.user_metadata?.planner_password_ready?'Account access':'Set password';
+  $('#accessBtn').textContent=cloudUser?.user_metadata?.planner_password_ready?'Account':'Set password';
   $('#accountCode').value=accountCode(cloudUser?.email||accountIdentity);
 }
 async function passwordSignupReady(){

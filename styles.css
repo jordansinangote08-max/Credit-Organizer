@@ -19,7 +19,7 @@
   --r:20px; --gutter:16px; --tap:44px;
   --shadow:0 1px 1px rgb(22 32 28 / .03),0 8px 28px rgb(22 32 28 / .08);
   --ring:0 0 0 3px var(--accent-soft);
-  --fast:150ms; --ease:cubic-bezier(.2,.7,.3,1);
+  --fast:150ms; --press:120ms; --ease:cubic-bezier(.23,1,.32,1);
   --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
   --safe-l:env(safe-area-inset-left,0px); --safe-r:env(safe-area-inset-right,0px);
   color-scheme:light;
@@ -79,7 +79,7 @@ header{display:flex;justify-content:space-between;align-items:center;gap:6px 12p
 .hero{background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow);border-radius:var(--r);padding:20px;display:grid;gap:18px}
 .salrow{display:flex;justify-content:space-between;align-items:end;gap:16px;flex-wrap:wrap}
 .salrow>div:first-child{min-width:0;flex:1 1 180px}
-.money{display:flex;align-items:baseline;gap:4px;border-bottom:2px solid var(--line);padding-bottom:2px;transition:border-color .15s}
+.money{display:flex;align-items:baseline;gap:4px;border-bottom:2px solid var(--line);padding-bottom:2px}
 .money:focus-within{border-color:var(--accent)}
 .money span{font-family:var(--mono);font-size:1.4rem;color:var(--muted)}
 .money input{font-family:var(--mono);font-size:1.9rem;font-weight:500;border:0;background:transparent;width:100%;min-width:0;padding:0;outline:none}
@@ -101,7 +101,7 @@ header{display:flex;justify-content:space-between;align-items:center;gap:6px 12p
           mask-image:linear-gradient(90deg,transparent,#000 var(--gutter),#000 calc(100% - var(--gutter)),transparent);
 }
 .tabs::-webkit-scrollbar{display:none}
-.tab{flex:none;scroll-snap-align:center;border:0;background:transparent;color:var(--muted);padding:8px 14px;border-radius:999px;font-weight:600;font-size:.9rem;white-space:nowrap;transition:background .15s,color .15s}
+.tab{flex:none;scroll-snap-align:center;border:0;background:transparent;color:var(--muted);padding:8px 14px;border-radius:999px;font-weight:600;font-size:.9rem;white-space:nowrap}
 .tab[aria-selected="true"]{background:var(--ink);color:var(--bg)}
 .panel{display:grid;gap:16px;min-width:0}
 .sec{background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow);border-radius:var(--r);padding:18px;display:grid;gap:14px;min-width:0}
@@ -111,14 +111,14 @@ header{display:flex;justify-content:space-between;align-items:center;gap:6px 12p
 .pill{font-size:.75rem;font-weight:600;padding:2px 10px;border-radius:999px;white-space:nowrap}
 .pill.ok{background:var(--ok-soft);color:var(--ok)} .pill.warn{background:var(--warn-soft);color:var(--warn)} .pill.bad{background:var(--bad-soft);color:var(--bad)}
 .btn{border:0;background:var(--accent);color:var(--accent-ink);padding:8px 16px;border-radius:10px;font-weight:600}
-.btn,.ghost,.paidbtn,.danger,.add,.tab,.inc .x{transition:background-color var(--fast) var(--ease),border-color var(--fast) var(--ease),color var(--fast) var(--ease),filter var(--fast) var(--ease),transform 80ms var(--ease)}
+.btn,.ghost,.paidbtn,.danger,.add,.tab,.inc .x{transition:background-color var(--fast) var(--ease),border-color var(--fast) var(--ease),color var(--fast) var(--ease),filter var(--fast) var(--ease),transform var(--press) var(--ease)}
 .field input,.field select,.payday input,.reco .bufrow input,.authform input,.inc input,.money{transition:border-color var(--fast) var(--ease),box-shadow var(--fast) var(--ease)}
 .ghost{border:1px solid var(--line);background:transparent;padding:6px 12px;border-radius:10px;font-size:.85rem}
 .paidbtn{border:0;background:var(--ok-soft);color:var(--ok);padding:6px 14px;border-radius:10px;font-size:.85rem;font-weight:600}
 .danger{border:0;background:transparent;color:var(--bad);font-size:.85rem;padding:6px 10px;border-radius:10px}
 .add{border:1px dashed var(--field);background:transparent;color:var(--accent);padding:12px;border-radius:12px;font-weight:600;width:100%}
 .empty{color:var(--muted);font-size:.9rem;padding:8px 0}
-@media (hover:hover){
+@media (hover:hover) and (pointer:fine){
   .ghost:hover{border-color:var(--accent);color:var(--accent)}
   .add:hover{border-color:var(--accent)}
   .tab:not([aria-selected="true"]):hover{color:var(--ink)}
@@ -127,6 +127,7 @@ header{display:flex;justify-content:space-between;align-items:center;gap:6px 12p
   .danger:hover{background:var(--bad-soft)}
   .add:hover{background:var(--accent-soft)}
 }
+button{transition:transform var(--press) var(--ease)}
 button:not(:disabled):active{transform:scale(.97)}
 
 /* ---------- timeline ---------- */
@@ -207,7 +208,7 @@ button:not(:disabled):active{transform:scale(.97)}
 .acct-h{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
 .acct-h h3{display:flex;align-items:baseline;gap:4px 10px;flex-wrap:wrap;min-width:0;overflow-wrap:anywhere}
 .ask4{border:0;cursor:pointer;font-family:var(--body);letter-spacing:0;align-self:center}
-@media (hover:hover){.ask4:hover{filter:brightness(.95)}}
+@media (hover:hover) and (pointer:fine){.ask4:hover{filter:brightness(.95)}}
 @media (pointer:coarse){.ask4{min-height:var(--tap);padding-inline:14px}}
 .acct-h .l4{font-family:var(--mono);font-weight:400;font-size:.85rem;color:var(--muted);letter-spacing:.06em}
 .acct-h .lim{font-family:var(--mono);font-weight:500;text-align:right;flex:none}
@@ -263,7 +264,7 @@ button:not(:disabled):active{transform:scale(.97)}
 #srcPick:not(:empty){margin-bottom:4px}
 details.sec>summary{cursor:pointer;min-height:28px;font-family:var(--display);font-weight:600;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:12px}
 details.sec>summary::-webkit-details-marker{display:none}
-details.sec>summary::after{content:"";width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg) translateY(-2px);transition:transform .2s;flex:none}
+details.sec>summary::after{content:"";width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg) translateY(-2px);transition:transform .2s var(--ease);flex:none}
 details.sec[open]>summary::after{transform:rotate(-135deg) translateY(-2px)}
 details.sec:not([open]){gap:0}
 .tips{display:grid;gap:10px;margin:0;padding-left:1.1rem}
@@ -333,7 +334,9 @@ details.sec:not([open]){gap:0}
 }
 
 @media (prefers-reduced-motion:no-preference){.seg,.bar i,.ubar i{transition:width .3s ease}}
-@media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition-duration:0s!important}button:active{transform:none!important}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important}
+  button:active,.status[role="button"]:active{transform:none!important}
+  .check input::after,details.sec>summary::after{transition:none!important}}
 @media print{
   .tabs,.add,.bt,.acts,#resetBtn{display:none!important}
   [data-panel]{display:grid!important}
@@ -348,7 +351,7 @@ header .acctbar{width:100%;flex-wrap:nowrap}
 .acctbar .sync{flex:none}
 #authWho{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .acctbar #authBtn{flex:none;margin-left:auto}
-.ghost.sm{padding:4px 10px;font-size:.8rem}
+.ghost.sm{padding:4px 10px;font-size:.8rem;min-height:32px}
 .authform{background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow);border-radius:var(--r);padding:16px;display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
 .authform .row{flex-wrap:nowrap}
 .authform input{flex:1;min-width:0;background:var(--surface);border:1px solid var(--field);border-radius:8px;padding:8px 10px}
@@ -381,9 +384,9 @@ header .acctbar{width:100%;flex-wrap:nowrap}
 .dlg-acts{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .confirm{display:grid;gap:8px;padding:12px;border-radius:12px;background:var(--bad-soft);font-size:.875rem}
 .danger-btn{background:var(--bad);color:var(--surface)}
-@media (hover:hover){.catrow:hover{border-color:var(--c)} .dlg .x:hover{color:var(--ink);background:var(--sunk)}}
+@media (hover:hover) and (pointer:fine){.catrow:hover{border-color:var(--c)} .dlg .x:hover{color:var(--ink);background:var(--sunk)}}
 @media (pointer:coarse){.catform .field input,.catform .field select,.confirm select{font-size:16px;min-height:var(--tap)}.sw{width:var(--tap);height:var(--tap)}.dlg .x{width:var(--tap);height:var(--tap)}}
-@media (prefers-reduced-motion:no-preference){.dlg[open]{animation:dlg-in 180ms var(--ease)}@keyframes dlg-in{from{opacity:0;transform:translateY(8px) scale(.98)}}}
+@media (prefers-reduced-motion:no-preference){.dlg[open]{animation:dlg-in 220ms var(--ease)}@keyframes dlg-in{from{opacity:0;transform:translateY(8px) scale(.96)}}}
 
 /* ---------- glass (iOS style) ----------
    A soft color field sits behind the page; cards, the tab bar and the window are frosted glass over it.
@@ -410,7 +413,7 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 .paidbtn{border-radius:12px}
 .add{border-radius:14px;background:transparent}
 .field input,.field select,.payday input,.reco .bufrow input,.authform input,.catform .field input,.catform .field select,.confirm select{border-radius:10px;background:var(--surface)}
-@media (hover:hover){.ghost:hover{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)}}
+@media (hover:hover) and (pointer:fine){.ghost:hover{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)}}
 /* the categories window */
 .dlg{background:var(--glass-strong);border:1px solid var(--glass-edge);border-radius:24px;-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur)}
 .dlg::backdrop{background:rgb(0 0 0 / .28);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
@@ -427,7 +430,7 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 .ib{display:inline-grid;place-items:center;width:38px;height:36px;padding:0!important}
 .ib svg{width:19px;height:19px}
 .danger.ib{background:color-mix(in srgb,var(--bad) 10%,transparent)}
-@media (hover:hover){.danger.ib:hover{background:color-mix(in srgb,var(--bad) 18%,transparent)}}
+@media (hover:hover) and (pointer:fine){.danger.ib:hover{background:color-mix(in srgb,var(--bad) 18%,transparent)}}
 @media (pointer:coarse){.ib{width:var(--tap);height:var(--tap)}}
 .catrow .go{display:grid;place-items:center;color:var(--muted)}
 .catrow .go svg{width:18px;height:18px}
@@ -482,8 +485,8 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 .check input:checked::after{transform:translateX(20px)}
 .check input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 /* opening a tab fades its panel in */
-@media (prefers-reduced-motion:no-preference){.panel:not([hidden]){animation:panel-in 200ms var(--ease)}
-  @keyframes panel-in{from{opacity:0;transform:translateY(4px)}}}
+@media (prefers-reduced-motion:no-preference){.panel:not([hidden]){animation:panel-in 120ms var(--ease)}
+  @keyframes panel-in{from{opacity:0}}}
 /* icon buttons for paid, undo, sign out, categories, reset, disconnect */
 .paidbtn.ib svg{width:20px;height:20px;stroke-width:2.3}
 .ghost.sm.ib{width:34px;height:32px}
@@ -588,7 +591,7 @@ input[type=date],input[type=month]{cursor:pointer}
 .openw{all:unset;box-sizing:border-box;cursor:pointer;display:inline-flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px;min-height:32px;border-radius:6px;
   text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--ink) 25%,transparent);text-underline-offset:3px}
 .openw:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-@media (hover:hover){.openw:hover{text-decoration-color:var(--ink)}}
+@media (hover:hover) and (pointer:fine){.openw:hover{text-decoration-color:var(--ink)}}
 .info{display:grid;gap:8px}
 .info .ih{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-top:6px}
 .ilist{list-style:none;margin:0;padding:0;display:grid}
@@ -770,7 +773,7 @@ header .acctbar{flex-wrap:wrap}
 .advisor-prompts{display:flex;flex-wrap:wrap;gap:8px}
 .chip{border:1px solid var(--line);background:transparent;border-radius:999px;padding:6px 12px;font-size:.85rem;min-height:36px}
 @media (pointer:coarse){.chip{min-height:var(--tap)}}
-@media (hover:hover){.chip:hover{border-color:var(--accent);color:var(--accent)}}
+@media (hover:hover) and (pointer:fine){.chip:hover{border-color:var(--accent);color:var(--accent)}}
 .ask-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}
 .ask-row textarea,.goals textarea{width:100%;min-height:48px;padding:10px 12px;border:1px solid var(--field);border-radius:12px;background:var(--surface);color:var(--ink);font:inherit;line-height:1.4;resize:vertical}
 .ask-row textarea:focus,.goals textarea:focus{border-color:var(--accent);box-shadow:var(--ring);outline:none}
