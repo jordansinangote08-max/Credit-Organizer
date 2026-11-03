@@ -1027,3 +1027,5 @@ body.blue-on .blue-fab{opacity:0;transform:scale(.9);pointer-events:none}
 .blue-h .x svg{width:18px;height:18px}
 .blue-h .x:active{transform:scale(.94)}
 @media (hover:hover) and (pointer:fine){.blue-h .x:hover{color:var(--ink);background:var(--sunk)}}
+/* folding: the row layout above must not undo a folded group */
+#instList .lgrp.folded>.sub,#acctList .cplans.folded>.cplan{display:none}
