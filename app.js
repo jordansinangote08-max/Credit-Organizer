@@ -791,14 +791,20 @@ document.addEventListener('click',e=>{const g=e.target.closest('[data-goto]');if
 
 $('#billBody').addEventListener('input',e=>{
   const row=e.target.closest('.form');if(!row)return;const it=S.items.find(i=>i.id==row.dataset.id),k=e.target.dataset.k;if(!it||!k)return;
-  if(k==='cat'){const c=S.cats.find(x=>x.key===e.target.value);if(!c)return;it.cat=c.key;setKind(it,c.kind);ensureLinks();commit();refreshBill();const f=$('#k'+it.id);f&&f.focus();return}
+  if(k==='cat'){const c=S.cats.find(x=>x.key===e.target.value);if(!c)return;it.cat=c.key;setKind(it,c.kind);ensureLinks();
+    if(it.kind==='card'&&it.bbLast4){const l4=it.bbLast4;if(joinCardByLast4(it,l4)!==true){const a=acctOf(it);if(a&&!a.last4)a.last4=l4}delete it.bbLast4}
+    commit();refreshBill();const f=$('#k'+it.id);f&&f.focus();return}
   if(fromBB(it)&&k!=='name')return;                                   // the rest of a BillBuddy bill is BillBuddy's
   if(k==='repeat'){
     if(e.target.checked){delete it.once;const d=parseD(it.date);if(d){it.day=d.getDate();delete it.date}}
     else{it.once=true;it.date=it.date||iso(dueOf(it,cycleStart()));delete it.until}
     commit();refreshBill();const f=$('#rp'+it.id);f&&f.focus();return}
   if(k==='last4'){const v=e.target.value.replace(/\D/g,'').slice(0,4);if(v!==e.target.value)e.target.value=v;
-    const a=it.kind==='card'&&acctOf(it);if(a)a.last4=v;else if(v)it.bbLast4=v;else delete it.bbLast4;commit();renderAccounts();return}
+    const joined=joinCardByLast4(it,v);
+    if(joined===true){commit();renderAccounts();refreshBill();const f=$('#f4'+it.id);f&&f.focus();return}
+    const a=it.kind==='card'&&acctOf(it);if(a){if(!joined)a.last4=v}else if(v)it.bbLast4=v;else delete it.bbLast4;
+    const h=e.target.parentElement.querySelector('.hint');if(h)h.textContent=joined?'Another card already ends in '+v+'.':'Matches BillBuddy bills.';
+    commit();renderAccounts();return}
   if(e.target.dataset.day){it.day=dayFrom(e.target);delete it.bbDue;commit();return}
   if(k==='until'||k==='date'){if(e.target.value)it[k]=e.target.value;else delete it[k];commit();return}
   if(k==='lender'){const v=e.target.value.trim();if(v)it.lender=v;else delete it.lender;commit();return}
@@ -807,6 +813,19 @@ $('#billBody').addEventListener('input',e=>{
   if(k==='day')delete it.bbDue;
   commit();
 });
+// The last 4 digits name the card. A card bill given the digits of a card you already have joins that card
+// (and takes its name) instead of keeping a second one; its own card is dropped when it held nothing else.
+// A card of its own that has a limit, a statement day or another bill stays as it is: 'kept' then means the
+// digits belong to another card and aren't copied. Returns true when the bill moved onto the other card.
+function joinCardByLast4(it,v){
+  if(it.kind!=='card'||!/^\d{4}$/.test(v||''))return false;
+  const mine=acctOf(it),other=S.accounts.find(a=>a!==mine&&a.last4===v);
+  if(!other)return false;
+  if(mine&&(num(mine.limit)>0||num(mine.stmt)>0||S.items.some(x=>x!==it&&x.acct===mine.key)))return 'kept';
+  if(mine)S.accounts=S.accounts.filter(a=>a!==mine);
+  it.acct=other.key;it.name=other.name||it.name;delete it.noAcct;delete it.bbLast4;
+  return true;
+}
 // moving a bill into a category of another kind makes it that kind of bill
 function setKind(it,kind){
   if(it.kind===kind)return;
@@ -834,14 +853,16 @@ let billNew=false,billKeep=false;
 function refreshBill(){const it=S.items.find(i=>i.id===editingId);if(!it)return;
   $('#billTitle').textContent=billNew?(it.kind==='loan'?'New installment':'New bill'):'Edit '+(it.kind==='loan'?'installment':'bill');
   $('#billBody').innerHTML=itemForm(it,billNew)}
+let acctsBefore=null;   // the cards that existed when a new bill was started, so a cancelled one leaves none behind
 function openBill(id,isNew){
-  editingId=id;billNew=!!isNew;billKeep=false;refreshBill();
+  editingId=id;billNew=!!isNew;billKeep=false;acctsBefore=isNew?new Set(S.accounts.filter(a=>!S.items.some(i=>i.id===id&&i.acct===a.key)).map(a=>a.key)):null;refreshBill();
   const d=$('#billDlg');if(!d.open)d.showModal();
   const f=isNew?$('#n'+id):$('#a'+id)||$('#n'+id);f&&(f.focus(),isNew&&f.select());
 }
 $('#billDlg').addEventListener('close',()=>{
   const it=S.items.find(i=>i.id===editingId);
-  if(it&&billNew&&!billKeep)S.items=S.items.filter(i=>i!==it);           // closed without Add
+  if(it&&billNew&&!billKeep){S.items=S.items.filter(i=>i!==it);           // closed without Add
+    if(acctsBefore)S.accounts=S.accounts.filter(a=>acctsBefore.has(a.key)||S.items.some(x=>x.acct===a.key))}
   else if(it&&!String(it.name||'').trim())it.name=it.kind==='loan'?'New installment':'New bill';
   editingId=null;billNew=false;$('#billBody').innerHTML='';ensureLinks();save();renderAll();
 });
@@ -916,7 +937,10 @@ $('#resetNo').addEventListener('click',()=>{$('#resetConfirm').hidden=true});
 $('#resetYes').addEventListener('click',()=>{const bb=S.bb;S=clone(DEFAULTS);if(bb)S.bb=bb;prepare();editingId=null;save();syncInputs();$('#resetConfirm').hidden=true;renderAll()});
 function acctInput(e){
   const row=e.target.closest('.form');if(!row)return;const a=S.accounts.find(x=>x.id==row.dataset.aid),k=e.target.dataset.k;if(!a||!k)return;
-  if(k==='last4'){const v=e.target.value.replace(/\D/g,'').slice(0,4);if(v!==e.target.value)e.target.value=v;a.last4=v}
+  if(k==='last4'){const v=e.target.value.replace(/\D/g,'').slice(0,4);if(v!==e.target.value)e.target.value=v;
+    // two cards can't share the last 4 digits: they are how BillBuddy bills find their card
+    const dup=v.length===4&&S.accounts.find(x=>x!==a&&x.last4===v);a.last4=dup?'':v;
+    const h=e.target.parentElement.querySelector('.hint');if(h)h.textContent=dup?(dup.name||'Another card')+' already ends in '+v+'.':'Matches BillBuddy bills.'}
   else if(k==='due'){const b=billOf(a);if(b){b.day=dayFrom(e.target);delete b.bbDue}}
   else if(k==='stmt')a.stmt=dayFrom(e.target)
   else{a[k]=k==='name'?e.target.value:(e.target.value===''?null:num(e.target.value));if(k==='name'){const b=billOf(a);if(b)b.name=a.name}}

@@ -383,5 +383,47 @@ class SyncTest(unittest.TestCase):
         self.assertEqual(self.page.evaluate('Math.round(compute().gap*100)/100'), 5614.61)   # unpaid, it can still be cut
 
 
+    def test_new_card_bill_with_known_last4_joins_that_card(self):
+        self.page.evaluate("""() => {
+          applyBB([{bank:'EastWest',type:'credit_card',account_key:'ew',last4:'3002',amount:15614.61,due_date:'2026-10-28'}]);
+          S.accounts[0].name='EastWest Everyday';S.accounts[0].limit=50000;newBill('card');
+        }""")
+        new_id = self.page.evaluate('editingId')
+        self.assertEqual(self.page.evaluate('S.accounts.length'), 2)   # a new card is made as the bill starts
+        self.page.fill(f'#n{new_id}', 'EastWest')
+        self.page.fill(f'#f4{new_id}', '3002')
+        self.page.click('#billBody [data-done]')
+        self.assertEqual(self.page.evaluate('S.accounts.length'), 1)
+        it = self.page.evaluate(f"(i=>({{acct:i.acct,name:i.name}}))(S.items.find(i=>i.id=={new_id}))")
+        self.assertEqual(it, {'acct': self.page.evaluate('S.accounts[0].key'), 'name': 'EastWest Everyday'})
+        self.assertEqual(self.page.evaluate('S.accounts[0].limit'), 50000)
+
+    def test_cancelled_new_card_bill_leaves_no_card_behind(self):
+        self.page.evaluate("newBill('card')")
+        new_id = self.page.evaluate('editingId')
+        self.page.fill(f'#f4{new_id}', '7777')
+        self.page.evaluate("$('#billDlg').close()")
+        self.page.wait_for_function('editingId===null')
+        self.assertEqual(self.page.evaluate('S.accounts.length'), 0)
+        self.assertEqual(self.page.evaluate('S.items.length'), 0)
+
+    def test_digits_typed_before_choosing_a_card_category_still_find_the_card(self):
+        self.page.evaluate("""() => {
+          S.accounts.push({id:uid++,key:'bpi',name:'BPI Gold',last4:'1234',limit:null,stmt:null});newBill('bill');
+        }""")
+        new_id = self.page.evaluate('editingId')
+        self.assertEqual(self.page.locator(f'#f4{new_id}').count(), 0)   # a plain bill has no last-4 field
+        self.page.evaluate(f"(i=>{{i.bbLast4='1234'}})(S.items.find(i=>i.id=={new_id}))")
+        card = self.page.evaluate("S.cats.find(c=>c.kind==='card').key")
+        self.page.select_option(f'#k{new_id}', card)
+        self.assertEqual(self.page.evaluate('S.accounts.length'), 1)
+        self.assertEqual(self.page.evaluate(f"S.items.find(i=>i.id=={new_id}).acct"), 'bpi')
+
+    def test_add_card_refuses_digits_another_card_has(self):
+        self.page.evaluate("S.accounts.push({id:uid++,key:'bpi',name:'BPI Gold',last4:'1234',limit:null,stmt:null});renderAll();$('#acctAdd').click()")
+        self.page.fill('#sheetBody [data-k=last4]', '1234')
+        self.assertIn('BPI Gold already ends in 1234', self.page.locator('#sheetBody').inner_text())
+        self.assertEqual(self.page.evaluate("S.accounts.filter(a=>a.last4==='1234').length"), 1)
+
 if __name__ == '__main__':
     unittest.main()
