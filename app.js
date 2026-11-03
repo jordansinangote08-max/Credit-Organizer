@@ -389,7 +389,7 @@ function itemForm(i,isNew){
     ${i.kind==='loan'?`<div class="field wide"><label for="lend${i.id}">Lender</label><input id="lend${i.id}" data-k="lender" list="lenders" autocomplete="off" placeholder="${esc(lenderName(i))}" value="${esc(i.lender||'')}"><datalist id="lenders">${[...new Set(S.items.filter(x=>x.kind==='loan'&&x!==i).map(lenderName))].map(n=>`<option value="${esc(n)}">`).join('')}</datalist><span class="hint">Installments from the same lender are grouped.</span></div>`:''}
     ${i.kind==='loan'?`<div class="field"><label for="l${i.id}">Payments left</label><input id="l${i.id}" data-k="left" type="number" inputmode="numeric" min="0" value="${i.left??''}"></div><div class="field"><label for="t${i.id}">Total payments</label><input id="t${i.id}" data-k="total" type="number" inputmode="numeric" min="0" value="${i.total??''}"></div>`:''}
     ${i.kind==='card'||i.kind==='loan'?`<div class="field"><label for="f4${i.id}">Last 4 digits</label><input id="f4${i.id}" data-k="last4" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="1234" autocomplete="off" value="${esc(last4Of(i))}"><span class="hint">Matches BillBuddy bills.</span></div>`:''}
-    ${i.kind==='card'||i.kind==='loan'?`<div class="field"><label for="r${i.id}">Interest %/month</label><input id="r${i.id}" data-k="rate" type="number" inputmode="decimal" step="0.01" min="0" value="${i.rate??''}"></div>`:''}
+    ${i.kind==='loan'?`<div class="field"><label for="r${i.id}">Interest %/month</label><input id="r${i.id}" data-k="rate" type="number" inputmode="decimal" step="0.01" min="0" value="${i.rate??''}"></div>`:''}
     <div class="acts">${isNew?'<span></span>':delBtn(`data-del="${i.id}"`,"Remove "+(i.name||"this bill"))}<button class="btn" data-done="1">${isNew?'Add':'Done'}</button></div>
   </div>`;
 }
@@ -476,6 +476,17 @@ function planOf(i){
 const planLabel=i=>{const t=String(i.name||'');return planOf(i)?t.replace(/\s*[(\[]?\s*\d{1,3}\s*(?:\/|\bof\b)\s*\d{1,3}\s*[)\]]?/gi,' ').replace(/\s{2,}/g,' ').trim()||t:t};
 const lenderName=i=>partOf(i)?lenderName(partOf(i)):i.inCard?(S.accounts.find(a=>a.key===i.inCard)?.name||'Card')+' installments':String(i.lender||'').trim()||String(i.name||'').replace(/\s+(?:[A-Za-z]|#?\d+|\([^)]*\))$/,'').trim()||'Installment';
 const lenderKey=i=>lenderName(i).toLowerCase().replace(/[^a-z0-9]/g,'').replace(/loans?$/,'')||'x';
+// Each bank gets its own color (UnionBank, MariBank, Maya, RCBC...): the first word of the lender or card name.
+// Colors are handed out in name order, each bank starting at its own hashed slot, so they stay put as you add things.
+const BANK_COLORS=['blue','orange','green','purple','pink','teal','amber'];
+const bankKey=name=>(String(name||'').trim().split(/\s+/)[0]||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+function bankColor(name){
+  const keys=[...new Set([...S.items.filter(i=>i.kind==='loan').map(i=>bankKey(i.inCard?S.accounts.find(a=>a.key===i.inCard)?.name:lenderName(i))),
+    ...S.accounts.map(a=>bankKey(a.name))].filter(Boolean))].sort(),used=new Map(),taken=new Set();
+  keys.forEach(k=>{let h=0;for(const c of k)h=(h*31+c.charCodeAt(0))>>>0;let n=h%BANK_COLORS.length;
+    for(let t=0;t<BANK_COLORS.length&&taken.has(n);t++)n=(n+1)%BANK_COLORS.length;taken.add(n);used.set(k,BANK_COLORS[n])});
+  return used.get(bankKey(name))||'blue';
+}
 function renderInst(){
   const start=cycleStart(),endOf=i=>{const left=Math.max(0,Math.round(num(i.left)));if(!left)return null;
     const n=dueDate(dayOf(i),start),m=new Date(n.getFullYear(),n.getMonth()+(paidInCycle(i)?left:left-1),1);return new Date(m.getFullYear(),m.getMonth(),Math.min(dayOf(i),dim(m.getFullYear(),m.getMonth())))};
@@ -516,8 +527,9 @@ function renderInst(){
     const r=list[0];
     const fk='l:'+lenderKey(r);
     // a lender with one installment is just its row; several get a quiet header with their monthly total
-    if(list.length===1&&!r.inCard)return `<div class="lgrp solo">${rows}</div>`;
-    return `<div class="lgrp${folded.has(fk)?' folded':''}"><div class="lgrp-h"><h3>${foldBtn(fk,r.inCard?esc(S.accounts.find(a=>a.key===r.inCard)?.name||'Card')+'<span class="lgrp-tag">on the card</span>':esc(lenderName(r)))}</h3><span class="lgrp-amt">${peso(gm)}</span></div>${rows}</div>`;
+    const bk=bankColor(r.inCard?S.accounts.find(a=>a.key===r.inCard)?.name:lenderName(r));
+    if(list.length===1&&!r.inCard)return `<div class="lgrp solo" data-bank="${bk}">${rows}</div>`;
+    return `<div class="lgrp${folded.has(fk)?' folded':''}" data-bank="${bk}"><div class="lgrp-h"><h3>${foldBtn(fk,r.inCard?esc(S.accounts.find(a=>a.key===r.inCard)?.name||'Card')+'<span class="lgrp-tag">on the card</span>':esc(lenderName(r)))}</h3><span class="lgrp-amt">${peso(gm)}</span></div>${rows}</div>`;
   }).join('');
   $('#instSum').innerHTML=`<span class="label">Every month</span><span class="hsum-big">${peso(monthly)}</span><span class="hsum-sub">${remaining>0?`${peso(remaining)} left · all done ${ym(last)}`:'Nothing left to pay'}</span>`;
   $('#instList').innerHTML=html||'<p class="empty">No installments yet.</p>';
@@ -686,7 +698,7 @@ function renderAccounts(){
     const over=p!==null&&p>UTIL_MAX;
     const facts=[p!==null?`<span class="${over?'t-bad':''}">${p.toFixed(0)}%</span> of ${peso(L)}`:'Add a limit',
       bill&&(bill.day||bill.bbDue)?'due '+fmtD(dueOf(bill,cycleStart())):''].filter(Boolean).join(' · ');
-    return `<div class="acct${over?' is-over':''}" data-k="card">
+    return `<div class="acct${over?' is-over':''}" data-k="card" data-bank="${bankColor(a.name)}">
       <div class="acct-h"><span class="acct-n">${esc(a.name)}${a.last4?`<span class="l4">${esc(a.last4)}</span>`:`<button class="linkbtn" data-aedit4="${a.id}">Add last 4</button>`}</span><span class="acct-amt">${peso(U)}</span></div>
       ${p!==null?`<div class="ubar" role="img" aria-label="${p.toFixed(0)}% of limit used${over?', above 20%':''}"><i class="${ucls(p)}" style="width:${Math.min(100,p/UTIL_MAX*100).toFixed(1)}%"></i></div>`:''}
       <div class="acct-f"><span class="facts">${facts}</span><span class="acts"><button class="ib quiet" data-aedit="${a.id}" aria-label="Edit ${esc(a.name)}" title="Edit">${IC.edit}</button></span></div>
