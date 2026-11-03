@@ -1050,3 +1050,14 @@ body.blue-on .blue-fab{opacity:0;transform:scale(.9);pointer-events:none}
 .pmark:focus-visible,.pundo:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media (pointer:coarse){.pmark{min-height:40px;padding:0 14px}.pundo{min-height:40px;display:inline-flex;align-items:center;padding:0 8px}}
 #instList .sub-f .acts{display:inline-flex;align-items:center;gap:6px}
+/* a color per bank: a dot before the lender or card name, and the lender header in that color */
+[data-bank="blue"]{--bk:var(--c-blue)} [data-bank="orange"]{--bk:var(--c-orange)} [data-bank="green"]{--bk:var(--c-green)} [data-bank="purple"]{--bk:var(--c-purple)}
+[data-bank="pink"]{--bk:var(--c-pink)} [data-bank="teal"]{--bk:var(--c-teal)} [data-bank="amber"]{--bk:var(--c-amber)} [data-bank="slate"]{--bk:var(--c-slate)}
+#instList .lgrp-h h3{color:var(--bk)}
+#instList .lgrp-h .fold::before,#instList .lgrp.solo .sub-name::before,#acctList .acct-n::before{
+  content:"";display:inline-block;flex:none;width:9px;height:9px;border-radius:50%;background:var(--bk);margin-right:8px;vertical-align:.08em}
+#instList .lgrp.solo .sub{box-shadow:none}
+#instList .lgrp[data-bank],#acctList .acct[data-bank]{position:relative}
+/* a stripe in the bank's color beside each of its rows */
+#instList .lgrp[data-bank] .sub,#acctList .acct[data-bank]{border-left:3px solid var(--bk);padding-left:12px}
+#instList .lgrp.solo .sub-name::before,#acctList .acct-n::before{display:none}
