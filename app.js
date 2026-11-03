@@ -480,7 +480,7 @@ function renderInst(){
   S.items.filter(i=>i.kind==='loan'&&!hasParts(i)).sort((a,b)=>dayOf(a)-dayOf(b)||num(b.left)-num(a.left)||String(a.name).localeCompare(b.name)).forEach(i=>{const k=lenderKey(i);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(i)});
   let monthly=0,remaining=0,last=null,maxLeftChanged=false;
   const html=[...groups.values()].map(list=>{
-    let gm=0,gr=0,gl=null;
+    let gm=0,gr=0,gl=null;const r0=list[0];
     const rows=list.map((i,n)=>{
       const left=Math.max(0,Math.round(num(i.left))),pay=num(i.amount),total=Math.round(num(i.total))||null,end=endOf(i);
       if(left>0){gm+=pay;gr+=pay*left;if(!gl||end>gl)gl=end}
@@ -489,27 +489,33 @@ function renderInst(){
       if(!total){const ml=Math.max(Math.round(num(i.maxLeft))||0,left+(isPaid(i)?1:0));if(ml>0&&ml!==i.maxLeft){i.maxLeft=ml;maxLeftChanged=true}}
       const runOf=total||Math.round(num(i.maxLeft))||0;
       const pct=runOf?Math.round(Math.max(0,runOf-left)/runOf*100):(isPaid(i)?100:0);
-      const of=planOf(i);
-      const nm=billed(i)||i.bbInst||(i.name&&i.name!==lenderName(i))?planLabel(i):'Installment '+(n+1);
-      // one tidy row: payment number and name with the monthly amount; the bar; what's left and when it ends, with the actions
+      // one quiet row: name and monthly amount; a thin bar; "2 of 12 · ₱X left · Sep 2027" with one pay toggle
+      const calm=t=>/[a-z]/.test(t)||!/[A-Z]{3}/.test(t)?t:t.toLowerCase().replace(/(^|[\s(\/-])([a-z])/g,(m,a,b)=>a+b.toUpperCase());
+      const solo=list.length===1&&!r0.inCard;           // a lender with one installment: the row is the lender
+      const nm=solo?lenderName(i):billed(i)||i.bbInst||(i.name&&i.name!==lenderName(i))?planLabel(i):'Installment '+(n+1);
       const paidNow=isPaid(i)||left===0;
-      const facts=i.bbTerm&&!total?'Months not on the statement':left>0?`<b>${peso(pay*left)}</b> left · ends <b>${ym(end)}</b>`:'Fully paid';
-      const status=i.bbWaiting?'<span class="pill">Waiting for next bill</span>':isPaid(i)?'<span class="pill ok">Paid</span>':'';
-      const acts=billed(i)?editBtn(`data-iedit="${i.id}"`,i.name)
-        :(isPaid(i)&&!isHiddenPaid(i)?undoBtn(`data-iundo="${i.id}"`,i.name):'')+editBtn(`data-iedit="${i.id}"`,i.name)+(left>0&&!isPaid(i)?paidBtn(`data-ipaid="${i.id}"`,i.name):'');
-      return `<div class="sub">
-        <div class="sub-h"><span class="sub-n"><button class="openw" data-isched="${i.id}" aria-haspopup="dialog" title="Payment schedule">${of?`<span class="plan-of" aria-label="payment ${of.replace('/',' of ')}">${of}</span>`:''}<span class="sub-name">${esc(nm)}</span></button></span><span class="pay">${peso(pay)}<span class="muted small">/mo</span></span></div>
+      const count=runOf?`${Math.min(runOf,runOf-left+(isPaid(i)?0:1))} of ${runOf}`:i.bbTerm?`Payment ${i.bbTerm}`:'';
+      const facts=[count,
+        i.bbWaiting?'waiting for next bill':left>0?`${peso(pay*left)} left`:'fully paid',
+        left>0&&end?ym(end):''].filter(Boolean).join(' · ');
+      const toggle=billed(i)?''
+        :isPaid(i)?(isHiddenPaid(i)?`<span class="ptog on" aria-label="Paid">${IC.check}</span>`
+          :`<button class="ptog on" data-iundo="${i.id}" aria-pressed="true" aria-label="Paid. Undo for ${esc(i.name)}" title="Paid · tap to undo">${IC.check}</button>`)
+        :left>0?`<button class="ptog" data-ipaid="${i.id}" aria-pressed="false" aria-label="Mark ${esc(i.name)} paid" title="Mark paid">${IC.check}</button>`:'';
+      return `<div class="sub${paidNow?' is-done':''}">
+        <div class="sub-h"><button class="sub-name openw" data-isched="${i.id}" aria-haspopup="dialog" title="Payment schedule">${esc(calm(nm))}</button><span class="pay">${peso(pay)}</span></div>
         <div class="bar ${paidNow?'is-paid':'is-unpaid'}" role="img" aria-label="${runOf?(runOf-left)+' of '+runOf+' paid; ':''}${i.bbWaiting?'waiting for next bill':isPaid(i)?'current payment paid':'current payment unpaid'}"><i style="width:${pct}%"></i></div>
-        <div class="sub-f"><span class="facts">${facts}</span><div class="acts">${status}${acts}</div></div>
+        <div class="sub-f"><span class="facts">${facts}</span><span class="acts"><button class="ib quiet" data-iedit="${i.id}" aria-label="Edit ${esc(i.name)}" title="Edit">${IC.edit}</button>${toggle}</span></div>
       </div>`;
     }).join('');
     monthly+=gm;remaining+=gr;if(gl&&(!last||gl>last))last=gl;
     const r=list[0];
     const fk='l:'+lenderKey(r);
-    return `<div class="lgrp${folded.has(fk)?' folded':''}"><div class="lgrp-h"><h3>${foldBtn(fk,esc(lenderName(r)))}</h3><span class="lgrp-amt">${peso(gm)}<span class="muted small">/mo</span></span></div>
-      <p class="lgrp-sub">${gr>0?`${peso(gr)} left · done by ${ym(gl)}`:'Fully paid'}${r.inCard?' · billed with the card':''}</p>${rows}</div>`;
+    // a lender with one installment is just its row; several get a quiet header with their monthly total
+    if(list.length===1&&!r.inCard)return `<div class="lgrp solo">${rows}</div>`;
+    return `<div class="lgrp${folded.has(fk)?' folded':''}"><div class="lgrp-h"><h3>${foldBtn(fk,r.inCard?esc(S.accounts.find(a=>a.key===r.inCard)?.name||'Card')+'<span class="lgrp-tag">on the card</span>':esc(lenderName(r)))}</h3><span class="lgrp-amt">${peso(gm)}</span></div>${rows}</div>`;
   }).join('');
-  $('#instSum').innerHTML=`<div><span class="label">Per month</span><span class="v">${peso(monthly)}</span></div><div><span class="label">Still to pay</span><span class="v">${peso(remaining)}</span></div><div><span class="label">All done by</span><span class="v">${ym(last)}</span></div>`;
+  $('#instSum').innerHTML=`<span class="label">Every month</span><span class="hsum-big">${peso(monthly)}</span><span class="hsum-sub">${remaining>0?`${peso(remaining)} left · all done ${ym(last)}`:'Nothing left to pay'}</span>`;
   $('#instList').innerHTML=html||'<p class="empty">No installments yet.</p>';
   if(maxLeftChanged)setTimeout(save,0);
 }
@@ -662,7 +668,7 @@ function cardPlans(a,bill){
   const sum=plans.reduce((t,i)=>t+num(i.amount),0),total=num(bill&&bill.amount);
   const fk='c:'+a.key;
   if(!seenPlans.has(fk)){seenPlans.add(fk);folded.add(fk)}
-  return `<div class="cplans${folded.has(fk)?' folded':''}"><div class="cplans-h">${foldBtn(fk,`Installments <span>${plans.length}</span>`)}<span class="num">${peso(sum)}</span></div>${plans.map(i=>`<div class="cplan"><span class="plan-of">${planOf(i)||'—'}</span><span class="cplan-n">${esc(planLabel(i))}</span><span class="num">${peso(num(i.amount))}</span></div>`).join('')}
+  return `<div class="cplans${folded.has(fk)?' folded':''}"><div class="cplans-h">${foldBtn(fk,`${plans.length} installment${plans.length===1?'':'s'}`)}<span class="num">${peso(sum)}</span></div>${plans.map(i=>`<div class="cplan"><span class="plan-of">${planOf(i)||'—'}</span><span class="cplan-n">${esc(planLabel(i))}</span><span class="num">${peso(num(i.amount))}</span></div>`).join('')}
     <div class="cplan foot"><span>Installments this period</span><span class="num">${peso(sum)}</span></div>
     ${total?`<div class="cplan foot"><span>Rest of the bill</span><span class="num">${peso(Math.max(0,total-sum))}</span></div><div class="cplan tot"><span>Statement total</span><span class="num">${peso(total)}</span></div>`:''}</div>`;
 }
@@ -672,20 +678,20 @@ function renderAccounts(){
     const L=num(a.limit),U=usedOf(a),p=L>0?U/L*100:null;
     if(L>0){lim+=L;used+=U}
     const bill=billOf(a);
-    // one simple card: name, how much is used of the limit, one bar (red above 20%), when it's due
+    // one quiet row: name and what's used; a thin bar that fills at 20% of the limit; "17% of ₱50,000 · due Nov 28"
     const over=p!==null&&p>UTIL_MAX;
-    return `<div class="acct" data-k="card">
-      <div class="acct-h"><h3>${esc(a.name)}${a.last4?`<span class="l4">•••• ${esc(a.last4)}</span>`:`<button class="pill warn ask4" data-aedit4="${a.id}">Add last 4</button>`}</h3>
-        ${editBtn(`data-aedit="${a.id}"`,a.name)}</div>
-      <div class="acct-use"><span><b>${peso(U)}</b>${L>0?` of ${peso(L)}`:' used · add a limit'}</span>${p!==null?`<span class="${over?'t-bad':'t-ok'}"><b>${p.toFixed(0)}%</b></span>`:''}</div>
+    const facts=[p!==null?`<span class="${over?'t-bad':''}">${p.toFixed(0)}%</span> of ${peso(L)}`:'Add a limit',
+      bill&&(bill.day||bill.bbDue)?'due '+fmtD(dueOf(bill,cycleStart())):''].filter(Boolean).join(' · ');
+    return `<div class="acct${over?' is-over':''}" data-k="card">
+      <div class="acct-h"><span class="acct-n">${esc(a.name)}${a.last4?`<span class="l4">${esc(a.last4)}</span>`:`<button class="linkbtn" data-aedit4="${a.id}">Add last 4</button>`}</span><span class="acct-amt">${peso(U)}</span></div>
       ${p!==null?`<div class="ubar" role="img" aria-label="${p.toFixed(0)}% of limit used${over?', above 20%':''}"><i class="${ucls(p)}" style="width:${Math.min(100,p/UTIL_MAX*100).toFixed(1)}%"></i></div>`:''}
-      ${bill&&(bill.day||bill.bbDue)?`<div class="facts"><span>Due <b>${fmtD(dueOf(bill,cycleStart()))}</b></span></div>`:''}
+      <div class="acct-f"><span class="facts">${facts}</span><span class="acts"><button class="ib quiet" data-aedit="${a.id}" aria-label="Edit ${esc(a.name)}" title="Edit">${IC.edit}</button></span></div>
       ${cardPlans(a,bill)}
     </div>`;
   }).join('');
   $('#acctList').innerHTML=html||'<p class="empty">No cards yet.</p>';
   const p=lim>0?used/lim*100:null;
-  $('#acctSum').innerHTML=`<div><span class="label">Total limit</span><span class="v">${peso(lim)}</span></div><div><span class="label">Total used</span><span class="v">${peso(used)}</span></div><div><span class="label">Overall usage</span><span class="v" style="color:${p===null?'inherit':p>UTIL_MAX?'var(--bad)':'var(--ok)'}">${p===null?'—':p.toFixed(0)+'%'}</span></div>`;
+  $('#acctSum').innerHTML=`<span class="label">Using</span><span class="hsum-big">${peso(used)}${lim>0?`<span class="hsum-of"> of ${peso(lim)}</span>`:''}</span><span class="hsum-sub">${p===null?'Add your card limits to see usage':`<span class="${p>UTIL_MAX?'t-bad':'t-ok'}">${p.toFixed(0)}% overall</span> · keep each card under 20%`}</span>`;
 }
 
 // ---------- render ----------

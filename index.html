@@ -15,10 +15,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=59">
+<link rel="stylesheet" href="styles.css?v=60">
 <script src="config.js?v=42" defer></script>
 <script src="vendor/supabase-2.116.0.js" defer></script>
-<script src="app.js?v=67" defer></script>
+<script src="app.js?v=68" defer></script>
 </head>
 <body class="locked">
 <div class="app">
@@ -108,24 +108,19 @@
 
     <section class="panel" role="tabpanel" id="panel-inst" aria-labelledby="tab-inst" data-panel="inst" hidden>
       <div class="mon" id="mon-inst" aria-live="polite"></div>
-      <div class="sec">
-        <div class="sumrow" id="instSum"></div>
-      </div>
-      <div class="sec">
+      <div class="sec clean">
+        <div class="hsum" id="instSum"></div>
         <div class="loans" id="instList"></div>
-        <button class="add" id="instAdd">+ Add installment</button>
+        <button class="add quietadd" id="instAdd">+ Add installment</button>
       </div>
     </section>
 
     <section class="panel" role="tabpanel" id="panel-acct" aria-labelledby="tab-acct" data-panel="acct" hidden>
       <div class="mon" id="mon-acct" aria-live="polite"></div>
-      <div class="sec">
-        <div><h2>Credit cards</h2><p class="muted small lead">Keep each card under 20% of its limit.</p></div>
-        <div class="sumrow" id="acctSum"></div>
-      </div>
-      <div class="sec">
+      <div class="sec clean">
+        <div class="hsum" id="acctSum"></div>
         <div id="acctList"></div>
-        <button class="add" id="acctAdd">+ Add card</button>
+        <button class="add quietadd" id="acctAdd">+ Add card</button>
       </div>
     </section>
 
