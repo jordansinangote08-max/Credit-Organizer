@@ -502,10 +502,10 @@ function renderInst(){
       const facts=[count,
         i.bbWaiting?'waiting for next bill':left>0?`${peso(pay*left)} left`:'fully paid',
         left>0&&end?ym(end):''].filter(Boolean).join(' · ');
+      // a paid installment says "Paid" (a label, not a button) with a separate small Undo; an unpaid one says "Mark paid"
       const toggle=billed(i)?''
-        :isPaid(i)?(isHiddenPaid(i)?`<span class="ptog on" aria-label="Paid">${IC.check}</span>`
-          :`<button class="ptog on" data-iundo="${i.id}" aria-pressed="true" aria-label="Paid. Undo for ${esc(i.name)}" title="Paid · tap to undo">${IC.check}</button>`)
-        :left>0?`<button class="ptog" data-ipaid="${i.id}" aria-pressed="false" aria-label="Mark ${esc(i.name)} paid" title="Mark paid">${IC.check}</button>`:'';
+        :isPaid(i)?`<span class="ptag">${IC.check}Paid</span>`+(isHiddenPaid(i)?'':`<button class="pundo" data-iundo="${i.id}" aria-label="Undo paid for ${esc(i.name)}">Undo</button>`)
+        :left>0?`<button class="pmark" data-ipaid="${i.id}" aria-label="Mark ${esc(i.name)} paid">Mark paid</button>`:'';
       return `<div class="sub${paidNow?' is-done':''}">
         <div class="sub-h"><button class="sub-name openw" data-isched="${i.id}" aria-haspopup="dialog" title="Payment schedule">${esc(calm(nm))}</button><span class="pay">${peso(pay)}</span></div>
         <div class="bar ${paidNow?'is-paid':'is-unpaid'}" role="img" aria-label="${runOf?(runOf-left)+' of '+runOf+' paid; ':''}${i.bbWaiting?'waiting for next bill':isPaid(i)?'current payment paid':'current payment unpaid'}"><i style="width:${pct}%"></i></div>
