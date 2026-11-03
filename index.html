@@ -15,10 +15,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=60">
+<link rel="stylesheet" href="styles.css?v=61">
 <script src="config.js?v=42" defer></script>
 <script src="vendor/supabase-2.116.0.js" defer></script>
-<script src="app.js?v=68" defer></script>
+<script src="app.js?v=69" defer></script>
 </head>
 <body class="locked">
 <div class="app">
@@ -221,6 +221,28 @@
     </section>
   </main>
 </div>
+<button id="blueFab" class="blue-fab" type="button" aria-label="Chat with Blue" aria-expanded="false" aria-controls="blueWin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z"/></svg></button>
+<section id="blueWin" class="blue-win" role="dialog" aria-labelledby="blueTitle" aria-hidden="true">
+  <div class="blue-h">
+    <span class="blue-av" aria-hidden="true">B</span>
+    <div class="blue-t"><h2 id="blueTitle">Blue</h2><p>Knows only your planner</p></div>
+    <button class="x" id="blueClose" type="button" aria-label="Close Blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div class="blue-log" id="blueLog" role="log" aria-live="polite"></div>
+  <form class="blue-form" id="blueForm" autocomplete="off">
+    <textarea id="blueIn" rows="1" maxlength="800" placeholder="Ask Blue about your planner" aria-label="Message Blue" enterkeyhint="send"></textarea>
+    <button class="blue-send" id="blueSend" type="submit" aria-label="Send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+  </form>
+  <div class="blue-ask" id="blueAsk" role="alertdialog" aria-labelledby="blueAskT" aria-describedby="blueAskD">
+    <div class="blue-ask-in">
+      <p id="blueAskT" class="blue-ask-t">Clear your chat with Blue?</p>
+      <p id="blueAskD" class="blue-ask-d">Clearing deletes the conversation. Keeping it lets you pick up where you left off.</p>
+      <button type="button" id="blueClear" class="blue-btn bad">Clear chat</button>
+      <button type="button" id="blueKeep" class="blue-btn">Keep chat</button>
+      <button type="button" id="blueStay" class="blue-link">Cancel</button>
+    </div>
+  </div>
+</section>
 <dialog id="infoDlg" class="dlg" aria-labelledby="infoTitle"><div class="dlg-in">
   <div class="dlg-h"><h2 id="infoTitle"></h2><button class="x" data-infoclose="1" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
   <div id="infoBody" class="info"></div>

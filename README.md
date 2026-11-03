@@ -60,6 +60,10 @@ The key is saved in your account and used straight from the device, so give it a
 
 **Model AI** (API tab) shows only what the service reported: the model it confirmed for your key, from a free model lookup (no tokens) when the tab opens, on **Check now**, and at most every 10 minutes; and the model that sent the last answer, with when. The dot is green and says *Live* while the last check or answer worked, red and *Down* with the service's error when it failed, grey before anything was checked.
 
+## Blue: chat about your planner
+
+The blue button in the bottom-right corner opens Blue, a small chat that answers only from what's in the planner (this cycle, bills, installments, cards, income, buffer, leftover and the next cycles). Questions about anything else get a short "I can only help with your planner". The chat stays in memory on this page only, never in Supabase. Closing it asks whether to clear the chat or keep it for later. Blue uses the same AI connection and daily limit as the rest of the app ("Blue chat" in the API tab).
+
 ## Tap, fold, compact
 
 - **Tap to open a window:** the salary card's result (Short / Extra) opens this cycle's breakdown: money in, bills by category, paid so far and what's left. An installment's name opens its payment schedule: every payment still to come, with its date, 4/12-style number and the total to go. A bill's name opens its edit window.
