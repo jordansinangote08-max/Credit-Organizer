@@ -331,7 +331,10 @@ function renderTimeline(C){
   C.inc.forEach(o=>ev.push({d:o.d,in:true,name:o.x.label||'Other money',amt:num(o.x.amount)}));
   C.lines.forEach(l=>ev.push({d:l.date,in:false,l}));
   const days={};ev.forEach(e=>{const k=e.d.getTime();(days[k]=days[k]||[]).push(e)});
-  let bal=0;
+  // "On hand" is the money you really have: money in, minus only the bills marked paid. A bill that isn't paid
+  // yet shows its amount but takes nothing until you mark it paid, so un-paying a bill gives the money back.
+  // Under it, "after unpaid bills" keeps the plan in view: what's left once the unpaid ones are paid too.
+  let bal=0,owed=0;
   $('#timeline').innerHTML=Object.keys(days).sort((a,b)=>a-b).map(k=>{
     const d=new Date(+k),es=days[k].sort((a,b)=>b.in-a.in);
     const rows=es.map(e=>{
@@ -341,11 +344,12 @@ function renderTimeline(C){
           ?`<label class="a carry-a">+₱<input id="carry" type="number" inputmode="decimal" min="0" step="0.01" value="${cents(e.amt)}" aria-label="Money from last cycle"></label>`
           :`<button class="a carry-btn" type="button" data-carryedit="1" title="Tap to change" aria-label="Money from last cycle ${peso(e.amt)}, tap to change">+${peso(e.amt)}</button>`}</span></div>`;
         return `<div class="ev in"><span class="nm">${esc(e.name)}</span><span class="r"><span class="a">+${peso(e.amt)}</span></span></div>`}
-      bal-=e.l.need;const paid=isPaid(e.l.i);
+      const paid=isPaid(e.l.i);if(paid)bal-=e.l.need;else owed+=e.l.need;
       const pill=paid?'<span class="pill ok">Paid</span>':e.l.got>=e.l.need-0.004?'':e.l.got<0.005?'<span class="pill bad">No funds</span>':`<span class="pill warn">Short ${peso(e.l.need-e.l.got)}</span>`;
-      return `<div class="ev${paid?' paid':''}" data-c="${esc(catOf(e.l.i)?.color||'slate')}"><span class="nm"><span class="vh">${esc(catOf(e.l.i)?.name||'')}: </span>${esc(e.l.i.name)}</span><span class="r">${pill}<span class="a">−${peso(e.l.need)}</span></span></div>`;
+      return `<div class="ev${paid?' paid':' due'}" data-c="${esc(catOf(e.l.i)?.color||'slate')}"><span class="nm"><span class="vh">${esc(catOf(e.l.i)?.name||'')}: </span>${esc(e.l.i.name)}</span><span class="r">${pill}<span class="a">${paid?'−':''}${peso(e.l.need)}</span>${paid?'':'<span class="vh"> not paid yet, not taken from on hand</span>'}</span></div>`;
     }).join('');
-    return `<div class="day"><div class="d">${fmtD(d)}<small>${WD[d.getDay()]}</small></div><div>${rows}<div class="bal${bal<0?' neg':''}"><span>${bal<0?'Not enough on hand':'On hand after'}</span><span class="num">${peso(bal)}</span></div></div></div>`;
+    const plan=bal-owed;
+    return `<div class="day"><div class="d">${fmtD(d)}<small>${WD[d.getDay()]}</small></div><div>${rows}<div class="bal${bal<0?' neg':''}"><span>On hand</span><span class="num">${peso(bal)}</span></div>${owed>0.004?`<div class="bal plan${plan<0?' neg':''}"><span>${plan<0?'Short after unpaid bills':'After unpaid bills'}</span><span class="num">${peso(plan)}</span></div>`:''}</div></div>`;
   }).join('')||'<p class="empty">Nothing scheduled.</p>';
 }
 
