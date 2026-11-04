@@ -1121,8 +1121,18 @@ const bbExpired=(due,cutoff)=>/^\d{4}-\d{2}-\d{2}$/.test(due||'')&&due<cutoff;
 // BillBuddy drops a statement the day after it's due; the planner keeps it, paid or not, until the pay cycle
 // it is due in is over by the calendar: due Oct 28 in the cycle Oct 25 – Nov 24, it stays until Nov 25. That is
 // the real cycle, not the one shown early (16 days before a monthly payday) or after finishing it early.
-const bbKeepFrom=()=>{const t=new Date();t.setHours(0,0,0,0);return prevPay(new Date(t.getFullYear(),t.getMonth(),t.getDate()+1))};
-const bbKept=i=>{const d=parseD(i.bbDue);return !d||d>=bbKeepFrom()};
+// The day a statement's cycle ends: the payday after the one it is due on or after. Once the due date has
+// passed it is written on the statement (bbKeepTill) and never worked out again, so changing the pay schedule
+// afterwards (even trying "Twice a month" for a moment) can't make a cycle look over early and drop the bill.
+function bbKeepTill(i){
+  if(i.bbKeepTill)return parseD(i.bbKeepTill);
+  const d=parseD(i.bbDue);if(!d)return null;
+  const till=nextPay(prevPay(new Date(d.getFullYear(),d.getMonth(),d.getDate()+1)));
+  const t=new Date();t.setHours(0,0,0,0);
+  if(d<t&&till)i.bbKeepTill=iso(till);
+  return till;
+}
+const bbKept=i=>{const till=bbKeepTill(i);if(!till)return true;const t=new Date();t.setHours(0,0,0,0);return t<till};
 function pruneExpiredBB(){
   const expired=S.items.filter(i=>i.bbDue&&!bbKept(i));
   expired.forEach(retireBBStatement);
@@ -1280,7 +1290,7 @@ function applyBB(bills,{reconcile=false}={}){
     if(unsure&&!it.bbAi&&!it.bbUnsure){it.bbUnsure=true;changed=true}
     // remember the statement you marked paid, so it is not brought back after payday
     if(num(it.amount)===amt&&num(it.day)===due.getDate()&&it.bbDue===b.due_date)return;
-    it.amount=amt;it.day=due.getDate();it.bbDue=b.due_date;changed=true;
+    it.amount=amt;it.day=due.getDate();it.bbDue=b.due_date;delete it.bbKeepTill;changed=true;
   });
   // copies an older sync made before bill types were sent (e.g. a loan saved as "UnionBank CC"), even from an
   // earlier statement: filled in by BillBuddy, not matched this time, and the same amount as a bill of

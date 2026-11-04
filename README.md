@@ -148,7 +148,7 @@ over by the calendar**: due October 28 in the cycle October 25 – November 24, 
 stays until November 25. That is the real cycle, from payday to the day before
 the next one, not the cycle the planner shows early (16 days before a monthly
 payday) or after you finish a cycle early. When the next statement for the same
-card or loan arrives first, the earlier one stays as its own record until then.
+card or loan arrives first, the earlier one stays as its own record until then. That end date is fixed once the bill is past due, so changing the pay schedule later doesn't remove it early.
 The planner checks on sync, account load, every visible minute, and when the
 app resumes, and saves the removal to your Supabase account. Your manually entered bills, card accounts,
 and future installment schedules are retained. Installments keep a stable link

@@ -425,5 +425,21 @@ class SyncTest(unittest.TestCase):
         self.assertIn('BPI Gold already ends in 1234', self.page.locator('#sheetBody').inner_text())
         self.assertEqual(self.page.evaluate("S.accounts.filter(a=>a.last4==='1234').length"), 1)
 
+    def test_changing_the_pay_schedule_does_not_drop_a_kept_statement(self):
+        # due Oct 28 with payday on the 24th: its cycle Oct 24 - Nov 23 ends Nov 24, whatever the schedule says later
+        self.page.evaluate("applyBB([{bank:'RCBC',type:'credit_card',account_key:'rcbc-4069',last4:'4069',statement_id:'oct',amount:8263.94,due_date:'2026-10-28'}]);markPaid(S.items.find(i=>i.bbDue))")
+        self.page.clock.set_system_time(datetime(2026, 11, 4, 16, 0, tzinfo=timezone.utc))
+        self.page.evaluate('applyBB([],{reconcile:true})')   # BillBuddy dropped it; the planner keeps it
+        self.assertEqual(self.page.evaluate("S.items.find(i=>i.bbDue).bbKeepTill"), '2026-11-24')
+        self.page.evaluate("S.payfreq='twice';S.payday=15;S.payday2=30;payMemo=new Map();pruneExpiredBB();applyBB([],{reconcile:true})")
+        self.page.evaluate("S.payfreq='month';S.payday=24;payMemo=new Map()")
+        self.page.evaluate("applyBB([{bank:'RCBC',type:'credit_card',account_key:'rcbc-4069',last4:'4069',statement_id:'nov',amount:4114.77,due_date:'2026-12-01'}],{reconcile:true})")
+        rows = self.page.evaluate("S.items.filter(i=>i.bbDue).map(i=>i.bbDue+' '+(isPaid(i)?'paid':'unpaid')).sort()")
+        self.assertEqual(rows, ['2026-10-28 paid', '2026-12-01 unpaid'])
+        self.assertFalse(self.page.evaluate("'bbKeepTill' in S.items.find(i=>i.bbDue==='2026-12-01')"))
+        self.page.clock.set_system_time(datetime(2026, 11, 24, 16, 0, tzinfo=timezone.utc))
+        self.page.evaluate('pruneExpiredBB()')
+        self.assertEqual(self.page.evaluate("S.items.filter(i=>i.bbDue).map(i=>i.bbDue)"), ['2026-12-01'])
+
 if __name__ == '__main__':
     unittest.main()
