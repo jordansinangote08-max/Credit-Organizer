@@ -144,6 +144,9 @@ function prepare(){
   if(!Array.isArray(S.accounts))S.accounts=[];
   S.accounts.forEach(a=>{a.id=uid++});
   if(S.buffer==null)S.buffer=2000;
+  if(!S.pay||typeof S.pay!=='object'){S.pay={};const t=new Date();t.setHours(0,0,0,0);
+    if(num(S.salary)>0)S.pay[keyOf(prevPay(new Date(t.getFullYear(),t.getMonth(),t.getDate()+1)))]=num(S.salary)}
+  const pk=Object.keys(S.pay);if(pk.length>24)pk.sort((a,b)=>new Date(a.replace(/-/g,'/'))-new Date(b.replace(/-/g,'/'))).slice(0,pk.length-24).forEach(k=>delete S.pay[k]);
   for(let k=Number(S.rev)||0;k<PATCHES.length;k++)PATCHES[k](S);
   S.rev=PATCHES.length;
   ensureLinks();
@@ -219,6 +222,10 @@ function save(){
 // ---------- paid tracking ----------
 const DAY=86400000;
 const keyOf=d=>d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();
+// Each pay cycle has its own salary (S.pay, by cycle start): a new cycle starts at 0 until you enter what you
+// were paid, and an earlier cycle keeps its own. Forecasts of cycles further ahead (Plan, loan checks, the
+// advisor) use `estimate`: the salary you last entered (S.salary) when that cycle has none yet.
+const salaryOf=(start,estimate)=>{const k=keyOf(start);return S.pay&&k in S.pay?num(S.pay[k]):estimate?num(S.salary):0};
 const cycleKey=()=>keyOf(cycleStart());
 // Money left from the previous cycle counts as money in at the start of this one. When a new cycle begins it is
 // filled in from what the planner showed left over at the end of the last one; you can change it to what you
@@ -260,7 +267,7 @@ function compute(){
   const end=new Date(next.getFullYear(),next.getMonth(),next.getDate()-1);
   const inc=S.income.filter(x=>num(x.amount)>0).map(x=>({x,d:parseD(x.date)})).filter(o=>o.d&&o.d>=start&&o.d<next);
   const other=inc.reduce((s,o)=>s+num(o.x.amount),0);
-  const carry=carryFor(start),avail=num(S.salary)+other+carry;
+  const salary=salaryOf(start),carry=carryFor(start),avail=salary+other+carry;
   const lines=S.items.filter(i=>!billed(i)&&num(i.amount)>0&&inCycle(i,start)).map(i=>{
     const tier=i.kind==='essential'||i.kind==='bill'?1:i.kind==='loan'?2:i.kind==='card'?3:5;
     return {i,tier,date:dueOf(i,start),need:num(i.amount)};
@@ -271,7 +278,7 @@ function compute(){
   const required=lines.filter(l=>l.tier<=3||isPaid(l.i)).reduce((s,l)=>s+l.need,0);
   const total=lines.reduce((s,l)=>s+l.need,0);
   const paidAmt=lines.filter(l=>isPaid(l.i)).reduce((s,l)=>s+l.need,0);
-  return {start,next,end,inc,other,carry,avail,lines,required,total,paidAmt,gap:required-avail,surplus:avail-total};
+  return {start,next,end,salary,inc,other,carry,avail,lines,required,total,paidAmt,gap:required-avail,surplus:avail-total};
 }
 
 // ---------- hero ----------
@@ -326,7 +333,7 @@ function renderAdvice(C){
 }
 function renderTimeline(C){
   $('#cycleLabel').textContent=fmtD(C.start)+' – '+fmtD(C.end)+', '+C.end.getFullYear();
-  const ev=[{d:C.start,in:true,name:'Salary',amt:num(S.salary)}];
+  const ev=C.salary>0?[{d:C.start,in:true,name:'Salary',amt:C.salary}]:[];   // a new cycle has no salary until you enter it
   if(C.carry>0)ev.unshift({d:C.start,in:true,carry:true,name:'From last cycle',amt:C.carry});
   C.inc.forEach(o=>ev.push({d:o.d,in:true,name:o.x.label||'Other money',amt:num(o.x.amount)}));
   C.lines.forEach(l=>ev.push({d:l.date,in:false,l}));
@@ -639,7 +646,7 @@ function renderSrcList(){
 
 // ---------- plan ahead ----------
 function renderAhead(C){
-  const salary=num(S.salary);
+  const salary=salaryOf(C.start,true);
   const loans=S.items.filter(i=>i.kind==='loan'&&!i.inCard&&!hasParts(i)&&num(i.amount)>0);
   // one row per pay cycle, until a cycle after the last installment
   const last=Math.max(0,...loans.flatMap(l=>loanDates(l)).map(Number));let n=1;
@@ -650,7 +657,7 @@ function renderAhead(C){
   for(let m=0;m<n;m++){
     const d=shiftCycle(C.start,m),fixed=fixedIn(d);
     const ln=loansIn(d);
-    const free=Math.max(0,salary-ln-fixed),w=v=>(v/scale*100).toFixed(2)+'%';
+    const free=Math.max(0,(m?salaryOf(d,true):C.salary)-ln-fixed),w=v=>(v/scale*100).toFixed(2)+'%';
     rows+=`<div class="mrow"><span>${monthly?MON[d.getMonth()]+' '+String(d.getFullYear()).slice(2):fmtD(d)}</span><div class="track" role="img" aria-label="Installments ${peso(ln)}, rent and bills ${peso(fixed)}, free ${peso(free)}"><div class="seg loan" style="width:${w(ln)}"></div><div class="seg fixed" style="width:${w(fixed)}"></div><div class="seg free" style="width:${w(free)}"></div></div><span class="num" style="text-align:right">${peso(free)}</span></div>`;
   }
   $('#monthList').innerHTML=loans.length?rows:'<p class="empty">No installments listed.</p>';
@@ -740,7 +747,7 @@ const infoRows=rows=>`<ul class="ilist">${rows.map(([a,b,c])=>`<li${c?` class="$
 function cycleInfo(){
   const C=compute(),by=new Map();
   C.lines.forEach(l=>{const c=catOf(l.i),k=c?c.name:'Bills';by.set(k,(by.get(k)||0)+l.need)});
-  const inRows=[...(C.carry>0?[['From last cycle',peso(C.carry)]]:[]),['Salary',peso(num(S.salary))],...C.inc.map(o=>[esc(o.x.label||'Other money'),peso(num(o.x.amount))]),['Money in',peso(C.avail),'tot']];
+  const inRows=[...(C.carry>0?[['From last cycle',peso(C.carry)]]:[]),['Salary',peso(C.salary)],...C.inc.map(o=>[esc(o.x.label||'Other money'),peso(num(o.x.amount))]),['Money in',peso(C.avail),'tot']];
   const outRows=[...[...by].map(([k,v])=>[esc(k),peso(v)]),['Bills',peso(C.total),'tot']];
   if(C.paidAmt>0)outRows.push(['Paid so far',peso(C.paidAmt)],['Still to pay',peso(C.total-C.paidAmt)]);
   infoWin(fmtD(C.start)+' – '+fmtD(C.end),
@@ -771,7 +778,10 @@ window.addEventListener('beforeprint',()=>{const C=compute();Object.keys(JOBS).f
 const commit=()=>{save();render()};
 
 // ---------- events ----------
-['salary','payday','payday2','payweekday'].forEach(k=>{$('#'+k).addEventListener('input',e=>{S[k]=e.target.value===''?(k==='salary'?0:null):num(e.target.value);save();if(k==='salary')render();else renderAll()})});
+$('#salary').addEventListener('input',e=>{const k=keyOf(cycleStart()),v=e.target.value;
+  S.pay=S.pay||{};if(v==='')delete S.pay[k];else{S.pay[k]=num(v);if(num(v)>0)S.salary=num(v)}
+  save();render()});
+['payday','payday2','payweekday'].forEach(k=>{$('#'+k).addEventListener('input',e=>{S[k]=e.target.value===''?null:num(e.target.value);save();renderAll()})});
 $('#payfreq').addEventListener('change',e=>{
   const was=payFreq();S.payfreq=e.target.value;
   // monthly and twice-a-month share the payday box: each keeps its own day, so switching back restores it
@@ -783,7 +793,8 @@ $('#payfreq').addEventListener('change',e=>{
   save();syncInputs();renderAll();
 });
 function syncInputs(){
-  ['salary','payday','payday2','payweekday'].forEach(k=>{const el=$('#'+k);if(document.activeElement!==el)el.value=S[k]??''});
+  ['payday','payday2','payweekday'].forEach(k=>{const el=$('#'+k);if(document.activeElement!==el)el.value=S[k]??''});
+  const sal=$('#salary'),sk=keyOf(cycleStart());if(document.activeElement!==sal)sal.value=S.pay&&sk in S.pay?S.pay[sk]:'';
   const f=payFreq();$('#payfreq').value=f;
   $('#pdDays').hidden=f==='week';$('#pd2').hidden=f!=='twice';$('#pdWeek').hidden=f!=='week';
   $('#salLabel').textContent=viewNext?'Salary next cycle':f==='month'?'Salary this cycle':'Salary each payday';
@@ -1577,7 +1588,7 @@ function loanCheck(f){
   const plan=loanPlan(f),last=plan[plan.length-1].d,buffer=Math.max(0,num(S.buffer)),start=cycleStart(),rows=[];
   for(let j=0,c=start;j<40&&(j<3||c<=last);j++,c=shiftCycle(c,1)){
     const end=shiftCycle(c,1),pay=plan.filter(p=>p.d>=c&&p.d<end).reduce((s,p)=>s+p.amt,0);
-    const money=num(S.salary)+incomeIn(c),bills=dueIn(c);
+    const money=salaryOf(c,j>0)+incomeIn(c),bills=dueIn(c);
     rows.push({start:c,end:new Date(end.getFullYear(),end.getMonth(),end.getDate()-1),money,bills,pay,before:money-bills,after:money-bills-pay});
   }
   // payments grow in step with the amount borrowed, so the safe amount is exact: the tightest cycle decides
@@ -1641,7 +1652,7 @@ function renderLoanCheck(R){
 // for the day until the numbers change, and stop at 70% of the daily limit (see aiAsk).
 var TAB_NAME={cycle:'This cycle',bills:'Bills',inst:'Installments',acct:'Credit cards',money:'Income',borrow:'Borrow',ahead:'Plan'};
 function moneyRunsOut(C){
-  const ev=[{d:C.start,v:num(S.salary)},...C.inc.map(o=>({d:o.d,v:num(o.x.amount)})),...C.lines.map(l=>({d:l.date,v:-l.need}))].sort((a,b)=>a.d-b.d||b.v-a.v);
+  const ev=[{d:C.start,v:C.salary},...C.inc.map(o=>({d:o.d,v:num(o.x.amount)})),...C.lines.map(l=>({d:l.date,v:-l.need}))].sort((a,b)=>a.d-b.d||b.v-a.v);
   let bal=0;for(const e of ev){bal+=e.v;if(bal<-0.004)return e.d}return null;
 }
 function monitor(tab){
@@ -1686,8 +1697,8 @@ function monitor(tab){
     if(noRate)add('warn',plural(noRate,'creditor')+' without an interest rate');
     if(kn.length){const c=kn.map(x=>({x,e:effRate(x)})).sort((a,b)=>a.e-b.e)[0];add('ok','Cheapest: '+c.x.name+' ('+(c.e*100).toFixed(2)+'%/mo)')}
   }else if(tab==='ahead'){
-    const salary=num(S.salary);let first=null,last=null;
-    for(let m=0,d=C.start;m<36;m++,d=shiftCycle(d,1)){const free=salary-loansIn(d)-fixedIn(d);if(free<-0.004&&!first)first=d;if(loansIn(d)>0)last=d}
+    let first=null,last=null;
+    for(let m=0,d=C.start;m<36;m++,d=shiftCycle(d,1)){const free=(m?salaryOf(d,true):C.salary)-loansIn(d)-fixedIn(d);if(free<-0.004&&!first)first=d;if(loansIn(d)>0)last=d}
     if(first)add('bad','Short in the '+fmtD(first)+' cycle');
     if(last)add('ok','Installments done after '+MON[last.getMonth()]+' '+last.getFullYear());
     if(!out.length)add('ok','No installments');
@@ -1698,7 +1709,7 @@ function monitor(tab){
 function aiSnapshot(){
   const C=compute(),r2=x=>Math.round(x*100)/100,d=x=>x?iso(x):undefined;
   const sched=payFreq()==='week'?'every '+WD[num(S.payweekday)%7]:payFreq()==='twice'?`twice a month, days ${dayNum(S.payday,15)} and ${dayNum(S.payday2,30)}`:'monthly, day '+clampPd();
-  const next=[];for(let m=0,c=C.start;m<6;m++,c=shiftCycle(c,1)){const money=num(S.salary)+incomeIn(c),bills=dueIn(c);next.push({start:d(c),money_in:r2(money),bills:r2(bills),left:r2(money-bills)})}
+  const next=[];for(let m=0,c=C.start;m<6;m++,c=shiftCycle(c,1)){const money=salaryOf(c,m>0)+incomeIn(c),bills=dueIn(c);next.push({start:d(c),money_in:r2(money),bills:r2(bills),left:r2(money-bills)})}
   return {today:todayIso(),pay_schedule:sched,salary_per_payday:r2(num(S.salary)),buffer_per_cycle:r2(Math.max(0,num(S.buffer))),
     this_cycle:{start:d(C.start),end:d(C.end),money_in:r2(C.avail),bills:r2(C.total),paid_so_far:r2(C.paidAmt),short_by:C.gap>0?r2(C.gap):0,extra:C.surplus>0?r2(C.surplus):0},
     bills:C.lines.map(l=>({name:l.i.name,category:catOf(l.i)?.name,type:l.i.kind,amount:r2(l.need),due:d(l.date),paid:isPaid(l.i)||undefined})),

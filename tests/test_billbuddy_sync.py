@@ -372,7 +372,7 @@ class SyncTest(unittest.TestCase):
     def test_short_pill_counts_money_already_spent_on_paid_bills(self):
         # a paid "Can be cut" bill due first used to leave its money free for the card in the priority split
         short = self.page.evaluate("""() => {
-          S.salary=10000;S.items=[{id:uid++,name:'Wala lang',kind:'flex',amount:3000,day:26},
+          S.pay={[keyOf(cycleStart())]:10000};S.items=[{id:uid++,name:'Wala lang',kind:'flex',amount:3000,day:26},
             {id:uid++,name:'EastWest Everyday',kind:'card',amount:15614.61,day:16,noAcct:true}];
           markPaid(S.items[0]);
           const l=compute().lines.find(x=>x.i.name==='EastWest Everyday');return Math.round((l.need-l.got)*100)/100;
@@ -440,6 +440,33 @@ class SyncTest(unittest.TestCase):
         self.page.clock.set_system_time(datetime(2026, 11, 24, 16, 0, tzinfo=timezone.utc))
         self.page.evaluate('pruneExpiredBB()')
         self.assertEqual(self.page.evaluate("S.items.filter(i=>i.bbDue).map(i=>i.bbDue)"), ['2026-12-01'])
+
+    def test_each_pay_cycle_has_its_own_salary(self):
+        # payday on the 24th, today Oct 13: the planner shows Oct 24 - Nov 23 (16 days before payday)
+        self.page.evaluate("cloudReady=true;S.items=[{id:uid++,name:'Rent',kind:'essential',amount:4000,day:28}];renderAll()")
+        self.assertEqual(self.page.evaluate("$('#salary').value"), '')          # a new cycle starts at 0
+        self.assertEqual(self.page.evaluate('compute().salary'), 0)
+        self.page.evaluate("v=>{const e=$('#salary');e.value=v;e.dispatchEvent(new Event('input',{bubbles:true}))}", '38730')
+        here = self.page.evaluate('cycleKey()')
+        self.assertEqual(self.page.evaluate('S.pay'), {here: 38730})
+        self.assertEqual(self.page.evaluate('compute().avail'), 38730)
+        # every bill paid: the planner moves on to the next cycle, whose salary is 0, with the leftover carried over
+        self.page.evaluate("markPaid(S.items[0]);render()")
+        self.assertNotEqual(self.page.evaluate('cycleKey()'), here)
+        self.assertEqual(self.page.evaluate("$('#salary').value"), '')
+        self.assertEqual(self.page.evaluate('compute().salary'), 0)
+        self.assertEqual(self.page.evaluate('compute().carry'), 34730)
+        self.page.evaluate("v=>{const e=$('#salary');e.value=v;e.dispatchEvent(new Event('input',{bubbles:true}))}", '40000')
+        self.assertEqual(self.page.evaluate(f"S.pay['{here}']"), 38730)        # last cycle keeps its own
+        # going back to the finished cycle shows its own salary again
+        self.page.evaluate('reopenClosed()')
+        self.assertEqual(self.page.evaluate("$('#salary').value"), '38730')
+
+    def test_an_old_single_salary_becomes_this_cycles(self):
+        self.page.evaluate("(()=>{const s=clone(DEFAULTS);s.salary=38730;delete s.pay;S=s;prepare()})()")
+        self.assertEqual(self.page.evaluate('Object.values(S.pay)'), [38730])
+        self.assertEqual(self.page.evaluate('salaryOf(shiftCycle(cycleStart(),3),true)'), 38730)   # forecasts estimate
+        self.assertEqual(self.page.evaluate('salaryOf(shiftCycle(cycleStart(),3))'), 0)
 
 if __name__ == '__main__':
     unittest.main()
