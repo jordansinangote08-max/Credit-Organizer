@@ -109,6 +109,8 @@ const repeats=i=>i.kind!=='loan'&&i.kind!=='card';
 const exactDue=i=>parseD(i.bbDue)||(i.once&&repeats(i)?parseD(i.date):null);
 const dueOf=(i,start)=>exactDue(i)||dueDate(dayOf(i),start);
 const inCycle=(i,start)=>{
+  // an installment with no payments left is done: it shows (paid) in the cycle of its last payment, not after
+  if(i.kind==='loan'&&i.left!=null&&i.left!==''&&num(i.left)<=0&&i.paidCycle!==keyOf(start))return false;
   const d=exactDue(i);if(d)return d>=start&&d<shiftCycle(start,1);
   if(i.once&&repeats(i))return false;
   const d2=dueDate(dayOf(i),start);if(d2>=shiftCycle(start,1))return false;
@@ -268,9 +270,9 @@ function compute(){
   const inc=S.income.filter(x=>num(x.amount)>0).map(x=>({x,d:parseD(x.date)})).filter(o=>o.d&&o.d>=start&&o.d<next);
   const other=inc.reduce((s,o)=>s+num(o.x.amount),0);
   const salary=salaryOf(start),carry=carryFor(start),avail=salary+other+carry;
-  const lines=S.items.filter(i=>!billed(i)&&num(i.amount)>0&&inCycle(i,start)).map(i=>{
+  const lines=[...S.items.filter(i=>!billed(i)&&num(i.amount)>0&&inCycle(i,start)),...expectedBills(start)].map(i=>{
     const tier=i.kind==='essential'||i.kind==='bill'?1:i.kind==='loan'?2:i.kind==='card'?3:5;
-    return {i,tier,date:dueOf(i,start),need:num(i.amount)};
+    return {i,tier,date:i.expected?i.date:dueOf(i,start),need:num(i.amount)};
   }).sort((a,b)=>a.tier-b.tier||a.date-b.date);
   // money for bills already paid is spent, so it comes off first; what's left goes to unpaid bills by priority
   let left=avail;[...lines.filter(l=>isPaid(l.i)),...lines.filter(l=>!isPaid(l.i))].forEach(l=>{l.got=Math.max(0,Math.min(l.need,left));left-=l.got});
@@ -352,7 +354,7 @@ function renderTimeline(C){
           :`<button class="a carry-btn" type="button" data-carryedit="1" title="Tap to change" aria-label="Money from last cycle ${peso(e.amt)}, tap to change">+${peso(e.amt)}</button>`}</span></div>`;
         return `<div class="ev in"><span class="nm">${esc(e.name)}</span><span class="r"><span class="a">+${peso(e.amt)}</span></span></div>`}
       const paid=isPaid(e.l.i);if(paid)bal-=e.l.need;else owed+=e.l.need;
-      const pill=paid?'<span class="pill ok">Paid</span>':e.l.got>=e.l.need-0.004?'':e.l.got<0.005?'<span class="pill bad">No funds</span>':`<span class="pill warn">Short ${peso(e.l.need-e.l.got)}</span>`;
+      const pill=paid?'<span class="pill ok">Paid</span>':e.l.i.expected?'<span class="pill">Expected</span>':e.l.got>=e.l.need-0.004?'':e.l.got<0.005?'<span class="pill bad">No funds</span>':`<span class="pill warn">Short ${peso(e.l.need-e.l.got)}</span>`;
       return `<div class="ev${paid?' paid':' due'}" data-c="${esc(catOf(e.l.i)?.color||'slate')}"><span class="nm"><span class="vh">${esc(catOf(e.l.i)?.name||'')}: </span>${esc(e.l.i.name)}</span><span class="r">${pill}<span class="a">${paid?'−':''}${peso(e.l.need)}</span>${paid?'':'<span class="vh"> not paid yet, not taken from on hand</span>'}</span></div>`;
     }).join('');
     const plan=bal-owed;
@@ -412,19 +414,25 @@ function itemRow(i,start){
     <div class="rt">${amt>0?`<span class="amt">${peso(amt)}</span>`:(viewNext?'<span class="pill">Amount not out yet</span>':'<span class="pill warn">Add amount</span>')}
     <div class="bt">${paid?undoBtn(`data-unpaid="${i.id}"`,i.name):amt>0?paidBtn(`data-paid="${i.id}"`,i.name):''}</div></div></div>`;
 }
+function expectedRow(i){
+  return `<div class="bill"><div><span class="nm">${esc(i.name)}</span><div class="mt"><span>Due ${fmtD(i.date)}</span><span>Expected · waiting for the statement</span></div></div>
+    <div class="rt"><span class="amt">${peso(num(i.amount))}</span><div class="bt"></div></div></div>`;
+}
 function renderItems(){
   ensureCats();
   const start=cycleStart();
   // installments billed with a card are part of its statement, so the Bills tab doesn't list them twice
-  const hidden=S.items.filter(i=>!billed(i)&&isHiddenPaid(i)),vis=S.items.filter(i=>!billed(i)&&!isHiddenPaid(i)&&inCycle(i,start));
+  // a BillBuddy statement's paid mark belongs to the statement, so it is listed only in its own cycle
+  const hidden=S.items.filter(i=>!billed(i)&&isHiddenPaid(i)&&(!i.bbDue||inCycle(i,start))),vis=S.items.filter(i=>!billed(i)&&!isHiddenPaid(i)&&inCycle(i,start));
   const done=S.items.filter(i=>!billed(i)&&ended(i,start));
   const later=S.items.filter(i=>repeats(i)&&i.once&&!i.bbDue&&exactDue(i)>=shiftCycle(start,1)).sort((a,b)=>exactDue(a)-exactDue(b));
+  vis.push(...expectedBills(start));
   const html=S.cats.map(c=>{
-    const its=vis.filter(i=>i.cat===c.key);if(!its.length)return '';
+    const its=vis.filter(i=>i.cat===c.key||(i.expected&&!S.cats.some(x=>x.key===i.cat)&&c.kind==='loan'));if(!its.length)return '';
     its.sort((a,b)=>(isPaid(a)-isPaid(b))||dueOf(a,start)-dueOf(b,start));
     const due=its.filter(i=>!isPaid(i)).reduce((s,i)=>s+num(i.amount),0);
     const fk='g:'+c.key;
-    return `<div class="grp${folded.has(fk)?' folded':''}" data-c="${esc(c.color)}"><div class="grp-h"><h3>${foldBtn(fk,esc(c.name)+`<span>${its.length}</span>`)}</h3><span class="sub">${peso(due)}</span></div>${its.map(i=>itemRow(i,start)).join('')}</div>`;
+    return `<div class="grp${folded.has(fk)?' folded':''}" data-c="${esc(c.color)}"><div class="grp-h"><h3>${foldBtn(fk,esc(c.name)+`<span>${its.length}</span>`)}</h3><span class="sub">${peso(due)}</span></div>${its.map(i=>i.expected?expectedRow(i):itemRow(i,start)).join('')}</div>`;
   }).join('');
   const left=vis.filter(i=>!isPaid(i)).reduce((s,i)=>s+num(i.amount),0);
   // "Still to pay" sits beside the Bills heading rather than under the list
@@ -470,6 +478,20 @@ function closeCatEdit(){const c=S.cats.find(x=>x.key===catEditing);if(c&&!c.name
 // loan statement (inBill, the bill's BillBuddy key). Bills and This cycle show only that bill; the Installments
 // tab and the cycle-by-cycle maths count the plans instead, each with its own payments left.
 const billed=i=>!!(i.inCard||i.inBill);
+// Installments on a loan statement (UnionBank's personal loans) wait for its next statement once BillBuddy has
+// dropped the last one. Until it comes, the cycle a payment falls in shows them as one expected bill per
+// statement, so the cycle's totals aren't short by them. It has no Paid button: the real statement replaces it.
+function expectedBills(start){
+  const next=shiftCycle(start,1),groups=new Map();
+  S.items.forEach(p=>{
+    if(!p.inBill||p.inCard||!p.bbWaiting||!(num(p.left)>0)||!(num(p.amount)>0)||partOf(p))return;
+    const due=dueDate(dayOf(p),start);if(due<start||due>=next)return;
+    if(p.bbStatementDue&&iso(due)<=p.bbStatementDue)return;          // that payment's statement already came
+    const g=groups.get(p.inBill)||{expected:true,kind:'loan',name:lenderName(p),cat:p.cat,amount:0,day:due.getDate(),date:due};
+    g.amount=cents(g.amount+num(p.amount));groups.set(p.inBill,g);
+  });
+  return [...groups.values()];
+}
 const hasParts=i=>!!(i.bbRef&&S.items.some(y=>y.inBill===i.bbRef));
 const partOf=i=>i.inBill&&S.items.find(y=>y.bbRef===i.inBill&&!y.inBill);
 // An installment the way BillBuddy shows a statement: 3/12 is the payment this bill makes (the 3rd of 12), or the

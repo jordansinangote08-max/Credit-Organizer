@@ -169,7 +169,7 @@ class SyncTest(unittest.TestCase):
         self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).length'), 0)
         self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbInst).length'), 2)
         self.assertTrue(self.page.evaluate('S.items.every(i=>i.bbWaiting&&billed(i))'))
-        self.assertEqual(self.page.evaluate('compute().total'), 0)
+        self.assertEqual(self.page.evaluate('compute().total'), 8282.23)   # counted as the expected next statement
         self.page.evaluate('b=>applyBB([b],{reconcile:true})', self.union_statement('11', 4, 7, 'november'))
         self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbInst).map(i=>i.bbInst)'), keys)
         self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbInst).map(planOf)'), ['4/12', '7/12'])
@@ -467,6 +467,28 @@ class SyncTest(unittest.TestCase):
         self.assertEqual(self.page.evaluate('Object.values(S.pay)'), [38730])
         self.assertEqual(self.page.evaluate('salaryOf(shiftCycle(cycleStart(),3),true)'), 38730)   # forecasts estimate
         self.assertEqual(self.page.evaluate('salaryOf(shiftCycle(cycleStart(),3))'), 0)
+
+    def test_finished_installment_is_not_due_in_the_next_cycle(self):
+        self.page.evaluate("S.items=[{id:uid++,name:'Maya Credit',kind:'loan',amount:7317.39,day:30,left:1,total:null}];markPaid(S.items[0])")
+        here = self.page.evaluate('cycleStart().getTime()')
+        self.assertEqual(self.page.evaluate("compute().lines.map(l=>l.i.name)"), ['Maya Credit'])   # paid, in its own cycle
+        self.assertEqual(self.page.evaluate("S.items[0].left"), 0)
+        self.assertFalse(self.page.evaluate(f"inCycle(S.items[0],shiftCycle(new Date({here}),1))"))
+
+    def test_installments_waiting_for_their_statement_show_as_expected(self):
+        statement = self.union_statement()
+        self.page.evaluate('b=>{applyBB([b]);markPaid(S.items.find(i=>i.bbDue))}', statement)
+        self.page.clock.set_system_time(datetime(2026, 11, 24, 16, 0, tzinfo=timezone.utc))
+        self.page.evaluate('applyBB([],{reconcile:true})')          # the October statement's cycle is over
+        self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbDue).length'), 0)
+        lines = self.page.evaluate("compute().lines.map(l=>[iso(l.date),l.i.name,l.need,!!l.i.expected])")
+        self.assertEqual(lines, [['2026-11-26', 'UnionBank Loan', 8282.23, True]])
+        self.page.evaluate("selectTab('bills');renderItems()")
+        self.assertIn('Expected', self.page.locator('#itemList').inner_text())
+        # the real statement replaces it
+        self.page.evaluate('b=>applyBB([b],{reconcile:true})', self.union_statement('11', 4, 7, 'november'))
+        lines = self.page.evaluate("compute().lines.map(l=>[l.i.name,!!l.i.expected])")
+        self.assertEqual(lines, [['UnionBank Loan', False]])
 
 if __name__ == '__main__':
     unittest.main()
