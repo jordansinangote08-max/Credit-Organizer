@@ -474,6 +474,12 @@ class SyncTest(unittest.TestCase):
         self.assertEqual(self.page.evaluate("compute().lines.map(l=>l.i.name)"), ['Maya Credit'])   # paid, in its own cycle
         self.assertEqual(self.page.evaluate("S.items[0].left"), 0)
         self.assertFalse(self.page.evaluate(f"inCycle(S.items[0],shiftCycle(new Date({here}),1))"))
+        self.page.evaluate("renderInst()")
+        self.assertIn('Maya Credit', self.page.locator('#instList').inner_text())    # paid, this cycle
+        self.page.evaluate("S.done=cycleKey();renderInst()")                      # every bill paid: next cycle
+        self.assertNotIn('Maya Credit', self.page.locator('#instList').inner_text())
+        self.page.evaluate("delete S.done;renderInst()")                          # Go back: it's there again
+        self.assertIn('Maya Credit', self.page.locator('#instList').inner_text())
 
     def test_installments_waiting_for_their_statement_show_as_expected(self):
         statement = self.union_statement()

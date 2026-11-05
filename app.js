@@ -521,7 +521,8 @@ function renderInst(){
     const n=dueDate(dayOf(i),start),m=new Date(n.getFullYear(),n.getMonth()+(paidInCycle(i)?left:left-1),1);return new Date(m.getFullYear(),m.getMonth(),Math.min(dayOf(i),dim(m.getFullYear(),m.getMonth())))};
   const ym=d=>d?MON[d.getMonth()]+' '+d.getFullYear():'—';
   const groups=new Map();
-  S.items.filter(i=>i.kind==='loan'&&!hasParts(i)).sort((a,b)=>dayOf(a)-dayOf(b)||num(b.left)-num(a.left)||String(a.name).localeCompare(b.name)).forEach(i=>{const k=lenderKey(i);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(i)});
+  // a fully paid installment shows (Paid) in the cycle of its last payment only, not in the cycles after it
+  S.items.filter(i=>i.kind==='loan'&&!hasParts(i)&&!(i.left!=null&&i.left!==''&&num(i.left)<=0&&!isPaid(i))).sort((a,b)=>dayOf(a)-dayOf(b)||num(b.left)-num(a.left)||String(a.name).localeCompare(b.name)).forEach(i=>{const k=lenderKey(i);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(i)});
   let monthly=0,remaining=0,last=null,maxLeftChanged=false;
   const html=[...groups.values()].map(list=>{
     let gm=0,gr=0,gl=null;const r0=list[0];
