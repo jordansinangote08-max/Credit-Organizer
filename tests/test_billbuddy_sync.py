@@ -516,5 +516,15 @@ class SyncTest(unittest.TestCase):
         self.assertEqual(self.page.evaluate('cycleKey()'), old)
         self.assertTrue(self.page.evaluate('isPaid(S.items[1])'))
 
+    def test_income_from_an_earlier_cycle_is_not_listed(self):
+        self.page.evaluate("""() => {const c=cycleStart(),prev=shiftCycle(c,-1),past=shiftCycle(c,-2);
+          S.income=[{id:uid++,label:'Keanu Pay',amount:10836,date:iso(prev)},{id:uid++,label:'Bonus',amount:500,date:iso(c)},
+                    {id:uid++,label:'Very old',amount:1,date:iso(new Date(past.getFullYear(),past.getMonth(),past.getDate()+1))}];renderIncome()}""")
+        text = self.page.locator('#incList').inner_text()
+        self.assertNotIn('Keanu Pay', self.page.evaluate("[...document.querySelectorAll('#incList input[data-k=label]')].map(e=>e.value).join()"))
+        self.assertIn('Bonus', self.page.evaluate("[...document.querySelectorAll('#incList input[data-k=label]')].map(e=>e.value).join()"))
+        self.page.evaluate('rollover()')
+        self.assertEqual(self.page.evaluate('S.income.map(x=>x.label)'), ['Keanu Pay', 'Bonus'])   # last cycle kept for Go back
+
 if __name__ == '__main__':
     unittest.main()

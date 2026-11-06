@@ -265,6 +265,9 @@ function rollover(){
   // the calendar has reached the cycle that started early: nothing to shift any more
   if(S.done&&!S.closed&&S.done!==keyOf(naturalStart())){delete S.done;changed=true}
   const key=cycleKey(),kept=S.closed&&S.closed.key;     // a cycle closed early keeps its paid marks for 24 hours
+  // other money dated two cycles back or earlier is never shown or counted again
+  const old=shiftCycle(cycleStart(),-1),n=S.income.length;S.income=S.income.filter(x=>{const d=parseD(x.date);return !d||d>=old});
+  if(S.income.length!==n)changed=true;
   S.items.forEach(i=>{if(i.paidPrev&&i.paidPrev.cycle!==key&&i.paidPrev.cycle!==kept){delete i.paidPrev;changed=true}});
   S.items=S.items.filter(i=>{
     if(!i.paidCycle||i.paidCycle===key||i.paidCycle===kept)return true;
@@ -594,7 +597,9 @@ function renderIncSum(){
 }
 function renderIncome(){
   S.income.sort((a,b)=>String(a.date||'9').localeCompare(String(b.date||'9')));
-  $('#incList').innerHTML=S.income.map(x=>{const t=incTag(x);return `<div class="inc" data-iid="${x.id}">
+  // money from an earlier cycle doesn't count here, so it isn't listed (Go back still has it)
+  const start=cycleStart(),shown=S.income.filter(x=>{const d=parseD(x.date);return !d||d>=start});
+  $('#incList').innerHTML=shown.map(x=>{const t=incTag(x);return `<div class="inc" data-iid="${x.id}">
     <input data-k="label" aria-label="What is it" placeholder="What is it?" value="${esc(x.label||'')}">
     <input data-k="amount" aria-label="Amount" type="number" inputmode="decimal" step="0.01" min="0" placeholder="₱0.00" value="${x.amount??''}">
     <input data-k="date" aria-label="Date it arrives" type="date" value="${esc(x.date||'')}">
