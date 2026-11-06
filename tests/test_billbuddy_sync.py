@@ -526,5 +526,12 @@ class SyncTest(unittest.TestCase):
         self.page.evaluate('rollover()')
         self.assertEqual(self.page.evaluate('S.income.map(x=>x.label)'), ['Keanu Pay', 'Bonus'])   # last cycle kept for Go back
 
+    def test_one_time_bills_from_a_finished_cycle_are_cleared(self):
+        # today Oct 13, payday 24: the calendar cycle is Sep 24 - Oct 23
+        self.page.evaluate("""() => {S.items=[{id:uid++,name:'Jerard',kind:'bill',once:true,date:'2026-09-20',amount:655,day:20},
+          {id:uid++,name:'Mama Utang',kind:'bill',once:true,date:'2026-10-01',amount:2000,day:1}];rollover();renderItems()}""")
+        self.assertEqual(self.page.evaluate('S.items.map(i=>i.name)'), ['Mama Utang'])
+        self.assertNotIn('Ended', self.page.locator('#itemList').inner_text())
+
 if __name__ == '__main__':
     unittest.main()

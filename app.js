@@ -117,8 +117,6 @@ const inCycle=(i,start)=>{
   const d2=dueDate(dayOf(i),start);if(d2>=shiftCycle(start,1))return false;
   const u=repeats(i)&&untilYm(i.until);return !u||ym(d2)<=u;
 };
-// one-time bills whose date has passed and repeating bills past their last month (kept, listed as ended)
-const ended=(i,start)=>repeats(i)&&!i.bbDue&&(i.once?(exactDue(i)||start)<start:(untilYm(i.until)||Infinity)<ym(dueDate(dayOf(i),start)));
 
 // ---------- data upgrades ----------
 const PATCHES=[
@@ -266,6 +264,11 @@ function rollover(){
   // the calendar has reached the cycle that started early: nothing to shift any more
   if(S.done&&!S.closed&&S.done!==keyOf(naturalStart())){delete S.done;changed=true}
   const key=cycleKey(),kept=S.closed&&S.closed.key;     // a cycle closed early keeps its paid marks for 24 hours
+  // a one-time bill whose pay cycle is over (by the calendar, and past the 24 hours to go back to a cycle
+  // finished early) is never shown or counted again
+  {const t=new Date();t.setHours(0,0,0,0);const cal=prevPay(new Date(t.getFullYear(),t.getMonth(),t.getDate()+1));
+   const from=S.closed&&parseD(S.closed.start)<cal?parseD(S.closed.start):cal,n=S.items.length;
+   S.items=S.items.filter(i=>!(repeats(i)&&i.once&&!i.bbDue&&exactDue(i)&&exactDue(i)<from));if(S.items.length!==n)changed=true}
   // other money dated two cycles back or earlier is never shown or counted again
   const old=shiftCycle(cycleStart(),-1),n=S.income.length;S.income=S.income.filter(x=>{const d=parseD(x.date);return !d||d>=old});
   if(S.income.length!==n)changed=true;
@@ -488,7 +491,6 @@ function renderItems(){
   // installments billed with a card are part of its statement, so the Bills tab doesn't list them twice
   // a BillBuddy statement's paid mark belongs to the statement, so it is listed only in its own cycle
   const hidden=S.items.filter(i=>!billed(i)&&isHiddenPaid(i)&&(!i.bbDue||inCycle(i,start))),vis=S.items.filter(i=>!billed(i)&&!isHiddenPaid(i)&&inCycle(i,start));
-  const done=S.items.filter(i=>!billed(i)&&ended(i,start));
   const later=S.items.filter(i=>repeats(i)&&i.once&&!i.bbDue&&exactDue(i)>=shiftCycle(start,1)).sort((a,b)=>exactDue(a)-exactDue(b));
   vis.push(...expectedBills(start));
   // To pay: unpaid bills, plus ones paid in the last 24 hours (ticked, can be undone); Paid: every bill paid this cycle
@@ -505,9 +507,7 @@ function renderItems(){
   const seg=`<div class="seg2" role="group" aria-label="Show"><button data-bview="pay" aria-pressed="${!pv}">To pay · ${unpaidN}</button><button data-bview="paid" aria-pressed="${pv}">Paid · ${paid.length}</button></div>`;
   $('#itemList').innerHTML=seg+(html||`<div class="glist"><p class="gempty">${pv?'Nothing paid yet this cycle.':'Nothing left to pay this cycle.'}</p></div>`)+
     (!pv&&later.length?`<details class="paidlist"><summary>Coming in a later cycle (${later.length})</summary><div class="later">${later.map(i=>
-      `<div class="laterrow"><span>${esc(i.name||'Untitled bill')} <span class="muted">· ${fmtD(exactDue(i))}, ${exactDue(i).getFullYear()}</span></span><span class="num">${peso(num(i.amount))}</span>${editBtn(`data-edit="${i.id}"`,i.name||"bill")}</div>`).join('')}</div></details>`:'')+
-    (!pv&&done.length?`<details class="paidlist"><summary>Ended (${done.length})</summary><div class="later">${done.map(i=>
-      `<div class="laterrow"><span>${esc(i.name||'Untitled bill')} <span class="muted">· ${i.once?'was due '+fmtD(exactDue(i)):'stopped after '+MON[untilYm(i.until)%100-1]+' '+Math.floor(untilYm(i.until)/100)}</span></span><span class="num">${peso(num(i.amount))}</span>${editBtn(`data-edit="${i.id}"`,i.name||"bill")}</div>`).join('')}</div></details>`:'');
+      `<div class="laterrow"><span>${esc(i.name||'Untitled bill')} <span class="muted">· ${fmtD(exactDue(i))}, ${exactDue(i).getFullYear()}</span></span><span class="num">${peso(num(i.amount))}</span>${editBtn(`data-edit="${i.id}"`,i.name||"bill")}</div>`).join('')}</div></details>`:'');
 }
 
 // ---------- categories window ----------
@@ -1787,7 +1787,6 @@ function monitor(tab){
     const noAmt=vis.filter(i=>!(num(i.amount)>0)).length;if(noAmt)add('warn',plural(noAmt,'bill')+' without an amount');
     const soon=C.lines.filter(l=>!isPaid(l.i)&&days(l.date)>=0&&days(l.date)<=3).sort((a,b)=>a.date-b.date);
     if(soon.length)add('warn',soon[0].i.name+' due '+(days(soon[0].date)===0?'today':days(soon[0].date)===1?'tomorrow':'in '+days(soon[0].date)+' days')+(soon.length>1?' (+'+(soon.length-1)+' more)':''));
-    const nEnded=S.items.filter(i=>ended(i,start)).length;if(nEnded)add('warn',plural(nEnded,'ended bill')+' to remove or update');
     if(!out.length)add('ok','All set this cycle');
   }else if(tab==='inst'){
     const loans=S.items.filter(i=>i.kind==='loan');
