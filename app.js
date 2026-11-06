@@ -110,7 +110,7 @@ const exactDue=i=>parseD(i.bbDue)||(i.once&&repeats(i)?parseD(i.date):null);
 const dueOf=(i,start)=>exactDue(i)||dueDate(dayOf(i),start);
 const inCycle=(i,start)=>{
   // an installment with no payments left is done: it shows (paid) in the cycle of its last payment, not after
-  if(i.kind==='loan'&&i.left!=null&&i.left!==''&&num(i.left)<=0&&i.paidCycle!==keyOf(start))return false;
+  if(i.kind==='loan'&&i.left!=null&&i.left!==''&&num(i.left)<=0&&!paidIn(i,keyOf(start)))return false;
   const d=exactDue(i);if(d)return d>=start&&d<shiftCycle(start,1);
   if(i.once&&repeats(i))return false;
   const d2=dueDate(dayOf(i),start);if(d2>=shiftCycle(start,1))return false;
@@ -239,14 +239,25 @@ function trackCarry(C){
   if(S.cycleLeft&&S.cycleLeft.key!==k&&!(S.carry&&S.carry.key===k)){S.carry={key:k,amount:cents(Math.max(0,num(S.cycleLeft.amount))),auto:true};S.cycleLeft={key:k,amount:left};save();return true}
   if(!S.cycleLeft||S.cycleLeft.key!==k||S.cycleLeft.amount!==left)S.cycleLeft={key:k,amount:left};
 }
-const isPaid=i=>i.bbStatement?i.bbPaidStatement===i.bbStatement:i.paidCycle===cycleKey();
+// For the 24 hours after a cycle is finished early, a bill can be paid in both cycles: last cycle's mark moves to
+// paidPrev when you pay it again in the new one, so paying ahead never makes the finished cycle look unpaid.
+const paidIn=(i,k)=>i.paidCycle===k||i.paidPrev?.cycle===k;
+const isPaid=i=>i.bbStatement?i.bbPaidStatement===i.bbStatement:paidIn(i,cycleKey());
 const paidInCycle=i=>isPaid(i)&&(!i.bbStatementDue||inCycle({...i,bbDue:i.bbStatementDue},cycleStart()));
 const isHiddenPaid=i=>isPaid(i)&&Date.now()-num(i.paidAt)>=DAY;
-function markPaid(i){if(isPaid(i))return;delete S.stay;i.paidAt=Date.now();i.paidCycle=cycleKey();if(i.bbStatement){i.bbPaidStatement=i.bbStatement;i.bbPaidDue=i.bbStatementDue}
+function markPaid(i){if(isPaid(i))return;delete S.stay;
+  if(i.paidCycle&&S.closed&&i.paidCycle===S.closed.key&&i.paidCycle!==cycleKey())i.paidPrev={cycle:i.paidCycle,at:i.paidAt,prevLeft:i.prevLeft??null};
+  i.paidAt=Date.now();i.paidCycle=cycleKey();if(i.bbStatement){i.bbPaidStatement=i.bbStatement;i.bbPaidDue=i.bbStatementDue}
   if(i.kind==='loan'){i.prevLeft=num(i.left);i.left=Math.max(0,num(i.left)-1)}
   if(i.bbRef)S.items.filter(y=>y.inBill===i.bbRef&&!isPaid(y)).forEach(markPaid);
   if(i.kind==='card'&&i.acct)S.items.filter(y=>y.inCard===i.acct&&!isPaid(y)).forEach(markPaid)}
-function undoPaid(i){if(i.kind==='loan'&&i.prevLeft!=null)i.left=i.prevLeft;delete i.paidAt;delete i.paidCycle;delete i.prevLeft;delete i.bbPaidStatement;delete i.bbPaidDue;
+function undoPaid(i){
+  if(!i.bbStatement&&i.paidPrev&&i.paidPrev.cycle===cycleKey()){   // undo last cycle's payment, keep the new one
+    if(i.kind==='loan')i.left=num(i.left)+1;delete i.paidPrev;
+  }else{
+    if(i.kind==='loan'&&i.prevLeft!=null)i.left=i.prevLeft;delete i.paidAt;delete i.paidCycle;delete i.prevLeft;delete i.bbPaidStatement;delete i.bbPaidDue;
+    const p=i.paidPrev;if(p){i.paidCycle=p.cycle;if(p.at)i.paidAt=p.at;if(p.prevLeft!=null)i.prevLeft=p.prevLeft;delete i.paidPrev}
+  }
   if(i.bbRef)S.items.filter(y=>y.inBill===i.bbRef&&isPaid(y)).forEach(undoPaid);
   if(i.kind==='card'&&i.acct)S.items.filter(y=>y.inCard===i.acct&&isPaid(y)).forEach(undoPaid)}
 function rollover(){
@@ -254,6 +265,7 @@ function rollover(){
   // the calendar has reached the cycle that started early: nothing to shift any more
   if(S.done&&!S.closed&&S.done!==keyOf(naturalStart())){delete S.done;changed=true}
   const key=cycleKey(),kept=S.closed&&S.closed.key;     // a cycle closed early keeps its paid marks for 24 hours
+  S.items.forEach(i=>{if(i.paidPrev&&i.paidPrev.cycle!==key&&i.paidPrev.cycle!==kept){delete i.paidPrev;changed=true}});
   S.items=S.items.filter(i=>{
     if(!i.paidCycle||i.paidCycle===key||i.paidCycle===kept)return true;
     changed=true;delete i.paidAt;delete i.paidCycle;delete i.prevLeft;
@@ -1102,7 +1114,7 @@ function goCurrent(){
 // finished any more, so the planner goes back to it.
 function closedHasUnpaid(){
   const c=S.closed;if(!c)return false;
-  const start=parseD(c.start),paidThen=i=>i.bbStatement?i.bbPaidStatement===i.bbStatement:i.paidCycle===c.key;
+  const start=parseD(c.start),paidThen=i=>i.bbStatement?i.bbPaidStatement===i.bbStatement:paidIn(i,c.key);
   return S.items.some(i=>!billed(i)&&num(i.amount)>0&&inCycle(i,start)&&!paidThen(i));
 }
 function paintCycleBar(C){

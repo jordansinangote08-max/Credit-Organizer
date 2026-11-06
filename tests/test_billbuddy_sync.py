@@ -496,5 +496,25 @@ class SyncTest(unittest.TestCase):
         lines = self.page.evaluate("compute().lines.map(l=>[l.i.name,!!l.i.expected])")
         self.assertEqual(lines, [['UnionBank Loan', False]])
 
+    def test_paying_ahead_after_finishing_a_cycle_keeps_the_finished_cycle_paid(self):
+        self.page.evaluate("""() => {cloudReady=true;draft=null;
+          S.items=[{id:uid++,name:'Rent',kind:'essential',amount:4000,day:28},{id:uid++,name:'MariBank Loan',kind:'loan',amount:7256.67,day:26,left:3,total:null}];
+          S.items.forEach(markPaid);render();}""")
+        old = self.page.evaluate('S.closed&&S.closed.key')
+        self.assertTrue(old)                                          # every bill paid: moved to the next cycle
+        self.assertEqual(self.page.evaluate('S.items[1].left'), 2)
+        self.page.evaluate("markPaid(S.items[1]);render()")         # pay next month's MariBank in the new cycle
+        self.assertTrue(self.page.evaluate('!!S.closed'))            # still in the new cycle, not sent back
+        self.assertNotEqual(self.page.evaluate('cycleKey()'), old)
+        self.assertEqual(self.page.evaluate('S.items[1].left'), 1)
+        self.assertTrue(self.page.evaluate('isPaid(S.items[1])'))
+        self.assertFalse(self.page.evaluate('closedHasUnpaid()'))
+        self.page.evaluate("undoPaid(S.items[1]);render()")         # undo only the new payment
+        self.assertEqual(self.page.evaluate('S.items[1].left'), 2)
+        self.assertTrue(self.page.evaluate('!!S.closed'))
+        self.page.evaluate("markPaid(S.items[1]);reopenClosed()")  # Go back: last cycle still shows it paid
+        self.assertEqual(self.page.evaluate('cycleKey()'), old)
+        self.assertTrue(self.page.evaluate('isPaid(S.items[1])'))
+
 if __name__ == '__main__':
     unittest.main()
