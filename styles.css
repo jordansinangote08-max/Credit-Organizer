@@ -1138,3 +1138,146 @@ body::before{display:none}
 }
 @media (max-width:1023px) and (max-width:520px){.blue-win{height:min(620px,calc(100dvh - 102px - var(--safe-t) - var(--safe-b)))}}
 @media (prefers-contrast:more){.tick{border-color:var(--ink)}.tabs{background:var(--surface)}}
+
+/* ---------- iOS screens ----------
+   The design's screens: grouped white lists under small grey headings on the grey ground, summary cards with
+   one large number, rows with a round tick, a To pay / Paid switch on Bills, card pictures in each bank's color,
+   and the bill as a sheet with Cancel / Done, its amount in the middle and Mark as paid. */
+.phone-only{display:none}
+.gsec{display:grid;gap:6px}
+.ghdr{margin:0;padding:0 16px;font-family:var(--body);font-size:.8125rem;font-weight:400;letter-spacing:.03em;text-transform:uppercase;color:var(--muted)}
+.ghdr.big{padding:0 4px;font-family:var(--display);font-size:1.375rem;font-weight:700;letter-spacing:-.01em;text-transform:none;color:var(--ink)}
+.ghdr-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding-right:4px}
+.linkbtn{border:0;background:transparent;padding:0;font:inherit;font-size:1.0625rem;color:var(--accent);min-height:32px}
+.glist{background:var(--surface);border-radius:12px;overflow:hidden}
+.glist>*+*{box-shadow:inset 0 1px 0 var(--line)}
+.grow{display:flex;align-items:center;gap:12px;padding:10px 16px;min-height:52px}
+.gmain{flex:1;min-width:0;display:grid;gap:1px;font-size:1.0625rem}
+.gmain .nm{font-weight:400;font-size:1.0625rem;text-align:left}
+.gsub{font-size:.8125rem;color:var(--muted)}
+.gamt{font-size:1.0625rem;font-variant-numeric:tabular-nums;white-space:nowrap}
+.gval{font-size:1.0625rem;color:var(--muted);text-align:right}
+.gempty{margin:0;padding:14px 16px;color:var(--muted)}
+.muted.gamt{color:var(--muted)}
+/* This cycle */
+.sumcard{background:var(--surface);border-radius:16px;padding:20px;display:grid;gap:16px}
+.sum-main{display:grid;gap:2px;border:0;background:transparent;padding:0;text-align:left;font:inherit;color:inherit}
+.sum-l{font-size:.9375rem;color:var(--muted)}
+.sum-big{font-family:var(--display);font-size:2.5rem;line-height:1.15;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.sum-bar{height:8px;border-radius:4px;background:var(--sunk);overflow:hidden}
+.sum-bar i{display:block;height:100%;background:var(--accent);border-radius:4px}
+.sum-bar.over i{background:var(--bad)}
+.sum-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.sum-stats div{display:grid;gap:2px;min-width:0}
+.sum-stats span{font-size:.8125rem;color:var(--muted)}
+.sum-stats b{font-size:.9375rem;font-weight:600;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.sum-act{justify-self:start;border:0;border-radius:999px;background:var(--accent-soft);color:var(--accent);font:inherit;font-size:.9375rem;font-weight:600;padding:8px 16px;min-height:36px}
+#salSlot .salrow{display:block}
+#salSlot .salrow>div:first-child{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 16px;min-height:52px}
+#salSlot #salLabel{font-size:1.0625rem;font-weight:400;letter-spacing:0;text-transform:none;color:var(--ink)}
+#salSlot .money{border:0;padding:0;gap:2px;justify-content:flex-end;flex:1;color:var(--ok)}
+#salSlot .money input{font-family:var(--body);font-size:1.0625rem;font-weight:400;text-align:right;color:var(--ok);width:9em;max-width:100%}
+#salSlot .money input::placeholder{color:var(--muted)}
+#salSlot .payday{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 16px;min-height:52px;box-shadow:inset 0 1px 0 var(--line);font-size:1.0625rem;color:var(--ink)}
+#salSlot .payday>label{flex:1}
+#salSlot+#moneyInRows>.grow:first-child,#moneyInRows>.grow{box-shadow:inset 0 1px 0 var(--line)}
+/* Bills */
+.seg2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));padding:2px;border-radius:9px;background:var(--sunk);margin-bottom:6px}
+.seg2 button{border:0;border-radius:7px;background:transparent;font:inherit;font-size:.8125rem;font-weight:500;padding:7px 0;color:var(--ink)}
+.seg2 button[aria-pressed="true"]{background:var(--surface);font-weight:600;box-shadow:0 3px 8px rgb(0 0 0 / .12),0 1px 1px rgb(0 0 0 / .04)}
+.seg2 button:active{transform:none}
+#itemList{display:grid;gap:18px}
+#itemList .glist .bill{padding:10px 16px;border-top:0;min-height:56px}
+#itemList .glist .bill .nm{font-weight:400;font-size:1.0625rem}
+#itemList .glist .bill .mt{font-size:.8125rem}
+#panel-bills>.sec{background:transparent;padding:0;gap:14px}
+#panel-bills>.sec>.sec-h{padding:0 4px}
+.bills-left{font-size:.9375rem;color:var(--muted)}
+/* Installments and Credit cards */
+#panel-inst>.sec,#panel-acct>.sec{background:transparent;padding:0;gap:20px}
+.hsum{background:var(--surface);border-radius:16px;padding:18px 20px;display:grid;gap:12px}
+.sum2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.sum2 div,.csum div{display:grid;gap:2px;min-width:0}
+.sum2 span,.csum div span{font-size:.8125rem;color:var(--muted)}
+.sum2 b{font-family:var(--display);font-size:1.5rem;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.hsum .hsum-sub{font-size:.9375rem;color:var(--muted)}
+#instList{display:grid;gap:20px}
+#instList .lgrp[data-bank],#instList .lgrp{background:transparent;border:0;border-radius:0;padding:0;box-shadow:none;display:grid;gap:6px}
+#instList .lgrp-h{padding:0 16px;border-top:0}
+#instList .lgrp-h h3,#instList .lgrp-h h3 .fold{font-family:var(--body);font-size:.8125rem;font-weight:400;letter-spacing:.03em;text-transform:uppercase;color:var(--muted)}
+#instList .lgrp-h .fold::before,#instList .lgrp-h .fold .chev{display:none}
+#instList .lgrp-h .lgrp-amt{font-size:.8125rem;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+#instList .lgrp[data-bank] .sub,#instList .lrows .sub{border:0;padding:14px 16px;margin:0;box-shadow:none}
+#instList .lrows>*+*{box-shadow:inset 0 1px 0 var(--line)}
+#instList .lgrp[data-bank] .bar,#instList .bar{background:var(--sunk)}
+.pmark{border:0;border-radius:999px;background:var(--accent-soft);color:var(--accent);font:inherit;font-size:.9375rem;font-weight:600;padding:7px 16px;min-height:34px}
+.lwait{display:flex;align-items:center;gap:8px;padding:12px 16px;background:var(--warn-soft);color:var(--warn);font-size:.9375rem}
+.lwait svg{width:16px;height:16px;flex:none}
+.csum{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.csum b{font-family:var(--display);font-size:1.75rem;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.cpct{font-size:.9375rem;font-weight:600}
+#acctList{display:block}
+.crow{width:100%;display:flex;align-items:center;gap:12px;padding:12px 16px;min-height:66px;border:0;background:transparent;font:inherit;color:var(--ink);text-align:left}
+.crow:active{transform:none;background:var(--sunk)}
+.cchip{width:44px;height:30px;flex:none;border-radius:6px;background:var(--bk,var(--c-slate));display:grid;place-items:end start;padding:4px 5px}
+.cchip i{width:10px;height:7px;border-radius:2px;background:#e9c46a}
+.cchip.big{width:56px;height:38px;border-radius:8px;padding:6px 7px;margin-bottom:6px}
+.cchip.big i{width:12px;height:9px}
+.cmain{flex:1;min-width:0;display:grid;gap:6px}
+.ctop{display:flex;justify-content:space-between;gap:8px}
+.cname{font-size:1.0625rem;overflow-wrap:anywhere}
+.camt{font-size:1.0625rem;font-variant-numeric:tabular-nums}
+.cstate{font-size:.9375rem;font-weight:600;color:var(--muted)}
+.crow .ubar,.hsum .ubar{display:block;height:4px;border-radius:2px;background:var(--sunk);overflow:hidden}
+.hsum .ubar.big{height:6px;border-radius:3px}
+.crow .ubar i,.hsum .ubar i{display:block;height:100%;background:var(--accent)}
+.crow .ubar i.bad,.hsum .ubar i.bad{background:var(--bad)}
+.hsum .ubar i{background:var(--ok)}
+.cfacts{font-size:.8125rem;color:var(--muted)}
+/* the bill sheet */
+#billDlg{background:var(--bg)}
+#billDlg .dlg-in{gap:22px}
+.sheet-h{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px}
+.sheet-h h2{text-align:center;font-family:var(--body);font-size:1.0625rem;font-weight:600;letter-spacing:0}
+.navbtn{border:0;background:transparent;padding:0 4px;min-height:44px;font:inherit;font-size:1.0625rem;color:var(--accent)}
+.navbtn.strong{font-weight:600}
+.navbtn:active{transform:none;opacity:.5}
+#billBody{display:grid;gap:22px}
+.shero{display:grid;justify-items:center;gap:4px;text-align:center}
+.sbig{font-family:var(--display);font-size:2.5rem;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.ssub{font-size:.9375rem;color:var(--muted)}
+#billBody .bbnote{margin:-14px 0 0;padding:0 16px;font-size:.8125rem;line-height:1.4;color:var(--muted)}
+.bigbtn{width:100%;border:0;border-radius:14px;background:var(--accent);color:var(--accent-ink);font:inherit;font-size:1.0625rem;font-weight:600;min-height:52px}
+.bigbtn.quiet{background:var(--sunk);color:var(--ink)}
+.dangerrow{width:100%;border:0;border-radius:12px;background:var(--surface);color:var(--bad);font:inherit;font-size:1.0625rem;min-height:48px}
+#billBody .form.flat{background:var(--surface);border-radius:12px;padding:0;gap:0;grid-template-columns:minmax(0,1fr)}
+#billBody .form.flat>.field,#billBody .form.flat>.check{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:2px 12px;padding:6px 16px;min-height:50px;margin:0}
+#billBody .form.flat>*+*{box-shadow:inset 0 1px 0 var(--line)}
+#billBody .form.flat .field>label{font-size:1.0625rem;font-weight:400;color:var(--ink)}
+#billBody .form.flat .field input,#billBody .form.flat .field select{flex:1;max-width:62%;min-width:0;border:0;background:transparent;text-align:right;text-align-last:right;font-size:1.0625rem;padding:8px 0;color:var(--ink);box-shadow:none}
+#billBody .form.flat .field input:focus,#billBody .form.flat .field select:focus{outline:none;box-shadow:none}
+#billBody .form.flat .field .hint{flex-basis:100%;font-size:.8125rem;color:var(--muted)}
+#billBody .form.flat>.sheet-acts{display:grid;gap:10px;padding:22px 0 0;background:var(--bg);box-shadow:none}
+@media (max-width:1023px){
+  .phone-only{display:grid}
+  .hero,#advice{display:none!important}
+  .mon[data-worst="ok"]{display:none}
+}
+
+/* tidy-ups after checking the screens against the design */
+.gmain .openw,#itemList .glist .nm.openw,#billBody .nm{text-decoration:none}
+.cstate,.camt{white-space:nowrap;flex:none}
+.cfacts span{white-space:nowrap}
+#instList .pmark{all:unset;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:0 16px;border-radius:999px;cursor:pointer;
+  background:var(--accent-soft);color:var(--accent);font-size:.9375rem;font-weight:600}
+#instList .pmark:active{opacity:.6;transform:none}
+#salSlot .money{flex:none;gap:1px}
+#salSlot .money>span{font-size:1.0625rem;color:var(--ok)}
+#salSlot .money input{min-width:2ch;max-width:12ch;padding:0}
+#salSlot .payday{gap:6px}
+#salSlot .payday select,#salSlot .payday input{border:0;background:transparent;font-size:1.0625rem;color:var(--muted);padding:6px 0;box-shadow:none}
+#salSlot .payday select{text-align:right;text-align-last:right}
+#salSlot .payday input{width:2.6ch;text-align:center;color:var(--ink)}
+#salSlot .payday .pdpart{color:var(--muted)}
+.cstate.t-ok{color:var(--ok)}
+#instList .lgrp .lrows>*+*{box-shadow:inset 0 1px 0 var(--line)}

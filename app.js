@@ -17,6 +17,7 @@ const IC={
   bad:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 4.3L2.6 18a2 2 0 001.7 3h15.4a2 2 0 001.7-3L13.7 4.3a2 2 0 00-3.4 0z"/><path d="M12 9.5v4"/><path d="M12 17.2h.01"/></svg>',
   warn:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><path d="M12 16.3h.01"/></svg>',
   ok:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.2 12.4l2.6 2.6 5-5.2"/></svg>',
+  clock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
   chev:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 6l6 6-6 6"/></svg>'
 };
 const editBtn=(attr,name)=>`<button class="ghost ib" ${attr} aria-label="Edit ${esc(name)}" title="Edit">${IC.edit}</button>`;
@@ -314,6 +315,44 @@ function renderStatus(C){
   }
 }
 
+// ---------- this cycle on a phone ----------
+// The design's This cycle: what's left after every bill (or how short you are) with money in, bills and paid,
+// the next three bills to pay, and where the money comes from; the salary and payday fields move into that
+// Money in list (on a computer they stay in the side column).
+const phoneLayout=matchMedia('(max-width:1023px)');
+function placeSalary(){const r=$('.salrow'),to=phoneLayout.matches?$('#salSlot'):$('.hero');if(r&&to&&r.parentElement!==to)to.prepend(r);fitSalary()}
+// in the Money in list the salary field is as wide as its number, so the ₱ sits right beside it
+function fitSalary(){const el=$('#salary');if(el)el.style.width=phoneLayout.matches?Math.max(2,String(el.value||el.placeholder||'').length+1)+'ch':''}
+document.addEventListener('input',e=>{if(e.target.id==='salary')fitSalary()});
+phoneLayout.addEventListener('change',()=>{placeSalary();syncInputs()});placeSalary();
+function renderPhoneCycle(C){
+  const sc=$('#sumCard');if(!sc)return;
+  const short=C.gap>0.004,left=Math.max(0,C.surplus),pct=C.avail>0?Math.min(100,C.total/C.avail*100):(C.total>0?100:0);
+  const extra=C.surplus-Math.max(0,num(S.buffer));
+  const act=viewNext?'':short?'<button class="sum-act" data-goto="borrow">See options</button>':extra>0.004?'<button class="sum-act" data-ahead="1">Pay ahead</button>':'';
+  sc.innerHTML=`<button class="sum-main" data-breakdown="1" aria-haspopup="dialog"><span class="sum-l">${short?'Short this cycle':'Left after every bill'}</span><span class="sum-big ${short?'t-bad':'t-ok'}">${peso(short?C.gap:left)}</span></button>
+    <div class="sum-bar${pct>=100?' over':''}" role="img" aria-label="Bills use ${Math.round(pct)}% of money in"><i style="width:${pct.toFixed(1)}%"></i></div>
+    <div class="sum-stats"><div><span>Money in</span><b>${peso(C.avail)}</b></div><div><span>Bills</span><b>${peso(C.total)}</b></div><div><span>Paid</span><b>${peso(C.paidAmt)}</b></div></div>${act}`;
+  const t=new Date();t.setHours(0,0,0,0);
+  const when=d=>d.getTime()===t.getTime()?'Today':WD[d.getDay()]+', '+fmtD(d);
+  const next=C.lines.filter(l=>!isPaid(l.i)).sort((a,b)=>a.date-b.date).slice(0,3);
+  $('#upNext').innerHTML=`<div class="ghdr-row"><h3 class="ghdr big">Up next</h3><button class="linkbtn" data-goto="bills">See all</button></div>`+
+    (next.length?`<div class="glist">${next.map(l=>{const i=l.i,exp=i.expected;
+      return `<div class="grow">${exp?'<span class="tick none" aria-hidden="true"></span>':`<button class="tick" data-npaid="${i.id}" aria-label="Mark ${esc(i.name)} paid"></button>`}
+        <span class="gmain">${exp?`<span class="nm">${esc(i.name)}</span>`:`<button class="nm openw" data-edit="${i.id}" aria-haspopup="dialog">${esc(i.name)}</button>`}
+        <span class="gsub${exp?' t-warn':''}">${when(l.date)} · ${exp?'Expected':esc(catOf(i)?.name||'')}</span></span>
+        <span class="gamt${exp?' muted':''}">${peso(l.need)}</span></div>`}).join('')}</div>`
+    :'<div class="glist"><p class="gempty">Every bill this cycle is paid.</p></div>');
+  const rows=[...(C.carry>0?[['From last cycle',C.carry]]:[]),...C.inc.map(o=>[o.x.label||'Other money',num(o.x.amount)])];
+  $('#moneyInRows').innerHTML=rows.map(r=>`<div class="grow"><span class="gmain">${esc(r[0])}</span><span class="gamt t-ok">+${peso(r[1])}</span></div>`).join('');
+}
+document.addEventListener('click',e=>{
+  if(e.target.closest('[data-breakdown]')){cycleInfo();return}
+  const b=e.target.closest('#upNext button');if(!b)return;
+  if(b.dataset.edit){openBill(+b.dataset.edit);return}
+  const it=b.dataset.npaid&&S.items.find(i=>i.id==b.dataset.npaid);if(it){markPaid(it);save();renderAll()}
+});
+
 // ---------- this cycle ----------
 const realRate=i=>num(i.rate)*(i.addon?1.65:1);
 function renderAdvice(C){
@@ -388,17 +427,25 @@ const dayFrom=el=>{const d=parseD(el.value);return d?d.getDate():null};
 const catOptions=sel=>S.cats.map(c=>`<option value="${esc(c.key)}" ${c.key===sel?'selected':''}>${esc(c.name)}</option>`).join('');
 // A bill BillBuddy sent is its statement: only its name and category are yours to change, the rest comes from BillBuddy
 const fromBB=i=>!!i.bbDue;
+const WDL=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+// A BillBuddy bill opens as a sheet: its amount and due date large in the middle (a card shows its card), the
+// name and category to change, what the statement says, and Mark as paid.
 function bbForm(i){
-  const facts=[[i.kind==='card'?'Statement amount':'Amount',peso(num(i.amount))],['Due date',fmtD(dueOf(i,cycleStart()))+', '+dueOf(i,cycleStart()).getFullYear()]];
-  if(last4Of(i))facts.push(['Last 4 digits','•••• '+esc(last4Of(i))]);
+  const due=dueOf(i,cycleStart()),paid=isPaid(i),a=i.kind==='card'&&acctOf(i);
+  const cs=prevPay(new Date(due.getFullYear(),due.getMonth(),due.getDate()+1)),ce=nextPay(cs),cend=new Date(ce.getFullYear(),ce.getMonth(),ce.getDate()-1);
+  const facts=[[i.kind==='card'?'Statement':'Amount',peso(num(i.amount))]];
+  if(last4Of(i))facts.push(['Card','•••• '+esc(last4Of(i))]);
   if(i.kind==='loan'&&i.total)facts.push(['Payments left',num(i.left)+' of '+num(i.total)]);
-  return `<div class="form flat" data-id="${i.id}">
-    <div class="field wide"><label for="n${i.id}">Name</label><input id="n${i.id}" data-k="name" value="${esc(i.name)}"></div>
-    <div class="field wide"><label for="k${i.id}">Category</label><select id="k${i.id}" data-k="cat">${catOptions(catOf(i)?.key)}</select></div>
-    <dl class="bbfacts wide">${facts.map(([k,v])=>`<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>
-    <p class="bbnote wide">From BillBuddy. Only the name and category can be changed here.</p>
-    <div class="acts"><span></span><button class="btn" data-done="1">Done</button></div>
-  </div>`;
+  facts.push(['Pay cycle',fmtD(cs)+' – '+fmtD(cend)]);
+  return `<div class="shero">${i.kind==='card'?`<span class="cchip big" data-bank="${bankColor(a?a.name:i.name)}" aria-hidden="true"><i></i></span>`:''}
+      <span class="sbig">${peso(num(i.amount))}</span><span class="ssub">${paid?'<span class="t-ok">Paid</span> · ':''}Due ${WDL[due.getDay()]}, ${fmtD(due)}</span></div>
+    <div class="form flat glist sform" data-id="${i.id}">
+      <div class="field"><label for="n${i.id}">Name</label><input id="n${i.id}" data-k="name" value="${esc(i.name)}"></div>
+      <div class="field"><label for="k${i.id}">Category</label><select id="k${i.id}" data-k="cat">${catOptions(catOf(i)?.key)}</select></div>
+    </div>
+    <div class="glist sinfo">${facts.map(([k,v])=>`<div class="grow"><span class="gmain">${k}</span><span class="gval">${v}</span></div>`).join('')}</div>
+    <p class="bbnote">From BillBuddy. The amount and due date come from the statement, so only the name and category can be changed.</p>
+    ${num(i.amount)>0?`<button class="bigbtn${paid?' quiet':''}" data-billpaid="${i.id}">${paid?'Mark as unpaid':'Mark as paid'}</button>`:''}`;
 }
 function itemForm(i,isNew){
   if(fromBB(i)&&!isNew)return bbForm(i);
@@ -414,7 +461,7 @@ function itemForm(i,isNew){
     ${i.kind==='loan'?`<div class="field"><label for="l${i.id}">Payments left</label><input id="l${i.id}" data-k="left" type="number" inputmode="numeric" min="0" value="${i.left??''}"></div><div class="field"><label for="t${i.id}">Total payments</label><input id="t${i.id}" data-k="total" type="number" inputmode="numeric" min="0" value="${i.total??''}"></div>`:''}
     ${i.kind==='card'||i.kind==='loan'?`<div class="field"><label for="f4${i.id}">Last 4 digits</label><input id="f4${i.id}" data-k="last4" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="1234" autocomplete="off" value="${esc(last4Of(i))}"><span class="hint">Matches BillBuddy bills.</span></div>`:''}
     ${i.kind==='loan'?`<div class="field"><label for="r${i.id}">Interest %/month</label><input id="r${i.id}" data-k="rate" type="number" inputmode="decimal" step="0.01" min="0" value="${i.rate??''}"></div>`:''}
-    <div class="acts">${isNew?'<span></span>':delBtn(`data-del="${i.id}"`,"Remove "+(i.name||"this bill"))}<button class="btn" data-done="1">${isNew?'Add':'Done'}</button></div>
+    ${isNew?'':`<div class="acts sheet-acts wide">${num(i.amount)>0?`<button class="bigbtn${isPaid(i)?' quiet':''}" data-billpaid="${i.id}">${isPaid(i)?'Mark as unpaid':'Mark as paid'}</button>`:''}<button class="dangerrow" data-del="${i.id}">Delete ${i.kind==='loan'?'installment':'bill'}</button></div>`}
   </div>`;
 }
 function itemRow(i,start){
@@ -434,6 +481,7 @@ function expectedRow(i){
   return `<div class="bill tbill expected"><span class="tick none" aria-hidden="true"></span><div class="bmain"><span class="nm">${esc(i.name)}</span><div class="mt"><span>Due ${fmtD(i.date)}</span><span class="t-warn">Expected · waiting for the statement</span></div></div>
     <div class="rt"><span class="amt">${peso(num(i.amount))}</span></div></div>`;
 }
+let billView='pay';   // the Bills tab's To pay / Paid switch
 function renderItems(){
   ensureCats();
   const start=cycleStart();
@@ -443,21 +491,22 @@ function renderItems(){
   const done=S.items.filter(i=>!billed(i)&&ended(i,start));
   const later=S.items.filter(i=>repeats(i)&&i.once&&!i.bbDue&&exactDue(i)>=shiftCycle(start,1)).sort((a,b)=>exactDue(a)-exactDue(b));
   vis.push(...expectedBills(start));
+  // To pay: unpaid bills, plus ones paid in the last 24 hours (ticked, can be undone); Paid: every bill paid this cycle
+  const toPay=vis,paid=[...vis.filter(isPaid),...hidden],unpaidN=vis.filter(i=>!isPaid(i)).length,pv=billView==='paid';
+  const list=pv?paid:toPay;
   const html=S.cats.map(c=>{
-    const its=vis.filter(i=>i.cat===c.key||(i.expected&&!S.cats.some(x=>x.key===i.cat)&&c.kind==='loan'));if(!its.length)return '';
+    const its=list.filter(i=>i.cat===c.key||(i.expected&&!S.cats.some(x=>x.key===i.cat)&&c.kind==='loan'));if(!its.length)return '';
     its.sort((a,b)=>(isPaid(a)-isPaid(b))||dueOf(a,start)-dueOf(b,start));
-    const due=its.filter(i=>!isPaid(i)).reduce((s,i)=>s+num(i.amount),0);
-    const fk='g:'+c.key;
-    return `<div class="grp${folded.has(fk)?' folded':''}" data-c="${esc(c.color)}"><div class="grp-h"><h3>${foldBtn(fk,esc(c.name)+`<span>${its.length}</span>`)}</h3><span class="sub">${peso(due)}</span></div>${its.map(i=>i.expected?expectedRow(i):itemRow(i,start)).join('')}</div>`;
+    const sum=(pv?its:its.filter(i=>!isPaid(i))).reduce((s,i)=>s+num(i.amount),0);
+    return `<section class="gsec" data-c="${esc(c.color)}"><h3 class="ghdr">${esc(c.name)} · ${peso(sum)}</h3><div class="glist">${its.map(i=>i.expected?expectedRow(i):itemRow(i,start)).join('')}</div></section>`;
   }).join('');
   const left=vis.filter(i=>!isPaid(i)).reduce((s,i)=>s+num(i.amount),0);
-  // "Still to pay" sits beside the Bills heading rather than under the list
-  const bl=$('#billsLeft');if(bl)bl.innerHTML=left>0.004?`Still to pay <b>${peso(left)}</b>`:'All paid';
-  $('#itemList').innerHTML=(html||'<p class="empty">Nothing left to pay this cycle.</p>')+
-    (hidden.length?`<details class="paidlist"><summary>Paid this cycle (${hidden.length})</summary><ul>${hidden.map(i=>`<li><span>${esc(i.name)}</span><span class="num">${peso(num(i.amount))}</span></li>`).join('')}</ul></details>`:'')+
-    (later.length?`<details class="paidlist"><summary>Coming in a later cycle (${later.length})</summary><div class="later">${later.map(i=>
+  const bl=$('#billsLeft');if(bl)bl.innerHTML=left>0.004?`${peso(left)} left to pay this cycle`:'All paid this cycle';
+  const seg=`<div class="seg2" role="group" aria-label="Show"><button data-bview="pay" aria-pressed="${!pv}">To pay · ${unpaidN}</button><button data-bview="paid" aria-pressed="${pv}">Paid · ${paid.length}</button></div>`;
+  $('#itemList').innerHTML=seg+(html||`<div class="glist"><p class="gempty">${pv?'Nothing paid yet this cycle.':'Nothing left to pay this cycle.'}</p></div>`)+
+    (!pv&&later.length?`<details class="paidlist"><summary>Coming in a later cycle (${later.length})</summary><div class="later">${later.map(i=>
       `<div class="laterrow"><span>${esc(i.name||'Untitled bill')} <span class="muted">· ${fmtD(exactDue(i))}, ${exactDue(i).getFullYear()}</span></span><span class="num">${peso(num(i.amount))}</span>${editBtn(`data-edit="${i.id}"`,i.name||"bill")}</div>`).join('')}</div></details>`:'')+
-    (done.length?`<details class="paidlist"><summary>Ended (${done.length})</summary><div class="later">${done.map(i=>
+    (!pv&&done.length?`<details class="paidlist"><summary>Ended (${done.length})</summary><div class="later">${done.map(i=>
       `<div class="laterrow"><span>${esc(i.name||'Untitled bill')} <span class="muted">· ${i.once?'was due '+fmtD(exactDue(i)):'stopped after '+MON[untilYm(i.until)%100-1]+' '+Math.floor(untilYm(i.until)/100)}</span></span><span class="num">${peso(num(i.amount))}</span>${editBtn(`data-edit="${i.id}"`,i.name||"bill")}</div>`).join('')}</div></details>`:'');
 }
 
@@ -562,7 +611,7 @@ function renderInst(){
       // a paid installment says "Paid" (a label, not a button) with a separate small Undo; an unpaid one says "Mark paid"
       const toggle=billed(i)?''
         :isPaid(i)?`<span class="ptag">${IC.check}Paid</span>`+(isHiddenPaid(i)?'':`<button class="pundo" data-iundo="${i.id}" aria-label="Undo paid for ${esc(i.name)}">Undo</button>`)
-        :left>0?`<button class="pmark" data-ipaid="${i.id}" aria-label="Mark ${esc(i.name)} paid">Mark paid</button>`:'';
+        :left>0?`<button class="pmark" data-ipaid="${i.id}" aria-label="Mark ${esc(i.name)} paid">Pay</button>`:'';
       return `<div class="sub${paidNow?' is-done':''}">
         <div class="sub-h"><button class="sub-name openw" data-isched="${i.id}" aria-haspopup="dialog" title="Payment schedule">${esc(calm(nm))}</button><span class="pay">${peso(pay)}</span></div>
         <div class="bar ${paidNow?'is-paid':'is-unpaid'}" role="img" aria-label="${runOf?(runOf-left)+' of '+runOf+' paid; ':''}${i.bbWaiting?'waiting for next bill':isPaid(i)?'current payment paid':'current payment unpaid'}"><i style="width:${pct}%"></i></div>
@@ -574,10 +623,14 @@ function renderInst(){
     const fk='l:'+lenderKey(r);
     // a lender with one installment is just its row; several get a quiet header with their monthly total
     const bk=bankColor(r.inCard?S.accounts.find(a=>a.key===r.inCard)?.name:lenderName(r));
-    if(list.length===1&&!r.inCard)return `<div class="lgrp solo" data-bank="${bk}">${rows}</div>`;
-    return `<div class="lgrp${folded.has(fk)?' folded':''}" data-bank="${bk}"><div class="lgrp-h"><h3>${foldBtn(fk,r.inCard?esc(S.accounts.find(a=>a.key===r.inCard)?.name||'Card')+'<span class="lgrp-tag">on the card</span>':esc(lenderName(r)))}</h3><span class="lgrp-amt">${peso(gm)}</span></div>${rows}</div>`;
+    // each lender is a list under a small heading; one still waiting for its statement says so under its rows
+    const wait=list.some(i=>i.bbWaiting&&num(i.left)>0)?`<div class="lwait">${IC.clock||''}<span>Waiting for the next statement</span></div>`:'';
+    if(list.length===1&&!r.inCard)return `<div class="lgrp solo" data-bank="${bk}"><div class="glist lrows">${rows}${wait}</div></div>`;
+    return `<div class="lgrp${folded.has(fk)?' folded':''}" data-bank="${bk}"><div class="lgrp-h"><h3>${foldBtn(fk,r.inCard?esc(S.accounts.find(a=>a.key===r.inCard)?.name||'Card')+'<span class="lgrp-tag">on the card</span>':esc(lenderName(r)))}</h3><span class="lgrp-amt">${peso(gm)} a month</span></div><div class="glist lrows">${rows}${wait}</div></div>`;
   }).join('');
-  $('#instSum').innerHTML=`<span class="label">Every month</span><span class="hsum-big">${peso(monthly)}</span><span class="hsum-sub">${remaining>0?`${peso(remaining)} left · all done ${ym(last)}`:'Nothing left to pay'}</span>`;
+  const longM=d=>d?['January','February','March','April','May','June','July','August','September','October','November','December'][d.getMonth()]+' '+d.getFullYear():'';
+  $('#instSum').innerHTML=`<div class="sum2"><div><span>Every month</span><b>${peso(monthly)}</b></div><div><span>Still to go</span><b>${peso(remaining)}</b></div></div>
+    <span class="hsum-sub">${remaining>0&&last?`All done by ${longM(last)}`:'Nothing left to pay'}</span>`;
   $('#instList').innerHTML=html||'<p class="empty">No installments yet.</p>';
   if(maxLeftChanged)setTimeout(save,0);
 }
@@ -738,24 +791,27 @@ function cardPlans(a,bill){
 }
 function renderAccounts(){
   let lim=0,used=0;
-  const html=S.accounts.map(a=>{
+  // one list: a small card in the bank's color, the name with what's used (or Paid / No bill), a thin bar that
+  // fills at 20% of the limit, and "•••• 4069 · 6% of ₱70,000 · due Dec 1". Tap a card to edit it.
+  const rows=S.accounts.map(a=>{
     const L=num(a.limit),U=usedOf(a),p=L>0?U/L*100:null;
     if(L>0){lim+=L;used+=U}
-    const bill=billOf(a);
-    // one quiet row: name and what's used; a thin bar that fills at 20% of the limit; "17% of ₱50,000 · due Nov 28"
-    const over=p!==null&&p>UTIL_MAX;
-    const facts=[p!==null?`<span class="${over?'t-bad':''}">${p.toFixed(0)}%</span> of ${peso(L)}`:'Add a limit',
-      bill&&(bill.day||bill.bbDue)?'due '+fmtD(dueOf(bill,cycleStart())):''].filter(Boolean).join(' · ');
-    return `<div class="acct${over?' is-over':''}" data-k="card" data-bank="${bankColor(a.name)}">
-      <div class="acct-h"><span class="acct-n">${esc(a.name)}${a.last4?`<span class="l4">${esc(a.last4)}</span>`:`<button class="linkbtn" data-aedit4="${a.id}">Add last 4</button>`}</span><span class="acct-amt">${peso(U)}</span></div>
-      ${p!==null?`<div class="ubar" role="img" aria-label="${p.toFixed(0)}% of limit used${over?', above 20%':''}"><i class="${ucls(p)}" style="width:${Math.min(100,p/UTIL_MAX*100).toFixed(1)}%"></i></div>`:''}
-      <div class="acct-f"><span class="facts">${facts}</span><span class="acts"><button class="ib quiet" data-aedit="${a.id}" aria-label="Edit ${esc(a.name)}" title="Edit">${IC.edit}</button></span></div>
-      ${cardPlans(a,bill)}
-    </div>`;
+    const bill=billOf(a),over=p!==null&&p>UTIL_MAX;
+    const state=U>0?`<span class="camt">${peso(U)}</span>`:bill&&num(bill.amount)>0&&isPaid(bill)?'<span class="cstate t-ok">Paid</span>':'<span class="cstate">No bill</span>';
+    const facts=[a.last4?'•••• '+esc(a.last4):'<span class="t-warn">Add last 4</span>',
+      p!==null?`<span class="${over?'t-bad':''}">${p<10&&p>0?p.toFixed(1):p.toFixed(0)}%</span> of ${peso(L)}`:'Add a limit',
+      U>0&&bill&&(bill.day||bill.bbDue)?'due '+fmtD(dueOf(bill,cycleStart())):''].filter(Boolean).map(f=>`<span>${f}</span>`).join(' · ');
+    return `<button class="crow${over?' is-over':''}" data-aedit="${a.id}" data-bank="${bankColor(a.name)}" aria-label="Edit ${esc(a.name)}">
+      <span class="cchip" aria-hidden="true"><i></i></span>
+      <span class="cmain"><span class="ctop"><span class="cname">${esc(a.name)}</span>${state}</span>
+        <span class="ubar"${p===null?' hidden':''}><i class="${ucls(p||0)}" style="width:${p===null?0:Math.min(100,p/UTIL_MAX*100).toFixed(1)}%"></i></span>
+        <span class="cfacts">${facts}</span></span></button>`;
   }).join('');
-  $('#acctList').innerHTML=html||'<p class="empty">No cards yet.</p>';
+  $('#acctList').innerHTML=rows?`<div class="glist">${rows}</div>`:'<p class="empty">No cards yet.</p>';
   const p=lim>0?used/lim*100:null;
-  $('#acctSum').innerHTML=`<span class="label">Using</span><span class="hsum-big">${peso(used)}${lim>0?`<span class="hsum-of"> of ${peso(lim)}</span>`:''}</span><span class="hsum-sub">${p===null?'Add your card limits to see usage':`<span class="${p>UTIL_MAX?'t-bad':'t-ok'}">${p.toFixed(0)}% overall</span> · keep each card under 20%`}</span>`;
+  $('#acctSum').innerHTML=lim>0?`<div class="csum"><div><span>Used of ${peso(lim)} limit</span><b>${peso(used)}</b></div><span class="cpct ${p>UTIL_MAX?'t-bad':'t-ok'}">${p<10&&p>0?p.toFixed(1):p.toFixed(0)}%</span></div>
+    <div class="ubar big"><i class="${ucls(p)}" style="width:${Math.min(100,p).toFixed(1)}%"></i></div><span class="hsum-sub">Keep each card under ${UTIL_MAX}% of its limit.</span>`
+    :`<div class="csum"><div><span>Used</span><b>${peso(used)}</b></div></div><span class="hsum-sub">Add your card limits to see how much you use.</span>`;
 }
 
 // ---------- render ----------
@@ -812,7 +868,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-isched]');
 
 function render(){
   if(S.closed&&!viewNext&&!draft&&cloudReady&&closedHasUnpaid()){reopenClosed();return}   // reopenClosed redraws everything
-  let C=compute();if(trackClose(C)){C=compute();syncInputs()}if(trackCarry(C))C=compute();paintCycleBar(C);renderStatus(C);runJobs(['cycle','inst','borrow','ahead','acct'],C)}
+  let C=compute();if(trackClose(C)){C=compute();syncInputs()}if(trackCarry(C))C=compute();paintCycleBar(C);renderStatus(C);renderPhoneCycle(C);runJobs(['cycle','inst','borrow','ahead','acct'],C)}
 function renderAll(){runJobs(['bills','money','src','ai']);render();renderManager()}
 function flushStale(){if(!stale.size)return;const C=compute();[...stale].forEach(j=>{if(shown(j)){stale.delete(j);JOBS[j](C);paintMon(JOB_PANEL[j]||j)}})}
 window.addEventListener('beforeprint',()=>{const C=compute();Object.keys(JOBS).forEach(j=>JOBS[j](C));stale.clear()});
@@ -835,10 +891,11 @@ $('#payfreq').addEventListener('change',e=>{
 });
 function syncInputs(){
   ['payday','payday2','payweekday'].forEach(k=>{const el=$('#'+k);if(document.activeElement!==el)el.value=S[k]??''});
-  const sal=$('#salary'),sk=keyOf(cycleStart());if(document.activeElement!==sal)sal.value=S.pay&&sk in S.pay?S.pay[sk]:'';
+  const sal=$('#salary'),sk=keyOf(cycleStart());if(document.activeElement!==sal)sal.value=S.pay&&sk in S.pay?S.pay[sk]:'';if(typeof fitSalary==='function')fitSalary();
   const f=payFreq();$('#payfreq').value=f;
   $('#pdDays').hidden=f==='week';$('#pd2').hidden=f!=='twice';$('#pdWeek').hidden=f!=='week';
-  $('#salLabel').textContent=viewNext?'Salary next cycle':f==='month'?'Salary this cycle':'Salary each payday';
+  // on a phone the field sits in This cycle's Money in list, under that cycle's dates: it just says Salary
+  $('#salLabel').textContent=phoneLayout.matches?(f==='month'?'Salary':'Salary each payday'):viewNext?'Salary next cycle':f==='month'?'Salary this cycle':'Salary each payday';
 }
 // the buffer field sits in the Pay ahead window and keeps your typing; everything that depends on it redraws around it
 document.addEventListener('input',e=>{if(e.target.id!=='carry'||viewNext)return;
@@ -901,6 +958,7 @@ function setKind(it,kind){
 }
 $('#itemList').addEventListener('click',e=>{
   const t=e.target.closest('button');if(!t)return;
+  if(t.dataset.bview){billView=t.dataset.bview;renderItems();return}
   if(t.dataset.edit){openBill(+t.dataset.edit);return}
   const id=t.dataset.paid||t.dataset.unpaid;if(!id)return;const it=S.items.find(i=>i.id==id);if(!it)return;
   t.dataset.paid?markPaid(it):undoPaid(it);save();renderItems();render();
@@ -915,7 +973,8 @@ document.addEventListener('click',e=>{const t=e.target;if(t.matches?.('input[typ
 // when you tap Add; closing the window any other way (×, Esc, tapping outside) leaves it out.
 let billNew=false,billKeep=false;
 function refreshBill(){const it=S.items.find(i=>i.id===editingId);if(!it)return;
-  $('#billTitle').textContent=billNew?(it.kind==='loan'?'New installment':'New bill'):'Edit '+(it.kind==='loan'?'installment':'bill');
+  $('#billTitle').textContent=billNew?(it.kind==='loan'?'New installment':'New bill'):it.kind==='loan'?'Installment':'Bill';
+  $('#billCancel').style.visibility=billNew?'visible':'hidden';$('#billDone').textContent=billNew?'Add':'Done';
   $('#billBody').innerHTML=itemForm(it,billNew)}
 let acctsBefore=null;   // the cards that existed when a new bill was started, so a cancelled one leaves none behind
 function openBill(id,isNew){
@@ -934,6 +993,7 @@ $('#billDlg').addEventListener('click',e=>{
   if(e.target===e.currentTarget){e.currentTarget.close();return} // tap outside the window
   const t=e.target.closest('button');if(!t)return;
   if(t.dataset.billclose){$('#billDlg').close();return}
+  if(t.dataset.billpaid){const it=S.items.find(i=>i.id==t.dataset.billpaid);if(it){isPaid(it)?undoPaid(it):markPaid(it);save();renderAll();refreshBill()}return}
   if(t.dataset.done){billKeep=true;$('#billDlg').close();return}
   if(t.dataset.del){const g=S.items.find(i=>i.id==t.dataset.del);if(g&&fromBB(g))return;S.items=S.items.filter(i=>i!==g&&!(g&&g.bbRef&&i.inBill===g.bbRef));  // with the loans listed on it
     billKeep=true;$('#billDlg').close()}
@@ -1796,6 +1856,7 @@ function paintMon(tab){
   const c=S.aiTab?.[tab],fresh=c&&c.day===todayIso()&&c.h===hashStr(reviewPrompt(tab,list));
   const box=el.querySelector('.mon-ai'),busy=box&&box.dataset.busy;
   el.className='mon '+worst;
+  el.dataset.worst=worst;
   el.innerHTML=`<div class="mon-h">${IC[worst]}<span class="mon-t">${n?n+' to check':'All good'}</span>${aiReady()?`<button class="ghost ib" data-review="${tab}" aria-label="Review ${TAB_NAME[tab]} with AI" title="Review with AI"${busy?' disabled':''}>${IC.spark}</button>`:''}</div>
     <ul class="mon-l">${list.slice(0,4).map(x=>`<li class="${x.lv}">${IC[x.lv]}<span>${esc(x.t)}</span></li>`).join('')}</ul>
     <div class="mon-ai"${busy?' data-busy="1"':''}>${busy?box.innerHTML:fresh?reviewHtml(c):''}</div>`;

@@ -15,10 +15,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=68">
+<link rel="stylesheet" href="styles.css?v=69">
 <script src="config.js?v=42" defer></script>
 <script src="vendor/supabase-2.116.0.js" defer></script>
-<script src="app.js?v=80" defer></script>
+<script src="app.js?v=81" defer></script>
 </head>
 <body class="locked" data-tab="cycle">
 <div class="app">
@@ -90,6 +90,9 @@
     </nav>
 
     <section class="panel" role="tabpanel" id="panel-cycle" aria-labelledby="tab-cycle" data-panel="cycle">
+      <div id="sumCard" class="sumcard phone-only"></div>
+      <div id="upNext" class="gsec phone-only"></div>
+      <section class="gsec phone-only" aria-labelledby="moneyInH"><h3 class="ghdr big" id="moneyInH">Money in</h3><div class="glist" id="moneyInList"><div id="salSlot"></div><div id="moneyInRows"></div></div></section>
       <div class="mon" id="mon-cycle" aria-live="polite"></div>
       <div id="advice"></div>
       <div class="sec">
@@ -264,7 +267,7 @@
   </div>
 </div></dialog>
 <dialog id="billDlg" class="dlg" aria-labelledby="billTitle"><div class="dlg-in">
-  <div class="dlg-h"><h2 id="billTitle">New bill</h2><button class="x" data-billclose="1" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="dlg-h sheet-h"><button class="navbtn" id="billCancel" data-billclose="1">Cancel</button><h2 id="billTitle">New bill</h2><button class="navbtn strong" id="billDone" data-done="1">Done</button></div>
   <div id="billBody"></div>
 </div></dialog>
 <dialog id="sheetDlg" class="dlg" aria-labelledby="sheetTitle"><div class="dlg-in">

@@ -392,7 +392,7 @@ class SyncTest(unittest.TestCase):
         self.assertEqual(self.page.evaluate('S.accounts.length'), 2)   # a new card is made as the bill starts
         self.page.fill(f'#n{new_id}', 'EastWest')
         self.page.fill(f'#f4{new_id}', '3002')
-        self.page.click('#billBody [data-done]')
+        self.page.click('#billDone')
         self.assertEqual(self.page.evaluate('S.accounts.length'), 1)
         it = self.page.evaluate(f"(i=>({{acct:i.acct,name:i.name}}))(S.items.find(i=>i.id=={new_id}))")
         self.assertEqual(it, {'acct': self.page.evaluate('S.accounts[0].key'), 'name': 'EastWest Everyday'})
