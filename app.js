@@ -349,7 +349,7 @@ function renderAdvice(C){
     ${pool>0.004?`<li><span>Emergency fund <span class="muted small">· nothing left to pay ahead</span></span><span class="a">${peso(pool)}</span></li>`:''}</ul>`;
 }
 function renderTimeline(C){
-  $('#cycleLabel').textContent=fmtD(C.start)+' – '+fmtD(C.end)+', '+C.end.getFullYear();
+  $('#cycleLabel').textContent=fmtD(C.start)+' – '+fmtD(C.end)+', '+C.end.getFullYear();paintTitle();
   const ev=C.salary>0?[{d:C.start,in:true,name:'Salary',amt:C.salary}]:[];   // a new cycle has no salary until you enter it
   if(C.carry>0)ev.unshift({d:C.start,in:true,carry:true,name:'From last cycle',amt:C.carry});
   C.inc.forEach(o=>ev.push({d:o.d,in:true,name:o.x.label||'Other money',amt:num(o.x.amount)}));
@@ -425,13 +425,14 @@ function itemRow(i,start){
   if(i.bbLast4&&(i.kind!=='card'||!acctOf(i)))meta.push(`<span>•••• ${esc(i.bbLast4)}</span>`);
   if(i.kind==='card'){const a=acctOf(i);if(a&&a.last4)meta.push(`<span>•••• ${esc(a.last4)}</span>`)}
   if(paid)meta.unshift(`<span class="t-ok">Paid · clears in ${Math.max(1,Math.ceil((DAY-(Date.now()-num(i.paidAt)))/3600000))}h</span>`);
-  return `<div class="bill${paid?' done':''}"><div><button class="nm openw" data-edit="${i.id}" aria-haspopup="dialog" title="Edit">${esc(i.name||'Untitled bill')}</button><div class="mt">${meta.join('')}</div></div>
-    <div class="rt">${amt>0?`<span class="amt">${peso(amt)}</span>`:(viewNext?'<span class="pill">Amount not out yet</span>':'<span class="pill warn">Add amount</span>')}
-    <div class="bt">${paid?undoBtn(`data-unpaid="${i.id}"`,i.name):amt>0?paidBtn(`data-paid="${i.id}"`,i.name):''}</div></div></div>`;
+  const tick=paid?`<button class="tick on" data-unpaid="${i.id}" aria-label="Undo paid for ${esc(i.name)}">${IC.check}</button>`
+    :amt>0?`<button class="tick" data-paid="${i.id}" aria-label="Mark ${esc(i.name)} paid"></button>`:'<span class="tick none" aria-hidden="true"></span>';
+  return `<div class="bill tbill${paid?' done':''}">${tick}<div class="bmain"><button class="nm openw" data-edit="${i.id}" aria-haspopup="dialog" title="Edit">${esc(i.name||'Untitled bill')}</button><div class="mt">${meta.join('')}</div></div>
+    <div class="rt">${amt>0?`<span class="amt">${peso(amt)}</span>`:(viewNext?'<span class="pill">Amount not out yet</span>':'<span class="pill warn">Add amount</span>')}</div></div>`;
 }
 function expectedRow(i){
-  return `<div class="bill"><div><span class="nm">${esc(i.name)}</span><div class="mt"><span>Due ${fmtD(i.date)}</span><span>Expected · waiting for the statement</span></div></div>
-    <div class="rt"><span class="amt">${peso(num(i.amount))}</span><div class="bt"></div></div></div>`;
+  return `<div class="bill tbill expected"><span class="tick none" aria-hidden="true"></span><div class="bmain"><span class="nm">${esc(i.name)}</span><div class="mt"><span>Due ${fmtD(i.date)}</span><span class="t-warn">Expected · waiting for the statement</span></div></div>
+    <div class="rt"><span class="amt">${peso(num(i.amount))}</span></div></div>`;
 }
 function renderItems(){
   ensureCats();
@@ -1056,7 +1057,8 @@ $('#sheetDlg').addEventListener('close',()=>{
 });
 $('#acctAdd').addEventListener('click',()=>{const a={id:uid++,key:genKey(),name:'',last4:'',limit:null,stmt:null};S.accounts.push(a);S.items.push({id:uid++,name:'',kind:'card',amount:null,day:clampPd(),acct:a.key});ensureLinks();openSheet('acct',a,true,'#an'+a.id)});
 function selectTab(name){
-  document.querySelectorAll('.tab').forEach(x=>{const on=x.dataset.tab===name;x.setAttribute('aria-selected',on);x.tabIndex=on?0:-1;
+  document.body.dataset.tab=name;paintTitle();
+  document.querySelectorAll('.tab[data-tab]').forEach(x=>{const on=x.dataset.tab===name;x.setAttribute('aria-selected',on);x.tabIndex=on?0:-1;
     if(on&&x.parentElement.scrollWidth>x.parentElement.clientWidth)x.parentElement.scrollTo({left:x.offsetLeft-x.parentElement.clientWidth/2+x.offsetWidth/2,behavior:'smooth'})});
   document.querySelectorAll('[data-panel]').forEach(p=>p.hidden=p.dataset.panel!==name);
   flushStale();
@@ -1065,9 +1067,23 @@ function selectTab(name){
   const bar=$('.tabs'),top=bar.getBoundingClientRect().top;
   if(top<=parseFloat(getComputedStyle(bar).top)+1)bar.parentElement.scrollIntoView({block:'start'});
 }
-document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>selectTab(t.dataset.tab)));
+document.querySelectorAll('.tab[data-tab]').forEach(t=>t.addEventListener('click',()=>selectTab(t.dataset.tab)));
+// On a phone the bottom bar holds four tabs and More, which opens the other sections as a list.
+$('#tab-more').addEventListener('click',()=>{const d=$('#moreDlg');if(!d.open)d.showModal()});
+$('#moreDlg').addEventListener('click',e=>{
+  if(e.target===e.currentTarget||e.target.closest('[data-moreclose]')){e.currentTarget.close();return}
+  const b=e.target.closest('[data-moretab]');if(b){e.currentTarget.close();selectTab(b.dataset.moretab)}
+});
+// The large title at the top names the open section; on This cycle it is the pay cycle's dates.
+const PAGE_TITLE={cycle:'This cycle',bills:'Bills',inst:'Installments',acct:'Credit cards',money:'Income',borrow:'Borrow',ahead:'Plan',ai:'AI',bbsync:'API'};
+function paintTitle(){
+  const n=document.body.dataset.tab||'cycle',t=$('#pTitle'),e=$('#pEyebrow');if(!t)return;
+  if(n==='cycle'){const a=cycleStart(),b=shiftCycle(a,1),end=new Date(b.getFullYear(),b.getMonth(),b.getDate()-1);
+    e.textContent=viewNext?'Next pay cycle':'Pay cycle';t.textContent=fmtD(a)+' – '+fmtD(end)}
+  else{e.textContent='';t.textContent=PAGE_TITLE[n]||''}
+}
 $('.tabs').addEventListener('keydown',e=>{
-  const tabs=[...document.querySelectorAll('.tab')],i=tabs.indexOf(document.activeElement);if(i<0)return;
+  const tabs=[...document.querySelectorAll('.tab[data-tab]')],i=tabs.indexOf(document.activeElement);if(i<0)return;
   const j={ArrowRight:i+1,ArrowLeft:i-1,Home:0,End:tabs.length-1}[e.key];if(j==null)return;
   e.preventDefault();const t=tabs[(j+tabs.length)%tabs.length];t.focus();selectTab(t.dataset.tab);
 });

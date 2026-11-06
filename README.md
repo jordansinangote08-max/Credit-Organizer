@@ -44,6 +44,8 @@ When this cycle's money covers every bill with some to spare, This cycle says ho
 
 ## Every tab is monitored
 
+**Layout.** On a phone or tablet the planner looks like an iOS app: a bottom tab bar with This cycle, Bills, Installments, Credit cards and More (Income, Borrow, Plan, AI and API open from a sheet), a large title naming the open section (the pay cycle's dates on This cycle), the salary card on This cycle only, and a round tick before each bill to mark it paid. On a computer the salary card stays on the left and the tabs sit on top.
+
 The top of each tab (This cycle, Bills, Installments, Credit cards, Income, Borrow, Plan) lists what needs attention: money running out, bills past due or due soon, cards over 30% or 50% of their limit, missing last 4 digits, installments without payments left, expensive debt, entries from past cycles. The planner works these out itself as you go, free and instantly. With an AI key set, the ✨ button asks the AI to review that tab: it gets the tab's checks plus a snapshot of the whole planner, so its advice rests on the same numbers. A review is kept for the day until the numbers change, so looking again costs nothing.
 
 **Daily AI limit.** Every AI use is counted in the API tab, by purpose (loan checks, tab reviews, sorting bills, placing installments), with the last week's totals. In the API tab, set how many tokens the AI may use per day (about 2,000 a question; empty means no limit). The meter shows today's use. When the limit is reached the AI stops until the next day. Loan checks come first: tab reviews pause at 70% of the limit, so there's always room to check a loan.

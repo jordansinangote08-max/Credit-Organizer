@@ -2,22 +2,23 @@
    Phone: one calm column with a sticky, scrollable tab bar.
    Desktop (≥1024px): salary and result pinned on the left, one panel at a time on the right. */
 :root{
-  --bg:#eef2f0; --surface:#ffffff; --sunk:rgb(118 118 128 / .12); --ink:#16201c; --muted:#5d6a64; --line:rgb(22 32 28 / .1); --field:#8a9590;
-  --accent:#0f6b53; --accent-ink:#ffffff; --accent-soft:#e3f1ea;
-  --ok:#1b7a50; --ok-soft:#e2f3ea; --warn:#93600f; --warn-soft:#f8eed9; --bad:#b4372f; --bad-soft:#fae6e3;
+  /* iOS grouped colors: grey ground, white lists, one blue for actions; green, orange and red only for status */
+  --bg:#f2f2f7; --surface:#ffffff; --sunk:rgb(118 118 128 / .12); --ink:#1c1c1e; --muted:#6c6c70; --line:rgb(60 60 67 / .13); --field:rgb(60 60 67 / .29);
+  --accent:#0064d6; --accent-ink:#ffffff; --accent-soft:#e8f0fc;
+  --ok:#1e7f45; --ok-soft:#e3f4ea; --warn:#a35a00; --warn-soft:#fdf0dc; --bad:#c4271e; --bad-soft:#fde7e5;
   --c-loan:#c2410c; --c-card:#2f5fb3; --c-essential:#0f7a5c; --c-bill:#9a6206; --c-flex:#7a4bb8;
   --c-orange:#c2410c; --c-blue:#2f5fb3; --c-green:#0f7a5c; --c-amber:#9a6206; --c-purple:#7a4bb8; --c-pink:#b8326e; --c-teal:#0e6f86; --c-slate:#526170;
-  --tint:8%;
+  --tint:0%;
   /* the device's own font (SF Pro on iPhone and Mac): nothing to download */
   --display:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
   --body:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
   --mono:var(--body);
   /* glass: translucent surfaces that blur what's behind them */
-  --glass:rgb(255 255 255 / .64); --glass-strong:rgb(255 255 255 / .8); --glass-edge:rgb(255 255 255 / .75);
+  --glass:#ffffff; --glass-strong:rgb(249 249 249 / .86); --glass-edge:rgb(60 60 67 / .13);
   --blur:saturate(180%) blur(20px);
-  --blob1:#bfe6d4; --blob2:#cddcfb; --blob3:#fbdccb; --blob4:#e3d8f6;
+  --blob1:transparent; --blob2:transparent; --blob3:transparent; --blob4:transparent;
   --r:20px; --gutter:16px; --tap:44px;
-  --shadow:0 1px 1px rgb(22 32 28 / .03),0 8px 28px rgb(22 32 28 / .08);
+  --shadow:none;
   --ring:0 0 0 3px var(--accent-soft);
   --fast:150ms; --press:120ms; --ease:cubic-bezier(.23,1,.32,1);
   --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
@@ -25,21 +26,21 @@
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#0b0f0e; --surface:#1b2220; --sunk:rgb(118 118 128 / .24); --ink:#e9efec; --muted:#9aaaa2; --line:rgb(255 255 255 / .1); --field:#66766e;
-  --glass:rgb(30 37 35 / .58); --glass-strong:rgb(30 37 35 / .82); --glass-edge:rgb(255 255 255 / .09);
-  --blob1:#123a2e; --blob2:#1b2850; --blob3:#3a2418; --blob4:#2a1f45;
-  --accent:#4cc79a; --accent-ink:#06120d; --accent-soft:#17352b;
+  --bg:#000000; --surface:#1c1c1e; --sunk:rgb(118 118 128 / .24); --ink:#f2f2f7; --muted:#98989f; --line:rgb(84 84 88 / .55); --field:rgb(235 235 245 / .3);
+  --glass:#1c1c1e; --glass-strong:rgb(22 22 24 / .86); --glass-edge:rgb(84 84 88 / .55);
+  --blob1:transparent; --blob2:transparent; --blob3:transparent; --blob4:transparent;
+  --accent:#3d9bff; --accent-ink:#000000; --accent-soft:#0d2747;
   --c-loan:#f59a6b; --c-card:#86abf2; --c-essential:#55d3a5; --c-bill:#e6b94c; --c-flex:#bc9af2;
-  --c-orange:#f59a6b; --c-blue:#86abf2; --c-green:#55d3a5; --c-amber:#e6b94c; --c-purple:#bc9af2; --c-pink:#f08cb8; --c-teal:#5ccfe6; --c-slate:#a9b6c2; --tint:11%;
-  --ok:#55d092; --ok-soft:#163126; --warn:#e2a945; --warn-soft:#382b13; --bad:#f17a70; --bad-soft:#3b1d1a; --shadow:0 1px 1px rgb(0 0 0 / .2),0 8px 28px rgb(0 0 0 / .35); color-scheme:dark}}
+  --c-orange:#f59a6b; --c-blue:#86abf2; --c-green:#55d3a5; --c-amber:#e6b94c; --c-purple:#bc9af2; --c-pink:#f08cb8; --c-teal:#5ccfe6; --c-slate:#a9b6c2; --tint:0%;
+  --ok:#30d158; --ok-soft:#10301b; --warn:#ff9f0a; --warn-soft:#3a2700; --bad:#ff6961; --bad-soft:#3b1412; --shadow:none; color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#0b0f0e; --surface:#1b2220; --sunk:rgb(118 118 128 / .24); --ink:#e9efec; --muted:#9aaaa2; --line:rgb(255 255 255 / .1); --field:#66766e;
-  --glass:rgb(30 37 35 / .58); --glass-strong:rgb(30 37 35 / .82); --glass-edge:rgb(255 255 255 / .09);
-  --blob1:#123a2e; --blob2:#1b2850; --blob3:#3a2418; --blob4:#2a1f45;
-  --accent:#4cc79a; --accent-ink:#06120d; --accent-soft:#17352b;
+  --bg:#000000; --surface:#1c1c1e; --sunk:rgb(118 118 128 / .24); --ink:#f2f2f7; --muted:#98989f; --line:rgb(84 84 88 / .55); --field:rgb(235 235 245 / .3);
+  --glass:#1c1c1e; --glass-strong:rgb(22 22 24 / .86); --glass-edge:rgb(84 84 88 / .55);
+  --blob1:transparent; --blob2:transparent; --blob3:transparent; --blob4:transparent;
+  --accent:#3d9bff; --accent-ink:#000000; --accent-soft:#0d2747;
   --c-loan:#f59a6b; --c-card:#86abf2; --c-essential:#55d3a5; --c-bill:#e6b94c; --c-flex:#bc9af2;
-  --c-orange:#f59a6b; --c-blue:#86abf2; --c-green:#55d3a5; --c-amber:#e6b94c; --c-purple:#bc9af2; --c-pink:#f08cb8; --c-teal:#5ccfe6; --c-slate:#a9b6c2; --tint:11%;
-  --ok:#55d092; --ok-soft:#163126; --warn:#e2a945; --warn-soft:#382b13; --bad:#f17a70; --bad-soft:#3b1d1a; --shadow:0 1px 1px rgb(0 0 0 / .2),0 8px 28px rgb(0 0 0 / .35); color-scheme:dark}
+  --c-orange:#f59a6b; --c-blue:#86abf2; --c-green:#55d3a5; --c-amber:#e6b94c; --c-purple:#bc9af2; --c-pink:#f08cb8; --c-teal:#5ccfe6; --c-slate:#a9b6c2; --tint:0%;
+  --ok:#30d158; --ok-soft:#10301b; --warn:#ff9f0a; --warn-soft:#3a2700; --bad:#ff6961; --bad-soft:#3b1412; --shadow:none; color-scheme:dark}
 
 *,*::before,*::after{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:none;scroll-padding-top:calc(var(--safe-t) + 64px)}
@@ -1082,3 +1083,58 @@ body.blue-on .blue-fab{opacity:0;transform:scale(.9);pointer-events:none}
 #acctList .acct[data-bank]{padding:12px 14px;border-top:0}
 #instList .lgrp[data-bank] .bar,#acctList .acct[data-bank] .ubar{background:color-mix(in srgb,var(--bk) 14%,transparent)}
 #instList .lgrp-h .fold{white-space:normal;overflow:visible;text-overflow:clip;flex-wrap:wrap;row-gap:2px}
+
+/* ---------- iOS layout ----------
+   Flat white grouped lists on a grey ground, a round tick before each bill (like Reminders), and on phones and
+   tablets (<1024px) a bottom tab bar with This cycle, Bills, Installments, Credit cards and More (Income, Borrow,
+   Plan, AI and API open from a sheet), a large title naming the open section, and the salary card on This cycle
+   only. Desktop keeps the side column and the tab bar on top. */
+body::before{display:none}
+.hero,.sec,.authform{background:var(--surface);border:0;box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none}
+.grp{background:var(--surface);border:0}
+.grp .bill{border-top-color:var(--line)}
+.t-warn{color:var(--warn)}
+.ptitle-wrap,.more-tab,.tab .ti{display:none}
+.tbill{grid-template-columns:auto minmax(0,1fr) auto;gap:12px}
+.tbill .bmain{min-width:0}
+.tbill .rt{justify-self:end}
+.tick{position:relative;flex:none;width:26px;height:26px;border-radius:50%;border:2px solid var(--field);background:transparent;padding:0;display:grid;place-items:center;color:#fff;align-self:center}
+.tick::after{content:"";position:absolute;inset:-9px}             /* a 44px target around the 26px circle */
+.tick.on{background:var(--ok);border-color:var(--ok)}
+.tick.on svg{width:15px;height:15px;stroke-width:2.8}
+.tick.none{border-style:dashed}
+.bill.done .nm,.bill.done .amt{text-decoration-color:var(--muted)}
+@media (max-width:360px){.tbill{grid-template-columns:auto minmax(0,1fr)}.tbill .rt{grid-column:2;justify-self:start}}
+.morelist{list-style:none;margin:0;padding:0;background:var(--surface);border-radius:12px;overflow:hidden}
+.morelist li+li{border-top:1px solid var(--line)}
+.morerow{width:100%;display:flex;align-items:center;gap:14px;min-height:50px;padding:0 16px;border:0;background:transparent;font:inherit;font-size:1.0625rem;color:var(--ink);text-align:left}
+.morerow span{flex:1}
+.morerow .mi{width:22px;height:22px;flex:none;color:var(--accent)}
+.morerow .go{width:8px;height:14px;flex:none;color:var(--field)}
+.morerow:active{transform:none;background:var(--sunk)}
+#moreDlg{background:var(--bg)}
+@media (max-width:1023px){
+  .brand{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  .ptitle-wrap{display:grid;gap:2px;width:100%;margin-top:6px}
+  .peyebrow{margin:0;font-size:.8125rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+  .peyebrow:empty{display:none}
+  .ptitle{font-size:2.125rem;line-height:1.2;font-weight:700;letter-spacing:-.02em}
+  body:not([data-tab="cycle"]) .hero{display:none}
+  .tabs{position:fixed;top:auto;left:0;right:0;bottom:0;z-index:30;margin:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0;overflow:visible;
+    padding:6px calc(4px + var(--safe-r)) calc(4px + var(--safe-b)) calc(4px + var(--safe-l));border:0;border-top:1px solid var(--glass-edge);border-radius:0;
+    background:var(--glass-strong);box-shadow:none;-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);-webkit-mask-image:none;mask-image:none;scroll-snap-type:none}
+  .tab{display:flex;flex-direction:column;align-items:center;gap:2px;min-height:50px;padding:2px 0;border-radius:0;background:transparent;box-shadow:none;color:var(--muted);font-size:.625rem;font-weight:500;letter-spacing:.01em}
+  .tab[aria-selected="true"]{background:transparent;box-shadow:none;color:var(--accent)}
+  .tab .ti{display:block;width:26px;height:26px}
+  .tab:active{transform:none;opacity:.55}
+  #tab-money,#tab-borrow,#tab-ahead,#tab-ai,#tab-bbsync{display:none}
+  .more-tab{display:flex}
+  .bills-h h2{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}   /* the large title already says Bills */
+  .bills-h .bills-left{font-size:.9375rem}
+  body[data-tab="money"] .more-tab,body[data-tab="borrow"] .more-tab,body[data-tab="ahead"] .more-tab,body[data-tab="ai"] .more-tab,body[data-tab="bbsync"] .more-tab{color:var(--accent)}
+  .main{padding-bottom:calc(64px + var(--safe-b))}
+  .blue-fab{bottom:calc(78px + var(--safe-b))}
+  .blue-win{bottom:calc(78px + var(--safe-b))}
+}
+@media (max-width:1023px) and (max-width:520px){.blue-win{height:min(620px,calc(100dvh - 102px - var(--safe-t) - var(--safe-b)))}}
+@media (prefers-contrast:more){.tick{border-color:var(--ink)}.tabs{background:var(--surface)}}

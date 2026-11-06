@@ -15,17 +15,18 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=67">
+<link rel="stylesheet" href="styles.css?v=68">
 <script src="config.js?v=42" defer></script>
 <script src="vendor/supabase-2.116.0.js" defer></script>
-<script src="app.js?v=79" defer></script>
+<script src="app.js?v=80" defer></script>
 </head>
-<body class="locked">
+<body class="locked" data-tab="cycle">
 <div class="app">
   <aside class="side">
     <header>
-      <h1>Paycheck and Debt Planner</h1>
+      <h1 class="brand">Paycheck and Debt Planner</h1>
       <div class="acctbar"><p id="syncState" class="sync">Loading…</p><span id="authWho" class="muted small"></span><button class="ghost sm" id="accessBtn" hidden>Set password</button><button class="ghost sm ib" id="nextBtn" type="button" aria-label="See next cycle" title="See next cycle" aria-pressed="false" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="ghost sm" id="draftBtn" title="Try changes in a copy that is never saved" hidden>Draft</button><button class="ghost sm ib" id="authBtn" aria-label="Sign out" title="Sign out" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 012 2v12a2 2 0 01-2 2h-3"/><path d="M10 17l5-5-5-5"/><path d="M15 12H4"/></svg></button></div>
+          <div class="ptitle-wrap"><p class="peyebrow" id="pEyebrow"></p><h2 class="ptitle" id="pTitle">This cycle</h2></div>
     </header>
     <form id="authForm" class="authform" hidden>
       <h2 id="authTitle">Open your planner</h2>
@@ -76,15 +77,16 @@
 
   <main class="main">
     <nav class="tabs" role="tablist" aria-label="Sections">
-      <button class="tab" role="tab" id="tab-cycle" aria-controls="panel-cycle" data-tab="cycle" aria-selected="true">This cycle</button>
-      <button class="tab" role="tab" id="tab-bills" aria-controls="panel-bills" data-tab="bills" aria-selected="false" tabindex="-1">Bills</button>
-      <button class="tab" role="tab" id="tab-inst" aria-controls="panel-inst" data-tab="inst" aria-selected="false" tabindex="-1">Installments</button>
-      <button class="tab" role="tab" id="tab-acct" aria-controls="panel-acct" data-tab="acct" aria-selected="false" tabindex="-1">Credit cards</button>
-      <button class="tab" role="tab" id="tab-money" aria-controls="panel-money" data-tab="money" aria-selected="false" tabindex="-1">Income</button>
-      <button class="tab" role="tab" id="tab-borrow" aria-controls="panel-borrow" data-tab="borrow" aria-selected="false" tabindex="-1">Borrow</button>
-      <button class="tab" role="tab" id="tab-ahead" aria-controls="panel-ahead" data-tab="ahead" aria-selected="false" tabindex="-1">Plan</button>
-      <button class="tab" role="tab" id="tab-ai" aria-controls="panel-ai" data-tab="ai" aria-selected="false" tabindex="-1">AI</button>
-      <button class="tab" role="tab" id="tab-bbsync" aria-controls="panel-bbsync" data-tab="bbsync" aria-selected="false" tabindex="-1">API</button>
+      <button class="tab" role="tab" id="tab-cycle" aria-controls="panel-cycle" data-tab="cycle" aria-selected="true"><svg class="ti" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span class="tl">This cycle</span></button>
+      <button class="tab" role="tab" id="tab-bills" aria-controls="panel-bills" data-tab="bills" aria-selected="false" tabindex="-1"><svg class="ti" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg><span class="tl">Bills</span></button>
+      <button class="tab" role="tab" id="tab-inst" aria-controls="panel-inst" data-tab="inst" aria-selected="false" tabindex="-1"><svg class="ti" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 9 9h-9z"/></svg><span class="tl">Installments</span></button>
+      <button class="tab" role="tab" id="tab-acct" aria-controls="panel-acct" data-tab="acct" aria-selected="false" tabindex="-1"><svg class="ti" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20M6 15h4"/></svg><span class="tl">Credit cards</span></button>
+      <button class="tab" role="tab" id="tab-money" aria-controls="panel-money" data-tab="money" aria-selected="false" tabindex="-1"><svg class="ti" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M8.5 13.5 12 17l3.5-3.5"/></svg><span class="tl">Income</span></button>
+      <button class="tab" role="tab" id="tab-borrow" aria-controls="panel-borrow" data-tab="borrow" aria-selected="false" tabindex="-1"><svg class="ti" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 9v.01M18 15v.01"/></svg><span class="tl">Borrow</span></button>
+      <button class="tab" role="tab" id="tab-ahead" aria-controls="panel-ahead" data-tab="ahead" aria-selected="false" tabindex="-1"><svg class="ti" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 20h18"/><path d="M5 16l4-5 4 3 6-8"/></svg><span class="tl">Plan</span></button>
+      <button class="tab" role="tab" id="tab-ai" aria-controls="panel-ai" data-tab="ai" aria-selected="false" tabindex="-1"><svg class="ti" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg><span class="tl">AI</span></button>
+      <button class="tab" role="tab" id="tab-bbsync" aria-controls="panel-bbsync" data-tab="bbsync" aria-selected="false" tabindex="-1"><svg class="ti" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span class="tl">API</span></button>
+          <button class="tab more-tab" id="tab-more" type="button" data-more="1" aria-haspopup="dialog"><svg class="ti" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg><span class="tl">More</span></button>
     </nav>
 
     <section class="panel" role="tabpanel" id="panel-cycle" aria-labelledby="tab-cycle" data-panel="cycle">
@@ -221,6 +223,12 @@
     </section>
   </main>
 </div>
+<dialog id="moreDlg" class="dlg" aria-labelledby="moreTitle">
+  <div class="dlg-in">
+    <div class="dlg-h"><h2 id="moreTitle">More</h2><button class="x" data-moreclose="1" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <ul class="morelist"><li><button class="morerow" data-moretab="money"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M8.5 13.5 12 17l3.5-3.5"/></svg><span>Income</span><svg class="go" viewBox="0 0 8 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 1l6 6-6 6"/></svg></button></li><li><button class="morerow" data-moretab="borrow"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 9v.01M18 15v.01"/></svg><span>Borrow</span><svg class="go" viewBox="0 0 8 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 1l6 6-6 6"/></svg></button></li><li><button class="morerow" data-moretab="ahead"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 20h18"/><path d="M5 16l4-5 4 3 6-8"/></svg><span>Plan</span><svg class="go" viewBox="0 0 8 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 1l6 6-6 6"/></svg></button></li><li><button class="morerow" data-moretab="ai"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg><span>AI</span><svg class="go" viewBox="0 0 8 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 1l6 6-6 6"/></svg></button></li><li><button class="morerow" data-moretab="bbsync"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span>API</span><svg class="go" viewBox="0 0 8 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 1l6 6-6 6"/></svg></button></li></ul>
+  </div>
+</dialog>
 <button id="blueFab" class="blue-fab" type="button" aria-label="Chat with Blue" aria-expanded="false" aria-controls="blueWin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z"/></svg></button>
 <section id="blueWin" class="blue-win" role="dialog" aria-labelledby="blueTitle" aria-hidden="true">
   <div class="blue-h">
