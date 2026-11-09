@@ -1801,9 +1801,9 @@ function monitor(tab){
     const no4=S.accounts.filter(a=>!a.last4).length;if(no4)add('warn',plural(no4,'card')+' missing last 4 digits');
     if(!out.length)add('ok',S.accounts.length?'Every card under 20%':'No cards');
   }else if(tab==='money'){
-    const C0=C.start,past=S.income.filter(x=>{const d=parseD(x.date);return d&&d<C0}).length,bad=S.income.filter(x=>!(num(x.amount)>0)||!parseD(x.date)).length;
+    // money from earlier cycles is hidden and cleared on its own, so it needs no check
+    const C0=C.start,bad=S.income.filter(x=>{const d=parseD(x.date);return !(d&&d<C0)&&(!(num(x.amount)>0)||!d)}).length;
     if(bad)add('warn',bad+' '+(bad===1?'entry needs':'entries need')+' an amount and date');
-    if(past)add('warn',past+' from past cycles, not counted');
     if(C.other>0)add('ok',peso(C.other)+' arriving this cycle');
     if(!out.length)add('ok','Nothing extra this cycle');
   }else if(tab==='borrow'){

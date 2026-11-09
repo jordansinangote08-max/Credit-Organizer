@@ -1281,3 +1281,20 @@ body::before{display:none}
 #salSlot .payday .pdpart{color:var(--muted)}
 .cstate.t-ok{color:var(--ok)}
 #instList .lgrp .lrows>*+*{box-shadow:inset 0 1px 0 var(--line)}
+
+/* ---------- final polish ----------
+   The account row reads like an iOS navigation bar: tinted text and icons, no filled pills (the eye keeps a
+   tint while the next-cycle preview is on). The chat button is smaller and uses the app's blue, so it covers
+   less. The loan form sits straight in its card instead of a grey box inside it. */
+header .acctbar .ghost.sm{background:transparent;color:var(--accent);font-weight:500;font-size:.9375rem;padding:0 8px}
+header .acctbar .ghost.sm.ib{width:40px;padding:0}
+header .acctbar .ghost.sm[aria-pressed="true"]{background:var(--accent-soft)}
+header .acctbar .ghost.sm:active{transform:none;opacity:.5}
+@media (hover:hover) and (pointer:fine){header .acctbar .ghost.sm:hover{background:var(--accent-soft)}}
+.blue-fab{width:48px;height:48px;background:var(--accent);color:var(--accent-ink);box-shadow:0 2px 6px rgb(0 0 0 / .12),0 8px 20px rgb(0 0 0 / .14)}
+.blue-fab svg{width:22px;height:22px}
+#aiForm.form{background:transparent;padding:0}
+#panel-bills .sec-h .ghost.ib{background:transparent;color:var(--accent)}
+#panel-bills .sec-h .ghost.ib:active{transform:none;opacity:.5}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .seg2 button[aria-pressed="true"]{background:#636366;box-shadow:none}}
+:root[data-theme="dark"] .seg2 button[aria-pressed="true"]{background:#636366;box-shadow:none}
