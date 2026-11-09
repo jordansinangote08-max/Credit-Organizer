@@ -152,5 +152,36 @@ class FinancialManagerTest(unittest.TestCase):
         }''')
         self.assertEqual(result, {'error': 'context', 'turns': 0, 'used': 0})
 
+    def test_history_teaches_patterns_and_forecasts_card_statements(self):
+        self.page.evaluate("""() => {
+          S.accounts=[{id:uid++,key:'rcbc',name:'RCBC Flex Visa',last4:'4069',limit:70000}];
+          S.hist={
+            a:{s:'2026-08-24',in:30000,sal:30000,b:[{n:'RCBC Flex Visa',k:'card',a:2017.24,d:'2026-08-28',p:'2026-08-27'},{n:'Meralco',k:'bill',a:2400,d:'2026-09-03',p:'2026-09-05'}]},
+            b:{s:'2026-09-24',in:30000,sal:30000,b:[{n:'RCBC Flex Visa',k:'card',a:8263.94,d:'2026-10-28',p:'2026-10-26'},{n:'Meralco',k:'bill',a:2500,d:'2026-10-03',p:'2026-10-06'}]},
+            c:{s:'2026-10-24',in:30000,sal:30000,b:[{n:'RCBC Flex Visa',k:'card',a:4114.77,d:'2026-11-28'},{n:'Meralco',k:'bill',a:2700,d:'2026-11-03',p:'2026-11-07'}]}};
+        }""")
+        meralco = self.page.evaluate("billPatterns().find(p=>p.name==='Meralco')")
+        self.assertEqual(meralco['trend'], 'rising')
+        self.assertEqual(meralco['usual_due_day'], 3)
+        self.assertEqual(meralco['paid_late_times'], 3)
+        self.assertEqual(meralco['paid_days_vs_due'], 3)
+        card = self.page.evaluate("billForecast()[0].card_statements_expected[0]")
+        self.assertEqual(card['name'], 'RCBC Flex Visa')
+        self.assertEqual(card['expected'], round((2017.24+8263.94+4114.77)/3, 2))
+        # the open cycle is written down as it goes, and the AI is told what was learned
+        self.page.evaluate("render()")
+        self.assertIn(self.page.evaluate("keyOf(cycleStart())"), self.page.evaluate("Object.keys(S.hist)"))
+        self.assertEqual(self.page.evaluate("aiSnapshot().learned.cycles_recorded"), 4)
+        self.assertIn('bill_patterns', self.page.evaluate("BLUE_SYSTEM"))
+
+    def test_loan_check_shows_the_ai_answer_without_the_planner_card(self):
+        self.page.evaluate("""() => {window.advisorReply={verdict:'no',headline:'Wait until your next salary.',reasons:['This cycle is already short.'],safe_amount:0,tips:[]};
+          $('#aiAmt').value='4500';$('#aiTerm').value='3';$('#aiRate').value='0';$('#aiDue').value='2026-11-20';$('#aiForm').requestSubmit()}""")
+        self.page.wait_for_function("$('#aiOut').innerText.includes('Wait until')")
+        out = self.page.locator('#aiOut').inner_text()
+        self.assertNotIn("Planner's check", out)
+        self.assertNotIn('Safe to borrow', out)
+        self.assertIn('"learned"', self.page.evaluate("requests.at(-1).messages.at(-1).content"))
+
 if __name__ == '__main__':
     unittest.main()
