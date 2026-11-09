@@ -2288,13 +2288,32 @@ async function blueSend(text){
   win.addEventListener('keydown',e=>{if(e.key!=='Escape')return;e.preventDefault();win.classList.contains('asking')?blueStay():blueClose()});
 })();
 
+// Under the answer: the most you can safely borrow on the terms you entered, and how much each creditor in
+// Borrow could lend you on its own terms, its first payment on the same date, without any pay cycle dropping
+// below your buffer. A creditor without a rate isn't guessed at.
+function borrowLimits(f,R){
+  const rows=S.sources.filter(x=>num(x.avail)>0).map(x=>{
+    const term=Math.max(1,Math.round(num(x.term)||1)),fee=num(x.fee);
+    const terms=[term>1?term+' months':'one payment',known(x)?num(x.rate)+'%/mo'+(term>1&&x.addon?' add-on':''):'',fee?fee+'% fee':'',known(x)?'':'offers '+peso(num(x.avail))].filter(Boolean).join(' · ');
+    if(!known(x))return {x,terms,up:null};
+    const Q=loanCheck({...f,type:term>1?'inst':'once',term,rate:num(x.rate),addon:!!x.addon,fee,src:x.name||'Creditor',avail:num(x.avail),amt:num(x.avail),why:''});
+    return {x,terms,up:Q.safe};
+  }).sort((a,b)=>(b.up??-1)-(a.up??-1));
+  // with creditors listed, the most is what one of them can actually lend you; otherwise it's your own terms
+  const priced=rows.filter(r=>r.up!==null),best=priced.length?Math.max(0,...priced.map(r=>r.up)):R.safe;
+  return `<section class="gsec blimits" aria-labelledby="blimH"><h3 class="ghdr" id="blimH">How much you can borrow</h3><div class="glist">
+    <div class="grow"><span class="gmain">Most you can borrow safely</span><span class="gamt"><b>${best>0?peso(best):'Nothing right now'}</b></span></div>
+    ${priced.length?'':`<div class="grow"><span class="gmain"><span>On the terms you entered</span><span class="gsub">${f.type==='inst'?f.term+' months':'one payment'} · ${num(f.rate)}%</span></span><span class="gamt">${R.safe>0?peso(R.safe):'Not now'}</span></div>`}
+    ${rows.map(r=>`<div class="grow"><span class="gmain"><span>${esc(r.x.name||'Creditor')}</span><span class="gsub">${esc(r.terms)}</span></span><span class="gamt${r.up>0?'':' muted'}">${r.up===null?'Add its rate':r.up>0?'Up to '+peso(r.up):'Not now'}</span></div>`).join('')}
+  </div>${rows.length?'':'<p class="bbnote">Add creditors in Borrow to see how much each could lend you.</p>'}</section>`;
+}
 let aiRun=0;
 $('#aiForm').addEventListener('submit',async e=>{
   e.preventDefault();
   const f=readLoanForm(),out=$('#aiOut');
   if(typeof f==='string'){out.innerHTML=`<p class="t-bad small">${f}</p>`;return}
   const R=loanCheck(f),run=++aiRun;
-  out.innerHTML=aiReady()?`<div class="aibox" id="aiAns"><p class="muted small">Asking ${esc(aiName())}…</p></div>`:renderLoanCheck(R);
+  out.innerHTML=aiReady()?`<div class="aibox" id="aiAns"><p class="muted small">Asking ${esc(aiName())}…</p></div>`:renderLoanCheck(R)+borrowLimits(f,R);
   if(!aiReady())return;
   const btn=$('#aiGo');btn.disabled=true;
   try{
@@ -2304,7 +2323,8 @@ $('#aiForm').addEventListener('submit',async e=>{
       <p class="aih">${esc(a.headline)}</p>${a.reasons.length?`<ul>${a.reasons.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
       ${a.tips.length?`<p class="label">Tips</p><ul>${a.tips.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
       <p class="note">${esc(model)}${cost?' · '+esc(cost):''}</p>`;
-  }catch(err){if(run===aiRun)$('#aiOut').innerHTML=`<p class="t-bad small">${aiError(err)}</p>`+renderLoanCheck(R)}
+    $('#aiOut').insertAdjacentHTML('beforeend',borrowLimits(f,R));
+  }catch(err){if(run===aiRun)$('#aiOut').innerHTML=`<p class="t-bad small">${aiError(err)}</p>`+renderLoanCheck(R)+borrowLimits(f,R)}
   finally{btn.disabled=false}
 });
 

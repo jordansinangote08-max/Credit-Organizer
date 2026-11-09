@@ -183,5 +183,18 @@ class FinancialManagerTest(unittest.TestCase):
         self.assertNotIn('Safe to borrow', out)
         self.assertIn('"learned"', self.page.evaluate("requests.at(-1).messages.at(-1).content"))
 
+    def test_after_the_answer_it_shows_how_much_and_from_whom(self):
+        self.page.evaluate("""() => {S.sources=[{id:uid++,name:'MariBank Loan',avail:30000,rate:2.95,addon:true,fee:0,term:3},
+            {id:uid++,name:'Maya Easy Credit',avail:15000,rate:5.99,fee:0,term:1},{id:uid++,name:'Mystery lender',avail:5000}];fillAISrc();
+          window.advisorReply={verdict:'careful',headline:'Borrow less.',reasons:[],safe_amount:0,tips:[]};
+          $('#aiAmt').value='4500';$('#aiTerm').value='3';$('#aiRate').value='0';$('#aiDue').value='2026-11-20';$('#aiForm').requestSubmit()}""")
+        self.page.wait_for_function("$('#aiOut').textContent.includes('How much you can borrow')")
+        out = self.page.evaluate("$('#aiOut').textContent")
+        self.assertIn('Most you can borrow safely', out)
+        self.assertIn('MariBank Loan', out)
+        self.assertIn('Maya Easy Credit', out)
+        self.assertIn('Add its rate', out)          # no rate: not guessed
+        self.assertLess(out.index('Borrow less.'), out.index('How much you can borrow'))   # below the answer
+
 if __name__ == '__main__':
     unittest.main()

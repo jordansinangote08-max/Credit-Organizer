@@ -1298,3 +1298,9 @@ header .acctbar .ghost.sm:active{transform:none;opacity:.5}
 #panel-bills .sec-h .ghost.ib:active{transform:none;opacity:.5}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .seg2 button[aria-pressed="true"]{background:#636366;box-shadow:none}}
 :root[data-theme="dark"] .seg2 button[aria-pressed="true"]{background:#636366;box-shadow:none}
+
+/* under the loan answer: how much you can borrow, and from whom */
+.blimits{margin-top:16px}
+.blimits .gmain{font-size:1rem}
+.blimits .gamt{font-size:1rem}
+.blimits .gamt b{font-size:1.0625rem}
