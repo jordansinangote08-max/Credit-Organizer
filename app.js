@@ -131,8 +131,12 @@ const PATCHES=[
  s=>{if(!s.accounts.length)s.items.filter(i=>i.kind==='card').forEach(i=>{const maya=/maya/i.test(i.name);s.accounts.push({id:uid++,name:i.name,last4:'',limit:maya?15500:null,stmt:maya?15:null,bill:i.name})})},
  s=>{s.accounts.forEach(a=>{if(!a.key)a.key=genKey();if(a.bill!=null){const it=s.items.find(i=>i.kind==='card'&&i.name===a.bill&&!i.acct);if(it)it.acct=a.key;delete a.bill}})}
 ];
+const MAX_TERM=120;       // longest installment we accept, in months
 function prepare(){
   S.items.forEach(i=>{i.id=uid++;delete i._undo;delete i.min;
+    // "Total payments" once took a peso amount by mistake (4499.24 read as 4,499 payments): drop a total that can't be months
+    if(i.kind==='loan'&&i.total!=null&&!(Number.isInteger(num(i.total))&&num(i.total)>=1&&num(i.total)<=MAX_TERM)){i.total=null;delete i.maxLeft}
+    if(i.kind==='loan'&&num(i.total)>0&&num(i.left)>num(i.total))i.total=Math.round(num(i.left));
     // Restore the stable link on plans detached by older versions.
     if(i.bbInst?.startsWith('L')&&!i.inBill&&!i.inCard){i.inBill=i.bbInst.slice(1).split('|')[0];i.bbWaiting=!S.items.some(p=>p.bbRef===i.inBill)}
   });
@@ -461,7 +465,7 @@ function itemForm(i,isNew){
     ${repeats(i)?`<label class="check wide"><input type="checkbox" id="rp${i.id}" data-k="repeat" ${i.once?'':'checked'}><span>Repeats every month</span></label>
     ${i.once?'':`<div class="field wide"><label for="u${i.id}">Stops after</label><input id="u${i.id}" data-k="until" type="month" placeholder="YYYY-MM" pattern="[0-9]{4}-[0-9]{2}" value="${esc(i.until||'')}" aria-describedby="uh${i.id}"><span class="hint" id="uh${i.id}">Leave empty if it never stops.</span></div>`}`:''}
     ${i.kind==='loan'?`<div class="field wide"><label for="lend${i.id}">Lender</label><input id="lend${i.id}" data-k="lender" list="lenders" autocomplete="off" placeholder="${esc(lenderName(i))}" value="${esc(i.lender||'')}"><datalist id="lenders">${[...new Set(S.items.filter(x=>x.kind==='loan'&&x!==i).map(lenderName))].map(n=>`<option value="${esc(n)}">`).join('')}</datalist><span class="hint">Installments from the same lender are grouped.</span></div>`:''}
-    ${i.kind==='loan'?`<div class="field"><label for="l${i.id}">Payments left</label><input id="l${i.id}" data-k="left" type="number" inputmode="numeric" min="0" value="${i.left??''}"></div><div class="field"><label for="t${i.id}">Total payments</label><input id="t${i.id}" data-k="total" type="number" inputmode="numeric" min="0" value="${i.total??''}"></div>`:''}
+    ${i.kind==='loan'?`<div class="field"><label for="t${i.id}">Terms (months)</label><input id="t${i.id}" data-k="total" type="number" inputmode="numeric" step="1" min="1" max="${MAX_TERM}" placeholder="e.g. 3" value="${i.total??''}"><span class="hint">How many monthly payments in all.</span></div><div class="field"><label for="l${i.id}">Payments left</label><input id="l${i.id}" data-k="left" type="number" inputmode="numeric" step="1" min="0" placeholder="e.g. 3" value="${i.left??''}"><span class="hint">Count this month's if it isn't paid yet.</span></div>`:''}
     ${i.kind==='card'||i.kind==='loan'?`<div class="field"><label for="f4${i.id}">Last 4 digits</label><input id="f4${i.id}" data-k="last4" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="1234" autocomplete="off" value="${esc(last4Of(i))}"><span class="hint">Matches BillBuddy bills.</span></div>`:''}
     ${i.kind==='loan'?`<div class="field"><label for="r${i.id}">Interest %/month</label><input id="r${i.id}" data-k="rate" type="number" inputmode="decimal" step="0.01" min="0" value="${i.rate??''}"></div>`:''}
     ${isNew?'':`<div class="acts sheet-acts wide">${num(i.amount)>0?`<button class="bigbtn${isPaid(i)?' quiet':''}" data-billpaid="${i.id}">${isPaid(i)?'Mark as unpaid':'Mark as paid'}</button>`:''}<button class="dangerrow" data-del="${i.id}">Delete ${i.kind==='loan'?'installment':'bill'}</button></div>`}
@@ -594,7 +598,7 @@ function renderInst(){
     const rows=list.map((i,n)=>{
       const left=Math.max(0,Math.round(num(i.left))),pay=num(i.amount),total=Math.round(num(i.total))||null,end=endOf(i);
       if(left>0){gm+=pay;gr+=pay*left;if(!gl||end>gl)gl=end}
-      // Without "Total payments" the bar counts from the most payments left this installment has had (remembered
+      // Without terms the bar counts from the most payments left this installment has had (remembered
       // as maxLeft): 2 left of a 3-payment run shows a third done. Green once this payment is paid, red while unpaid.
       if(!total){const ml=Math.max(Math.round(num(i.maxLeft))||0,left+(isPaid(i)?1:0));if(ml>0&&ml!==i.maxLeft){i.maxLeft=ml;maxLeftChanged=true}}
       const runOf=total||Math.round(num(i.maxLeft))||0;
@@ -929,6 +933,16 @@ $('#billBody').addEventListener('input',e=>{
   if(e.target.dataset.day){it.day=dayFrom(e.target);delete it.bbDue;commit();return}
   if(k==='until'||k==='date'){if(e.target.value)it[k]=e.target.value;else delete it[k];commit();return}
   if(k==='lender'){const v=e.target.value.trim();if(v)it.lender=v;else delete it.lender;commit();return}
+  if(k==='total'||k==='left'){const v=e.target.value===''?null:Math.round(num(e.target.value)),h=e.target.parentElement.querySelector('.hint');
+    // terms are a count of months: a peso amount typed here (4499.24) would read as 4,499 payments
+    const bad=v!=null&&(v<(k==='total'?1:0)||(k==='total'&&v>MAX_TERM)||String(e.target.value).includes('.'));
+    if(h)h.textContent=bad?(k==='total'?'Enter the number of months, like 3, not the amount.':'Enter a whole number of payments.')
+      :k==='total'?'How many monthly payments in all.':'Count this month\'s if it isn\'t paid yet.';
+    h&&h.classList.toggle('t-bad',bad);if(bad)return;
+    it[k]=v;if(k==='total'&&v!=null&&it.left!=null&&num(it.left)>v)it.left=v;
+    if(k==='total'&&v!=null&&it.left==null)it.left=v;
+    if(k==='left'&&v!=null&&it.total!=null&&v>num(it.total))it.total=v;
+    delete it.maxLeft;commit();return}
   it[k]=k==='name'?e.target.value:(e.target.value===''?null:num(e.target.value));
   if(k==='name'){const a=acctOf(it);if(a)a.name=it.name;const f=$('#lend'+it.id);if(f)f.placeholder=lenderName(it)}
   if(k==='day')delete it.bbDue;

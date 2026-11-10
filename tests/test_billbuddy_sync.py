@@ -481,6 +481,27 @@ class SyncTest(unittest.TestCase):
         self.page.evaluate("delete S.done;renderInst()")                          # Go back: it's there again
         self.assertIn('Maya Credit', self.page.locator('#instList').inner_text())
 
+    def test_installment_terms_are_months_not_an_amount(self):
+        # A peso amount saved in the old "Total payments" box (4499.24) read as 4,499 payments and a full bar.
+        self.page.evaluate("S.items=[{name:'Tiktok Paylater',kind:'loan',cat:'loans',amount:1499.75,day:25,left:3,total:4499.24}];prepare();renderInst()")
+        self.assertIsNone(self.page.evaluate("S.items[0].total"))
+        out = self.page.locator('#instList').inner_text()
+        self.assertIn('1 of 3', out)
+        self.assertNotIn('4497', out)
+        self.assertEqual(self.page.evaluate("document.querySelector('#instList .bar i').style.width"), '0%')
+        # the editor asks for terms in months, and turns an amount away
+        self.page.evaluate("openEdit(S.items[0].id)")
+        self.assertIn('Terms (months)', self.page.locator('#billBody').inner_text())
+        terms = self.page.locator('#billBody [data-k="total"]')
+        terms.fill('4499.24')
+        self.assertIsNone(self.page.evaluate("S.items[0].total"))
+        self.assertIn('not the amount', self.page.locator('#billBody').inner_text())
+        terms.fill('3')
+        self.assertEqual(self.page.evaluate("S.items[0].total"), 3)
+        self.assertEqual(self.page.evaluate("S.items[0].left"), 3)
+        self.page.evaluate("renderInst()")
+        self.assertIn('1 of 3', self.page.locator('#instList').inner_text())
+
     def test_installments_waiting_for_their_statement_show_as_expected(self):
         statement = self.union_statement()
         self.page.evaluate('b=>{applyBB([b]);markPaid(S.items.find(i=>i.bbDue))}', statement)
