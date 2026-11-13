@@ -481,6 +481,18 @@ class SyncTest(unittest.TestCase):
         self.page.evaluate("delete S.done;renderInst()")                          # Go back: it's there again
         self.assertIn('Maya Credit', self.page.locator('#instList').inner_text())
 
+    def test_credit_cards_show_their_bank_logo(self):
+        self.page.evaluate("""() => {S.accounts=[{id:uid++,key:'a1',name:'RCBC Flex Visa',last4:'4069',limit:70000},
+          {id:uid++,key:'a2',name:'EastWest Everyday',last4:'3002'},{id:uid++,key:'a3',name:'Maya Easy Credit'},
+          {id:uid++,key:'a4',name:'Local Coop Card'}];save=()=>{};cloudUser={id:'x'};cloudReady=true;authKnown=true;
+          document.body.classList.remove('locked');renderAuth();renderAll();selectTab('acct')}""")
+        srcs = self.page.evaluate("[...document.querySelectorAll('#acctList .cchip')].map(c=>c.querySelector('img')?.getAttribute('src')||null)")
+        self.assertEqual(srcs, ['logos/rcbc.png', 'logos/eastwest.png', 'logos/maya.png', None])   # no logo: the colored card
+        self.assertIsNone(self.page.evaluate("logoOf('Maybank Visa')==='logos/maya.png'||null"))
+        self.assertEqual(self.page.evaluate("logoOf('BDO Unibank, Inc.')"), 'logos/bdo.png')
+        # the logo files are there to load
+        self.page.wait_for_function("[...document.querySelectorAll('#acctList .cchip img')].every(i=>i.complete&&i.naturalWidth>0)")
+
     def test_installment_terms_are_months_not_an_amount(self):
         # A peso amount saved in the old "Total payments" box (4499.24) read as 4,499 payments and a full bar.
         self.page.evaluate("S.items=[{name:'Tiktok Paylater',kind:'loan',cat:'loans',amount:1499.75,day:25,left:3,total:4499.24}];prepare();renderInst()")

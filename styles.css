@@ -1304,3 +1304,9 @@ header .acctbar .ghost.sm:active{transform:none;opacity:.5}
 .blimits .gmain{font-size:1rem}
 .blimits .gamt{font-size:1rem}
 .blimits .gamt b{font-size:1.0625rem}
+
+/* a bank's logo in place of the colored card: on a white tile so every logo reads in light and dark */
+.chipwrap{display:contents}
+.cchip.haslogo{width:44px;height:44px;border-radius:11px;padding:0;overflow:hidden;background:#fff;place-items:center;box-shadow:0 0 0 .5px rgba(60,60,67,.29)}
+.cchip.haslogo img{width:100%;height:100%;object-fit:contain;display:block}
+.cchip.big.haslogo{width:60px;height:60px;border-radius:14px}

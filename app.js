@@ -444,7 +444,7 @@ function bbForm(i){
   if(last4Of(i))facts.push(['Card','•••• '+esc(last4Of(i))]);
   if(i.kind==='loan'&&i.total)facts.push(['Payments left',num(i.left)+' of '+num(i.total)]);
   facts.push(['Pay cycle',fmtD(cs)+' – '+fmtD(cend)]);
-  return `<div class="shero">${i.kind==='card'?`<span class="cchip big" data-bank="${bankColor(a?a.name:i.name)}" aria-hidden="true"><i></i></span>`:''}
+  return `<div class="shero">${i.kind==='card'?`<span class="chipwrap" data-bank="${bankColor(a?a.name:i.name)}">${cardChip(a?a.name:i.name,true)}</span>`:''}
       <span class="sbig">${peso(num(i.amount))}</span><span class="ssub">${paid?'<span class="t-ok">Paid</span> · ':''}Due ${WDL[due.getDay()]}, ${fmtD(due)}</span></div>
     <div class="form flat glist sform" data-id="${i.id}">
       <div class="field"><label for="n${i.id}">Name</label><input id="n${i.id}" data-k="name" value="${esc(i.name)}"></div>
@@ -578,6 +578,34 @@ const lenderKey=i=>lenderName(i).toLowerCase().replace(/[^a-z0-9]/g,'').replace(
 // Colors are handed out in name order, each bank starting at its own hashed slot, so they stay put as you add things.
 const BANK_COLORS=['blue','orange','green','purple','pink','teal','amber'];
 const bankKey=name=>(String(name||'').trim().split(/\s+/)[0]||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+// ---------- bank logos (the same files and matching as BillBuddy) ----------
+const LOGOS={applepay:1,aub:1,bdo:1,bpi:1,chinabank:1,cimb:1,citibank:1,coins:1,eastwest:1,gcash:1,gotyme:1,grabpay:1,hsbc:1,
+  maribank:1,maya:1,maybank:1,metrobank:1,netbank:1,paypal:1,pnb:1,psbank:1,rcbc:1,robinsonsbank:1,securitybank:1,shopeepay:1,
+  standardchartered:1,tonik:1,unionbank:1,uniondigital:1,wise:1};
+const LOGO_ALIASES={applepay:['apple','applecard','applecash'],aub:['asiaunitedbank','asiaunited'],bdo:['bdounibank','bancodeoro'],
+  bpi:['bankofthephilippineislands','bpifamily'],chinabank:['chinabankingcorporation','chinabanksavings'],cimb:['cimbbank'],
+  citibank:['citi','citicards'],coins:['coinsph'],eastwest:['eastwestbank','eastwestbanker','komo'],gcash:['gsave','gcredit','gloan','ggives'],
+  gotyme:['gotymebank'],grabpay:['grab','grabpaylater'],hsbc:['hsbcph'],maribank:['mariloan'],maya:['paymaya','mayabank','mayacredit'],
+  maybank:['maybankph'],metrobank:['metropolitanbank','mbtc','metrobankcard'],netbank:[],paypal:[],pnb:['philippinenationalbank'],
+  psbank:['philippinesavingsbank'],rcbc:['rizalcommercialbanking','rcbcbankard','bankard','diskartech'],robinsonsbank:['robinsonbank','rbank'],
+  securitybank:['securitybankcorporation'],shopeepay:['shopee','spaylater'],standardchartered:['stanchart'],tonik:['tonikbank'],
+  unionbank:['unionbankph','unionbankofthephilippines','ubp'],uniondigital:['uniondigitalbank'],wise:['transferwise']};
+const LOGO_KEYS=(()=>{const t={};Object.keys(LOGOS).forEach(k=>t[k]=k);Object.entries(LOGO_ALIASES).forEach(([k,ns])=>ns.forEach(n=>t[n]=k));return t})();
+const LOGO_BY_LENGTH=Object.keys(LOGO_KEYS).sort((a,b)=>b.length-a.length);
+// the whole name, then a known name inside it (4+ letters, so "bdo" can't match inside another word), then a single word
+function logoOf(name){
+  const norm=v=>String(v||'').toLowerCase().replace(/[^a-z0-9]/g,''),key=norm(name);if(!key)return null;
+  if(LOGO_KEYS[key])return 'logos/'+LOGO_KEYS[key]+'.png';
+  const inside=LOGO_BY_LENGTH.find(c=>c.length>=4&&key.includes(c));if(inside)return 'logos/'+LOGO_KEYS[inside]+'.png';
+  const word=String(name||'').split(/[^A-Za-z0-9]+/).map(norm).filter(w=>LOGO_KEYS[w]).sort((a,b)=>b.length-a.length)[0];
+  return word?'logos/'+LOGO_KEYS[word]+'.png':null;
+}
+// a card shows its bank's logo; a bank without one keeps the small card in its color (as it does if the logo fails to load)
+function cardChip(name,big){
+  const src=logoOf(name),cls='cchip'+(big?' big':'');
+  return src?`<span class="${cls} haslogo" aria-hidden="true"><img src="${src}" alt="" loading="lazy" decoding="async" onerror="this.parentElement.classList.remove('haslogo');this.replaceWith(document.createElement('i'))"></span>`
+    :`<span class="${cls}" aria-hidden="true"><i></i></span>`;
+}
 function bankColor(name){
   const keys=[...new Set([...S.items.filter(i=>i.kind==='loan').map(i=>bankKey(i.inCard?S.accounts.find(a=>a.key===i.inCard)?.name:lenderName(i))),
     ...S.accounts.map(a=>bankKey(a.name))].filter(Boolean))].sort(),used=new Map(),taken=new Set();
@@ -806,7 +834,7 @@ function renderAccounts(){
       p!==null?`<span class="${over?'t-bad':''}">${p<10&&p>0?p.toFixed(1):p.toFixed(0)}%</span> of ${peso(L)}`:'Add a limit',
       U>0&&bill&&(bill.day||bill.bbDue)?'due '+fmtD(dueOf(bill,cycleStart())):''].filter(Boolean).map(f=>`<span>${f}</span>`).join(' · ');
     return `<button class="crow${over?' is-over':''}" data-aedit="${a.id}" data-bank="${bankColor(a.name)}" aria-label="Edit ${esc(a.name)}">
-      <span class="cchip" aria-hidden="true"><i></i></span>
+      ${cardChip(a.name)}
       <span class="cmain"><span class="ctop"><span class="cname">${esc(a.name)}</span>${state}</span>
         <span class="ubar"${p===null?' hidden':''}><i class="${ucls(p||0)}" style="width:${p===null?0:Math.min(100,p/UTIL_MAX*100).toFixed(1)}%"></i></span>
         <span class="cfacts">${facts}</span></span></button>`;
