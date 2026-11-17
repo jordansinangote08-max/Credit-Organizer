@@ -158,6 +158,85 @@ class SyncTest(unittest.TestCase):
         self.assertEqual(self.page.locator('#instList .bar.is-unpaid').count(), 2)
         self.assertEqual(self.page.evaluate('S.items.filter(i=>i.bbInst).map(i=>i.left)'), [10, 7])
 
+    def test_loan_without_payment_count_stays_unpaid_and_visible_after_pay_undo(self):
+        statement = {'bank': 'Maya', 'type': 'loan', 'account_key': 'maya-5852',
+                     'last4': '5852', 'amount': 1334.90, 'due_date': '2026-10-30'}
+        self.page.evaluate('''b=>{
+          applyBB([b]);
+          S.items.push({id:uid++,name:'Rent',kind:'bill',amount:100,day:28});
+          document.body.classList.remove('locked');selectTab('inst');renderInst();
+        }''', statement)
+        self.assertNotIn('fully paid', self.page.locator('#instList').inner_text())
+        self.assertEqual(self.page.locator('#instList .sub.is-done').count(), 0)
+        self.assertEqual(self.page.locator('#instList .bar.is-unpaid').count(), 1)
+        self.assertEqual(self.page.locator('#instList [data-ipaid]').count(), 1)
+        self.page.evaluate("selectTab('bills');renderItems()")
+        self.page.get_by_role('button', name='Mark Maya Loan paid', exact=True).click()
+        self.page.evaluate("selectTab('inst');renderInst()")
+        self.assertEqual(self.page.locator('#instList .bar.is-paid').count(), 1)
+        self.assertIsNone(self.page.evaluate("S.items.find(i=>i.bbKey==='maya-5852').left"))
+        self.page.evaluate('b=>applyBB([b])', statement)  # polling must preserve the payment
+        self.page.evaluate("selectTab('bills');renderItems()")
+        self.page.locator('[data-unpaid]').click()
+        self.page.evaluate('''b=>{
+          applyBB([b]);S=JSON.parse(snapshot());prepare();rollover();
+          selectTab('inst');renderInst();
+        }''', statement)
+        self.assertIn('Maya Loan', self.page.locator('#instList').inner_text())
+        self.assertNotIn('fully paid', self.page.locator('#instList').inner_text())
+        self.assertEqual(self.page.locator('#instList .bar.is-unpaid').count(), 1)
+        self.assertIsNone(self.page.evaluate("S.items.find(i=>i.bbKey==='maya-5852').left"))
+        self.assertFalse(self.page.evaluate("isPaid(S.items.find(i=>i.bbKey==='maya-5852'))"))
+        self.page.evaluate("selectTab('bills');renderItems()")
+        self.assertEqual(self.page.get_by_role('button', name='Mark Maya Loan paid', exact=True).count(), 1)
+
+    def test_unknown_payment_count_survives_installment_toggle_and_rollover(self):
+        for count in (None, '', 'missing'):
+            with self.subTest(count=count):
+                self.page.evaluate('''count=>{
+                  S=clone(DEFAULTS);S.items=[{id:uid++,name:'Maya Loan',kind:'loan',amount:1334.90,day:30},
+                    {id:uid++,name:'Rent',kind:'bill',amount:100,day:28}];
+                  if(count!=='missing')S.items[0].left=count;
+                  prepare();document.body.classList.remove('locked');selectTab('inst');renderInst();
+                }''', count)
+                self.assertNotIn('fully paid', self.page.locator('#instList').inner_text())
+                self.page.locator('#instList [data-ipaid]').click()
+                self.page.locator('#instList [data-iundo]').click()
+                self.assertIn('Maya Loan', self.page.locator('#instList').inner_text())
+                self.assertFalse(self.page.evaluate('isPaid(S.items[0])'))
+                self.assertIsNone(self.page.evaluate('S.items[0].left'))
+                self.page.evaluate('''() => {
+                  markPaid(S.items[0]);S=JSON.parse(snapshot());prepare();undoPaid(S.items[0]);
+                  markPaid(S.items[0]);S.items[0].paidCycle=keyOf(shiftCycle(cycleStart(),-1));
+                  rollover();renderInst();
+                }''')
+                self.assertIn('Maya Loan', self.page.locator('#instList').inner_text())
+                self.assertNotIn('fully paid', self.page.locator('#instList').inner_text())
+                self.assertEqual(self.page.locator('#instList [data-ipaid]').count(), 1)
+
+    def test_previously_hidden_unpaid_import_recovers_without_reopening_completed_loans(self):
+        self.page.evaluate('''() => {
+          S.items=[{name:'Maya Loan',kind:'loan',amount:1334.90,day:30,left:0,total:null,
+            bbDue:'2026-10-30',bbKey:'maya-5852',bbStatement:'2026-10-30'},
+            {name:'Finished loan',kind:'loan',amount:100,day:30,left:0,total:12},
+            {name:'Paid loan',kind:'loan',amount:100,day:30,left:0,total:null,
+              bbDue:'2026-10-30',bbStatement:'paid',bbPaidStatement:'paid'}];
+          prepare();renderInst();
+        }''')
+        self.assertIsNone(self.page.evaluate('S.items[0].left'))
+        self.assertEqual(self.page.evaluate('S.items[1].left'), 0)
+        self.assertEqual(self.page.evaluate('S.items[2].left'), 0)
+        self.assertIn('Maya Loan', self.page.locator('#instList').inner_text())
+        self.assertNotIn('Finished loan', self.page.locator('#instList').inner_text())
+        self.assertFalse(self.page.evaluate('isPaid(S.items[0])'))
+        self.page.evaluate('''() => {
+          S.items[0].left=0;
+          applyBB([{bank:'Maya',type:'loan',account_key:'maya-5852',amount:1334.90,due_date:'2026-10-30'}]);
+          renderInst();
+        }''')
+        self.assertIsNone(self.page.evaluate('S.items[0].left'))
+        self.assertIn('Maya Loan', self.page.locator('#instList').inner_text())
+
     def test_deleted_statement_keeps_plans_and_next_statement_reuses_them(self):
         statement = self.union_statement()
         self.page.evaluate('b=>{applyBB([b]);markPaid(S.items.find(i=>i.bbDue))}', statement)

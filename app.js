@@ -101,6 +101,7 @@ function dueDate(day,start){
   return new Date(y,m,Math.min(day,dim(y,m)));
 }
 const dayOf=i=>Math.min(31,Math.max(1,num(i.day)||1));
+const hasPaymentCount=i=>i.left!=null&&i.left!=='';
 // a BillBuddy bill has an exact due date, so it only counts in the pay cycle that date falls in
 // A bill repeats every month on its due day, until the month in `until` (empty: forever).
 // A one-time bill (`once`) is due on its exact `date`, like a BillBuddy bill.
@@ -137,6 +138,9 @@ function prepare(){
     // "Total payments" once took a peso amount by mistake (4499.24 read as 4,499 payments): drop a total that can't be months
     if(i.kind==='loan'&&i.total!=null&&!(Number.isInteger(num(i.total))&&num(i.total)>=1&&num(i.total)<=MAX_TERM)){i.total=null;delete i.maxLeft}
     if(i.kind==='loan'&&num(i.total)>0&&num(i.left)>num(i.total))i.total=Math.round(num(i.left));
+    // Older Pay/Undo converted an unknown count to zero. An unpaid imported bill without
+    // a known term is still due, so recover that count as unknown rather than hide it.
+    if(i.kind==='loan'&&i.bbDue&&!num(i.total)&&hasPaymentCount(i)&&num(i.left)===0&&!isPaid(i))i.left=null;
     // Restore the stable link on plans detached by older versions.
     if(i.bbInst?.startsWith('L')&&!i.inBill&&!i.inCard){i.inBill=i.bbInst.slice(1).split('|')[0];i.bbWaiting=!S.items.some(p=>p.bbRef===i.inBill)}
   });
@@ -251,14 +255,14 @@ const isHiddenPaid=i=>isPaid(i)&&Date.now()-num(i.paidAt)>=DAY;
 function markPaid(i){if(isPaid(i))return;delete S.stay;
   if(i.paidCycle&&S.closed&&i.paidCycle===S.closed.key&&i.paidCycle!==cycleKey())i.paidPrev={cycle:i.paidCycle,at:i.paidAt,prevLeft:i.prevLeft??null};
   i.paidAt=Date.now();i.paidCycle=cycleKey();if(i.bbStatement){i.bbPaidStatement=i.bbStatement;i.bbPaidDue=i.bbStatementDue}
-  if(i.kind==='loan'){i.prevLeft=num(i.left);i.left=Math.max(0,num(i.left)-1)}
+  if(i.kind==='loan'){i.prevLeft=hasPaymentCount(i)?num(i.left):null;if(hasPaymentCount(i))i.left=Math.max(0,num(i.left)-1)}
   if(i.bbRef)S.items.filter(y=>y.inBill===i.bbRef&&!isPaid(y)).forEach(markPaid);
   if(i.kind==='card'&&i.acct)S.items.filter(y=>y.inCard===i.acct&&!isPaid(y)).forEach(markPaid)}
 function undoPaid(i){
   if(!i.bbStatement&&i.paidPrev&&i.paidPrev.cycle===cycleKey()){   // undo last cycle's payment, keep the new one
-    if(i.kind==='loan')i.left=num(i.left)+1;delete i.paidPrev;
+    if(i.kind==='loan'&&hasPaymentCount(i))i.left=num(i.left)+1;delete i.paidPrev;
   }else{
-    if(i.kind==='loan'&&i.prevLeft!=null)i.left=i.prevLeft;delete i.paidAt;delete i.paidCycle;delete i.prevLeft;delete i.bbPaidStatement;delete i.bbPaidDue;
+    if(i.kind==='loan'&&'prevLeft' in i)i.left=i.prevLeft;delete i.paidAt;delete i.paidCycle;delete i.prevLeft;delete i.bbPaidStatement;delete i.bbPaidDue;
     const p=i.paidPrev;if(p){i.paidCycle=p.cycle;if(p.at)i.paidAt=p.at;if(p.prevLeft!=null)i.prevLeft=p.prevLeft;delete i.paidPrev}
   }
   if(i.bbRef)S.items.filter(y=>y.inBill===i.bbRef&&isPaid(y)).forEach(undoPaid);
@@ -281,7 +285,7 @@ function rollover(){
     if(!i.paidCycle||i.paidCycle===key||i.paidCycle===kept)return true;
     changed=true;delete i.paidAt;delete i.paidCycle;delete i.prevLeft;
     if(i.kind==='card'&&!i.bbStatement)i.amount=null;
-    return !(i.kind==='loan'&&num(i.left)<=0&&!i.bbInst);
+    return !(i.kind==='loan'&&hasPaymentCount(i)&&num(i.left)<=0&&!i.bbInst);
   });
   return changed;
 }
@@ -620,16 +624,17 @@ function renderInst(){
   const groups=new Map();
   // a fully paid installment shows (Paid) in the cycle of its last payment only, not in the cycles after it
   S.items.filter(i=>i.kind==='loan'&&!hasParts(i)&&!(i.left!=null&&i.left!==''&&num(i.left)<=0&&!isPaid(i))).sort((a,b)=>dayOf(a)-dayOf(b)||num(b.left)-num(a.left)||String(a.name).localeCompare(b.name)).forEach(i=>{const k=lenderKey(i);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(i)});
-  let monthly=0,remaining=0,last=null,maxLeftChanged=false;
+  let monthly=0,remaining=0,last=null,maxLeftChanged=false,unknownLeft=false;
   const html=[...groups.values()].map(list=>{
     let gm=0,gr=0,gl=null;const r0=list[0];
     const rows=list.map((i,n)=>{
-      const left=Math.max(0,Math.round(num(i.left))),pay=num(i.amount),total=Math.round(num(i.total))||null,end=endOf(i);
+      const known=hasPaymentCount(i),left=known?Math.max(0,Math.round(num(i.left))):null,pay=num(i.amount),total=Math.round(num(i.total))||null,end=endOf(i);
+      if(!known){gm+=pay;unknownLeft=true}
       if(left>0){gm+=pay;gr+=pay*left;if(!gl||end>gl)gl=end}
       // Without terms the bar counts from the most payments left this installment has had (remembered
       // as maxLeft): 2 left of a 3-payment run shows a third done. Green once this payment is paid, red while unpaid.
-      if(!total){const ml=Math.max(Math.round(num(i.maxLeft))||0,left+(isPaid(i)?1:0));if(ml>0&&ml!==i.maxLeft){i.maxLeft=ml;maxLeftChanged=true}}
-      const runOf=total||Math.round(num(i.maxLeft))||0;
+      if(known&&!total){const ml=Math.max(Math.round(num(i.maxLeft))||0,left+(isPaid(i)?1:0));if(ml>0&&ml!==i.maxLeft){i.maxLeft=ml;maxLeftChanged=true}}
+      const runOf=known?(total||Math.round(num(i.maxLeft))||0):0;
       const pct=runOf?Math.round(Math.max(0,runOf-left)/runOf*100):(isPaid(i)?100:0);
       // one quiet row: name and monthly amount; a thin bar; "2 of 12 · ₱X left · Sep 2027" with one pay toggle
       const calm=t=>/[a-z]/.test(t)||!/[A-Z]{3}/.test(t)?t:t.toLowerCase().replace(/(^|[\s(\/-])([a-z])/g,(m,a,b)=>a+b.toUpperCase());
@@ -638,12 +643,12 @@ function renderInst(){
       const paidNow=isPaid(i)||left===0;
       const count=runOf?`${Math.min(runOf,runOf-left+(isPaid(i)?0:1))} of ${runOf}`:i.bbTerm?`Payment ${i.bbTerm}`:'';
       const facts=[count,
-        i.bbWaiting?'waiting for next bill':left>0?`${peso(pay*left)} left`:'fully paid',
+        i.bbWaiting?'waiting for next bill':!known?'payments left unknown':left>0?`${peso(pay*left)} left`:'fully paid',
         left>0&&end?ym(end):''].filter(Boolean).join(' · ');
       // a paid installment says "Paid" (a label, not a button) with a separate small Undo; an unpaid one says "Mark paid"
       const toggle=billed(i)?''
         :isPaid(i)?`<span class="ptag">${IC.check}Paid</span>`+(isHiddenPaid(i)?'':`<button class="pundo" data-iundo="${i.id}" aria-label="Undo paid for ${esc(i.name)}">Undo</button>`)
-        :left>0?`<button class="pmark" data-ipaid="${i.id}" aria-label="Mark ${esc(i.name)} paid">Pay</button>`:'';
+        :!known||left>0?`<button class="pmark" data-ipaid="${i.id}" aria-label="Mark ${esc(i.name)} paid">Pay</button>`:'';
       return `<div class="sub${paidNow?' is-done':''}">
         <div class="sub-h"><button class="sub-name openw" data-isched="${i.id}" aria-haspopup="dialog" title="Payment schedule">${esc(calm(nm))}</button><span class="pay">${peso(pay)}</span></div>
         <div class="bar ${paidNow?'is-paid':'is-unpaid'}" role="img" aria-label="${runOf?(runOf-left)+' of '+runOf+' paid; ':''}${i.bbWaiting?'waiting for next bill':isPaid(i)?'current payment paid':'current payment unpaid'}"><i style="width:${pct}%"></i></div>
@@ -662,7 +667,7 @@ function renderInst(){
   }).join('');
   const longM=d=>d?['January','February','March','April','May','June','July','August','September','October','November','December'][d.getMonth()]+' '+d.getFullYear():'';
   $('#instSum').innerHTML=`<div class="sum2"><div><span>Every month</span><b>${peso(monthly)}</b></div><div><span>Still to go</span><b>${peso(remaining)}</b></div></div>
-    <span class="hsum-sub">${remaining>0&&last?`All done by ${longM(last)}`:'Nothing left to pay'}</span>`;
+    <span class="hsum-sub">${unknownLeft?'Remaining payments unknown':remaining>0&&last?`All done by ${longM(last)}`:'Nothing left to pay'}</span>`;
   $('#instList').innerHTML=html||'<p class="empty">No installments yet.</p>';
   if(maxLeftChanged)setTimeout(save,0);
 }
@@ -888,7 +893,7 @@ function cycleInfo(){
 // every payment still to come on one installment, with its date and what's left after it
 function schedInfo(i){
   const total=Math.round(num(i.total)),dates=loanDates(i).filter((d,k)=>!(paidInCycle(i)&&k===0)),amt=num(i.amount);
-  if(!dates.length){infoWin(planLabel(i),i.bbTerm?'<p class="small">The statement didn\'t show how many months this has, so its schedule isn\'t known yet.</p>':'<p class="small">No payments left.</p>');return}
+  if(!dates.length){infoWin(planLabel(i),!hasPaymentCount(i)||i.bbTerm?'<p class="small">The statement didn\'t show how many months this has, so its schedule isn\'t known yet.</p>':'<p class="small">No payments left.</p>');return}
   const first=total?total-dates.length+1:null;
   const rows=dates.map((d,k)=>[`${first?`<span class="plan-of">${first+k}/${total}</span>`:''}${fmtD(d)}, ${d.getFullYear()}`,peso(amt)]);
   rows.push(['Still to pay',peso(amt*dates.length),'tot']);
@@ -1494,6 +1499,7 @@ function adoptBB(it,b,due){
   let ch=false;const set=(o,k,v)=>{if(v!=null&&o[k]!==v){o[k]=v;ch=true}};
   let plans=bbPlans(b);
   const paidNow=isPaid(it)||it.bbPaidDue===b.due_date; // this statement is already paid
+  if(it.kind==='loan'&&!num(it.total)&&hasPaymentCount(it)&&num(it.left)===0&&!paidNow){it.left=null;ch=true}
   if(it.kind==='card'){
     const a=acctOf(it);if(!a)return ch;
     if(!(num(a.limit)>0)&&num(b.credit_limit)>0)set(a,'limit',num(b.credit_limit));
