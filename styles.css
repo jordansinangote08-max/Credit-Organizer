@@ -1312,5 +1312,10 @@ header .acctbar .ghost.sm:active{transform:none;opacity:.5}
 #billCycleBtn .chev{width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg) translateY(-2px)}
 .bill-cycle-option{width:100%;min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left}
 .bill-cycle-option[aria-current="true"]{font-weight:700;color:var(--accent)}
+.bill-cycle-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center}
+.bill-cycle-row+.bill-cycle-row{border-top:1px solid var(--line)}
+.bill-cycle-row>.ib{min-width:44px;min-height:44px}
 #itemList .planned-bill{grid-template-columns:minmax(0,1fr) auto}
+.planned-progress{display:grid;gap:4px;margin-top:6px;font-size:.8125rem;color:var(--muted)}
+.planned-progress .bar{margin:0}
 #plannedBillForm{display:grid;gap:12px}

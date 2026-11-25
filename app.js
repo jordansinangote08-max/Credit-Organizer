@@ -499,9 +499,11 @@ let plannedCycle=null;
 function futureBillCycles(){
   const start=liveCycleStart();
   const next=shiftCycle(start,1);
-  const saved=(S.billPlanCycles||[]).map(parseD)
+  const main=preview?.main||S;
+  const removed=new Set(main.removedBillPlanCycles||[]);
+  const saved=(main.billPlanCycles||[]).map(parseD)
     .filter(d=>d&&d>next&&+prevPay(new Date(d.getFullYear(),d.getMonth(),d.getDate()+1))===+d);
-  return [next,...saved.sort((a,b)=>a-b)];
+  return [next,...saved.sort((a,b)=>a-b)].filter(d=>!removed.has(iso(d)));
 }
 function billCycleLabel(start){
   const end=new Date(shiftCycle(start,1));
@@ -510,10 +512,33 @@ function billCycleLabel(start){
 }
 function openBillCycles(){
   const cycles=futureBillCycles();
-  const options=[['','This cycle'],...cycles.map((date,index)=>[iso(date),index===0?'Next cycle · '+billCycleLabel(date):billCycleLabel(date)])];
+  const next=iso(shiftCycle(liveCycleStart(),1));
+  const options=[['','This cycle'],...cycles.map(date=>[iso(date),(iso(date)===next?'Next cycle · ':'')+billCycleLabel(date)])];
   infoWin('Choose a bill cycle',`<div class="glist">${options.map(([value,label])=>
-    `<button class="ghost bill-cycle-option" type="button" data-bill-cycle="${value}" aria-current="${value===(plannedCycle||'')}">${label}</button>`).join('')}</div>
+    `<div class="bill-cycle-row"><button class="ghost bill-cycle-option" type="button" data-bill-cycle="${value}" aria-current="${value===(plannedCycle||'')}">${label}</button>${
+       value?delBtn(`type="button" data-remove-bill-cycle="${value}"`,'Remove '+label):''}</div>`).join('')}</div>
     <button class="ghost" type="button" data-more-bill-cycles>+ Add another cycle</button>`);
+}
+// Imported plans count from their statement, which can be in an earlier or later cycle.
+function plannedInstallmentDates(item){
+  const anchor=parseD(item.bbStatementDue)||parseD(item.bbDue);
+  if(!anchor)return loanDates(item);
+  const day=item.day?dayOf(item):anchor.getDate();
+  const count=Math.min(MAX_TERM,Math.max(0,Math.round(num(item.left)))+(isPaid(item)?1:0));
+  return Array.from({length:count},(_,offset)=>{
+    const month=new Date(anchor.getFullYear(),anchor.getMonth()+offset,1);
+    return offset===0?anchor:new Date(month.getFullYear(),month.getMonth(),Math.min(day,dim(month.getFullYear(),month.getMonth())));
+  });
+}
+function installmentProgress(item,date){
+  if(!hasPaymentCount(item))return {name:planLabel(item),label:item.bbTerm?'Payment '+item.bbTerm:'Payment count unknown'};
+  const dates=plannedInstallmentDates(item),index=dates.findIndex(d=>+d===+date);
+  const paid=isPaid(item)&&(item.bbStatementDue||item.bbDue||paidInCycle(item))?1:0;
+  const left=Math.max(0,num(item.left)-Math.max(0,index-paid));
+  const total=num(item.total)||num(item.maxLeft);
+  const payment=total?Math.min(total,total-left+(index===0&&paid?0:1)):null;
+  return {name:planLabel(item),label:payment?`Payment ${payment} of ${total}`:`${left} payment${left===1?'':'s'} left`,
+    percent:payment?Math.round(Math.max(0,payment-(index===0&&paid?0:1))/total*100):null};
 }
 function futureBillRows(start){
   const end=shiftCycle(start,1),inside=date=>date>=start&&date<end;
@@ -522,18 +547,24 @@ function futureBillRows(start){
     if(item.inCard)continue;
     const date=exactDue(item);
     if(date&&inside(date)&&!billed(item)){
-      rows.push({item,date,editable:item.once&&!item.bbDue&&repeats(item)});
+      const parts=S.items.filter(part=>(item.bbRef&&part.inBill===item.bbRef)||(item.acct&&part.inCard===item.acct));
+      const progress=parts.map(part=>installmentProgress(part,date));
+      if(item.kind==='loan'&&!parts.length)progress.push(installmentProgress(item,date));
+      rows.push({item,date,editable:item.once&&!item.bbDue&&repeats(item),progress});
     }else if(!date&&repeats(item)&&!billed(item)&&inCycle(item,start)){
       rows.push({item,date:dueOf(item,start),recurring:true});
-    }else if(item.kind==='loan'&&!hasParts(item)){
-      const due=loanDates(item).find(d=>inside(d)&&(!item.bbStatementDue||iso(d)>item.bbStatementDue));
+    }else if(item.kind==='loan'&&!item.bbOld&&!hasParts(item)){
+      const due=plannedInstallmentDates(item).find(inside);
       if(!due)continue;
-      if(!item.inBill){rows.push({item,date:due,recurring:true});continue}
+      const progress=installmentProgress(item,due);
+      if(!item.inBill){rows.push({item,date:due,recurring:true,progress:[progress]});continue}
       const parent=partOf(item);
       if(parent&&inside(exactDue(parent)))continue;
       const key=item.inBill+'|'+iso(due);
-      if(!loanGroups.has(key))loanGroups.set(key,{item:{name:lenderName(item),kind:'loan',cat:parent?.cat||item.cat,amount:0},date:due,recurring:true});
-      loanGroups.get(key).item.amount+=num(item.amount);
+      if(!loanGroups.has(key))loanGroups.set(key,{item:{name:lenderName(item),kind:'loan',cat:parent?.cat||item.cat,amount:0},date:due,recurring:true,progress:[]});
+      const group=loanGroups.get(key);
+      group.item.amount+=num(item.amount);
+      group.progress.push(progress);
     }
   }
   return [...rows,...loanGroups.values()].sort((a,b)=>a.date-b.date);
@@ -543,9 +574,11 @@ function renderPlannedBills(rows){
     const bills=rows.filter(({item})=>catOf(item)?.key===cat.key);
     if(!bills.length)return '';
     const total=bills.reduce((sum,{item})=>sum+num(item.amount),0);
-    return `<section class="gsec" data-c="${esc(cat.color)}"><h3 class="ghdr">${esc(cat.name)} · ${peso(total)}</h3><div class="glist">${bills.map(({item,date,editable,recurring})=>
+    return `<section class="gsec" data-c="${esc(cat.color)}"><h3 class="ghdr">${esc(cat.name)} · ${peso(total)}</h3><div class="glist">${bills.map(({item,date,editable,recurring,progress=[]})=>
       `<div class="bill planned-bill"><div class="bmain">${editable?`<button class="nm openw" data-plan-edit="${item.id}" aria-haspopup="dialog">${esc(item.name||'Untitled bill')}</button>`:`<span class="nm">${esc(item.name||'Untitled bill')}</span>`}
-      <div class="mt"><span>Due ${fmtD(date)}</span><span>${editable?'One-time':recurring?'Recurring':'Statement'}</span></div></div>
+      <div class="mt"><span>Due ${fmtD(date)}</span><span>${editable?'One-time':recurring&&!progress.length?'Recurring':recurring?'Projected':'Statement'}</span></div>
+      ${progress.map(p=>`<div class="planned-progress"><span>${progress.length>1||item.kind==='card'?esc(p.name)+' · ':''}${esc(p.label)}</span>
+        ${p.percent==null?'':`<div class="bar is-unpaid" aria-hidden="true"><i style="width:${p.percent}%"></i></div>`}</div>`).join('')}</div>
       <div class="rt"><span class="amt">${num(item.amount)>0?peso(num(item.amount)):'Amount pending'}</span></div></div>`).join('')}</div></section>`;
   }).join('')||'<div class="glist"><p class="gempty">No bills planned for this cycle.</p></div>';
 }
@@ -1144,14 +1177,30 @@ $('#infoBody').addEventListener('click',e=>{
     return;
   }
   if(e.target.closest('[data-more-bill-cycles]')){
-    const cycles=futureBillCycles();
-    const added=iso(nextPay(cycles[cycles.length-1]));
     const main=preview?.main||S;
-    main.billPlanCycles=[...cycles.slice(1).map(iso),added];
-    if(viewNext)S.billPlanCycles=main.billPlanCycles;
+    const cycles=new Set(futureBillCycles().map(iso));
+    const next=shiftCycle(liveCycleStart(),1);
+    let date=next;
+    while(cycles.has(iso(date)))date=nextPay(date);
+    const added=iso(date);
+    main.removedBillPlanCycles=(main.removedBillPlanCycles||[]).filter(d=>d!==added);
+    if(+date!==+next)main.billPlanCycles=[...new Set([...(main.billPlanCycles||[]),added])];
     save(true);
     openBillCycles();
     $('#infoBody [data-bill-cycle="'+added+'"]').focus();
+    return;
+  }
+  const removeCycle=e.target.closest('[data-remove-bill-cycle]');
+  if(removeCycle){
+    const date=removeCycle.dataset.removeBillCycle;
+    if(!futureBillCycles().some(d=>iso(d)===date))return;
+    const main=preview?.main||S;
+    main.billPlanCycles=(main.billPlanCycles||[]).filter(d=>d!==date);
+    main.removedBillPlanCycles=[...(main.removedBillPlanCycles||[]).filter(d=>d>iso(liveCycleStart())),date];
+    if(plannedCycle===date){clearPreview();refreshCycleView()}
+    save(true);
+    openBillCycles();
+    $('#infoBody [data-more-bill-cycles]').focus();
     return;
   }
   const remove=e.target.closest('[data-plan-remove]');
@@ -2950,7 +2999,8 @@ function showPlannedCycle(start){
     for(const [index,item] of S.items.entries()){
       const copy=state.items[index];
       if(item.kind==='loan'&&hasPaymentCount(item)){
-        const elapsed=loanDates(item).filter(d=>d<start).length-(paidInCycle(item)?1:0);
+        const paid=isPaid(item)&&(item.bbStatementDue||item.bbDue||paidInCycle(item))?1:0;
+        const elapsed=plannedInstallmentDates(item).filter(d=>d<start).length-paid;
         copy.left=Math.max(0,num(item.left)-Math.max(0,elapsed));
       }
       if(item.kind==='card'&&!inCycle(item,start))copy.amount=null;
