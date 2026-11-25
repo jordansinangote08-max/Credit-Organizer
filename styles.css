@@ -797,10 +797,10 @@ header .acctbar{flex-wrap:wrap}
 .previewbar b{font-weight:650}
 /* nothing can be changed: inputs, add/edit/paid/remove buttons and edit links are hidden or inert */
 body.previewing .hero input,body.previewing .hero select{pointer-events:none;border-color:transparent;background:transparent}
-body.previewing .main :is(input,select,textarea){pointer-events:none}
-body.previewing .main :is(.bt,.acts,.add,#addBtn,#catBtn,#resetBtn,#resetConfirm,.ask4,.mon-h .ib,.inc .x,details.sec:has(#srcList)){display:none!important}
+body.previewing .main :is(input,select,textarea):not(#aiForm *){pointer-events:none}
+body.previewing .main :is(.bt,.acts,.add,#catBtn,#resetBtn,#resetConfirm,.ask4,.inc .x,details.sec:has(#srcList)):not(#aiForm *){display:none!important}
 body.previewing .main [data-edit]{pointer-events:none;text-decoration:none}
-body.previewing #tab-ai,body.previewing #tab-bbsync{display:none}
+body.previewing #tab-bbsync,body.previewing [data-moretab="bbsync"]{display:none}
 body.previewing #advice .btn,body.previewing #advice .ghost{display:none}
 
 /* money left from the previous cycle: a normal "money in" line whose amount can be tapped and changed */
