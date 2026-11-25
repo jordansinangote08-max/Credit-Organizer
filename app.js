@@ -111,6 +111,7 @@ const repeats=i=>i.kind!=='loan'&&i.kind!=='card';
 const exactDue=i=>parseD(i.bbDue)||(i.once&&repeats(i)?parseD(i.date):null);
 const dueOf=(i,start)=>exactDue(i)||dueDate(dayOf(i),start);
 const inCycle=(i,start)=>{
+  if(i.planOnly)return false; // temporary bills are read only through the future-cycle planner
   // an installment with no payments left is done: it shows (paid) in the cycle of its last payment, not after
   if(i.kind==='loan'&&i.left!=null&&i.left!==''&&num(i.left)<=0&&!paidIn(i,keyOf(start)))return false;
   const d=exactDue(i);if(d)return d>=start&&d<shiftCycle(start,1);
@@ -155,7 +156,9 @@ function prepare(){
   if(S.buffer==null)S.buffer=2000;
   if(!S.pay||typeof S.pay!=='object'){S.pay={};const t=new Date();t.setHours(0,0,0,0);
     if(num(S.salary)>0)S.pay[keyOf(prevPay(new Date(t.getFullYear(),t.getMonth(),t.getDate()+1)))]=num(S.salary)}
-  const pk=Object.keys(S.pay);if(pk.length>24)pk.sort((a,b)=>new Date(a.replace(/-/g,'/'))-new Date(b.replace(/-/g,'/'))).slice(0,pk.length-24).forEach(k=>delete S.pay[k]);
+  const current=cycleStart();
+  Object.keys(S.pay).map(key=>({key,date:new Date(key.replace(/-/g,'/'))}))
+    .filter(x=>x.date<current).sort((a,b)=>b.date-a.date).slice(24).forEach(({key})=>delete S.pay[key]);
   for(let k=Number(S.rev)||0;k<PATCHES.length;k++)PATCHES[k](S);
   S.rev=PATCHES.length;
   ensureLinks();
@@ -267,10 +270,16 @@ function undoPaid(i){
   }
   if(i.bbRef)S.items.filter(y=>y.inBill===i.bbRef&&isPaid(y)).forEach(undoPaid);
   if(i.kind==='card'&&i.acct)S.items.filter(y=>y.inCard===i.acct&&isPaid(y)).forEach(undoPaid)}
+function expirePlannedBills(){
+  const end=shiftCycle(cycleStart(),1),before=S.items.length;
+  S.items=S.items.filter(item=>!item.planOnly||exactDue(item)>=end);
+  return S.items.length!==before;
+}
 function rollover(){
   let changed=purgeClosed();
   // the calendar has reached the cycle that started early: nothing to shift any more
   if(S.done&&!S.closed&&S.done!==keyOf(naturalStart())){delete S.done;changed=true}
+  if(expirePlannedBills())changed=true;
   const key=cycleKey(),kept=S.closed&&S.closed.key;     // a cycle closed early keeps its paid marks for 24 hours
   // a one-time bill whose pay cycle is over (by the calendar, and past the 24 hours to go back to a cycle
   // finished early) is never shown or counted again
@@ -576,7 +585,7 @@ function renderPlannedBills(rows){
     const total=bills.reduce((sum,{item})=>sum+num(item.amount),0);
     return `<section class="gsec" data-c="${esc(cat.color)}"><h3 class="ghdr">${esc(cat.name)} · ${peso(total)}</h3><div class="glist">${bills.map(({item,date,editable,recurring,progress=[]})=>
       `<div class="bill planned-bill"><div class="bmain">${editable?`<button class="nm openw" data-plan-edit="${item.id}" aria-haspopup="dialog">${esc(item.name||'Untitled bill')}</button>`:`<span class="nm">${esc(item.name||'Untitled bill')}</span>`}
-      <div class="mt"><span>Due ${fmtD(date)}</span><span>${editable?'One-time':recurring&&!progress.length?'Recurring':recurring?'Projected':'Statement'}</span></div>
+      <div class="mt"><span>Due ${fmtD(date)}</span><span>${item.planOnly?'Plan only':editable?'One-time':recurring&&!progress.length?'Recurring':recurring?'Projected':'Statement'}</span></div>
       ${progress.map(p=>`<div class="planned-progress"><span>${progress.length>1||item.kind==='card'?esc(p.name)+' · ':''}${esc(p.label)}</span>
         ${p.percent==null?'':`<div class="bar is-unpaid" aria-hidden="true"><i style="width:${p.percent}%"></i></div>`}</div>`).join('')}</div>
       <div class="rt"><span class="amt">${num(item.amount)>0?peso(num(item.amount)):'Amount pending'}</span></div></div>`).join('')}</div></section>`;
@@ -587,6 +596,7 @@ function openPlannedBill(item){
   end.setDate(end.getDate()-1);
   const categories=S.cats.filter(repeats);
   infoWin(item?'Edit planned bill':'Plan a bill',`<form id="plannedBillForm" data-id="${item?.id??''}" data-cycle="${iso(start)}">
+    ${!item||item.planOnly?'<p class="small muted">This bill clears when this cycle becomes current.</p>':''}
     <div class="field"><label for="planName">Name</label><input id="planName" name="name" value="${esc(item?.name||'')}" required></div>
     <div class="field"><label for="planCategory">Category</label><select id="planCategory" name="category" required>${categories.map(cat=>
       `<option value="${esc(cat.key)}" ${cat.key===(item?.cat||categories.find(c=>c.kind==='bill')?.key)?'selected':''}>${esc(cat.name)}</option>`).join('')}</select></div>
@@ -608,7 +618,7 @@ function renderItems(){
   // installments billed with a card are part of its statement, so the Bills tab doesn't list them twice
   // a BillBuddy statement's paid mark belongs to the statement, so it is listed only in its own cycle
   const hidden=S.items.filter(i=>!billed(i)&&isHiddenPaid(i)&&(!i.bbDue||inCycle(i,start))),vis=S.items.filter(i=>!billed(i)&&!isHiddenPaid(i)&&inCycle(i,start));
-  const later=S.items.filter(i=>repeats(i)&&i.once&&!i.bbDue&&exactDue(i)>=shiftCycle(start,1)).sort((a,b)=>exactDue(a)-exactDue(b));
+  const later=S.items.filter(i=>!i.planOnly&&repeats(i)&&i.once&&!i.bbDue&&exactDue(i)>=shiftCycle(start,1)).sort((a,b)=>exactDue(a)-exactDue(b));
   vis.push(...expectedBills(start));
   // To pay: unpaid bills, plus ones paid in the last 24 hours (ticked, can be undone); Paid: every bill paid this cycle
   const toPay=vis,paid=[...vis.filter(isPaid),...hidden],unpaidN=vis.filter(i=>!isPaid(i)).length,pv=billView==='paid';
@@ -794,6 +804,15 @@ function renderIncSum(){
   $('#incSum').innerHTML=`<div><span class="label">This cycle</span><span class="v">${peso(now)}</span></div><div><span class="label">Coming later</span><span class="v">${peso(later)}</span></div>`;
 }
 function renderIncome(){
+  if(viewNext){
+    const C=compute();
+    $('#incList').innerHTML=C.inc.map(({x,d})=>
+      `<button class="ghost bill-cycle-option" type="button" data-plan-income="${x.id}" aria-haspopup="dialog">
+        <span>${esc(x.label||'Other income')} · ${fmtD(d)}</span><span>${peso(num(x.amount))}</span>
+      </button>`).join('')||'<p class="empty">No income planned for this cycle.</p>';
+    renderIncSum();
+    return;
+  }
   S.income.sort((a,b)=>String(a.date||'9').localeCompare(String(b.date||'9')));
   // money from an earlier cycle doesn't count here, so it isn't listed (Go back still has it)
   const start=cycleStart(),shown=S.income.filter(x=>{const d=parseD(x.date);return !d||d>=start});
@@ -804,6 +823,21 @@ function renderIncome(){
     <button class="x" data-incdel="${x.id}" aria-label="Remove ${esc(x.label||'this money')}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     <span class="tag ${t.c}" id="tag${x.id}">${t.t}</span></div>`}).join('')||'<p class="empty">No other money yet. Add one below.</p>';
   renderIncSum();
+}
+function openPlannedIncome(item){
+  const start=preview.start,next=shiftCycle(start,1);
+  const end=new Date(next.getFullYear(),next.getMonth(),next.getDate()-1);
+  infoWin(item?'Edit planned income':'Add planned income',`<form id="plannedIncomeForm" data-id="${item?.id??''}" data-cycle="${iso(start)}">
+    <div class="field"><label for="plannedIncomeName">Name</label><input id="plannedIncomeName" name="label" value="${esc(item?.label||'')}" required></div>
+    <div class="field"><label for="plannedIncomeAmount">Amount</label><input id="plannedIncomeAmount" name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" value="${item?.amount??''}" required></div>
+    <div class="field"><label for="plannedIncomeDate">Date it arrives</label><input id="plannedIncomeDate" name="date" type="date" min="${iso(start)}" max="${iso(end)}" value="${esc(item?.date||iso(start))}" required></div>
+    <div class="dlg-acts">${item?`<button class="ghost t-bad" type="button" data-remove-planned-income="${item.id}">Remove income</button>`:'<span></span>'}<button class="btn" type="submit">Save income</button></div>
+  </form>`);
+}
+function refreshPlannedIncome(){
+  $('#infoDlg').close();
+  save(true);
+  showPlannedCycle(preview.start);
 }
 
 // ---------- borrowing ----------
@@ -1014,6 +1048,7 @@ $('#status').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.p
 document.addEventListener('click',e=>{const b=e.target.closest('[data-isched]');if(!b)return;const it=S.items.find(i=>i.id==b.dataset.isched);if(it)schedInfo(it)});
 
 function render(){
+  if(!viewNext&&expirePlannedBills())save();
   if(S.closed&&!viewNext&&!draft&&cloudReady&&closedHasUnpaid()){reopenClosed();return}   // reopenClosed redraws everything
   let C=compute();if(trackClose(C)){C=compute();syncInputs()}if(trackCarry(C))C=compute();paintCycleBar(C);renderStatus(C);renderPhoneCycle(C);if(recordHistory(C))save();runJobs(['cycle','inst','borrow','ahead','acct'],C)}
 function renderAll(){runJobs(['bills','money','src','ai']);render();renderManager()}
@@ -1023,6 +1058,15 @@ const commit=()=>{save();render()};
 
 // ---------- events ----------
 $('#salary').addEventListener('input',e=>{const k=keyOf(cycleStart()),v=e.target.value;
+  if(viewNext){
+    if(preview.start<=liveCycleStart()){closePreview();return}
+    if(e.target.validity.badInput||e.target.validity.rangeUnderflow)return;
+    for(const state of [preview.main,S]){
+      state.pay=state.pay||{};
+      if(v==='')delete state.pay[k];else state.pay[k]=num(v);
+    }
+    save(true);render();return;
+  }
   S.pay=S.pay||{};if(v==='')delete S.pay[k];else{S.pay[k]=num(v);if(num(v)>0)S.salary=num(v)}
   save();render()});
 ['payday','payday2','payweekday'].forEach(k=>{$('#'+k).addEventListener('input',e=>{S[k]=e.target.value===''?null:num(e.target.value);save();renderAll()})});
@@ -1211,9 +1255,32 @@ $('#infoBody').addEventListener('click',e=>{
     $('#infoDlg').close();
     save(true);showPlannedCycle(preview.start);
   }
+  const removeIncome=e.target.closest('[data-remove-planned-income]');
+  if(removeIncome&&viewNext){
+    preview.main.income=preview.main.income.filter(x=>x.id!=removeIncome.dataset.removePlannedIncome);
+    refreshPlannedIncome();
+  }
 });
 $('#infoBody').addEventListener('submit',e=>{
   const form=e.target;
+  if(form.id==='plannedIncomeForm'){
+    e.preventDefault();
+    const values=new FormData(form),label=String(values.get('label')).trim(),amount=Number(values.get('amount'));
+    const start=parseD(form.dataset.cycle),date=String(values.get('date')),due=parseD(date);
+    if(!label){
+      form.elements.label.setCustomValidity('Enter a name for this income.');
+      form.elements.label.reportValidity();
+      return;
+    }
+    if(!viewNext||+start!==+preview.start||start<=liveCycleStart()||!due||due<start||due>=shiftCycle(start,1)||!Number.isFinite(amount)||amount<=0)return;
+    const income=preview.main.income;
+    const item=form.dataset.id?income.find(x=>x.id==form.dataset.id):{id:uid++};
+    if(!item)return;
+    Object.assign(item,{label,amount,date});
+    if(!form.dataset.id)income.push(item);
+    refreshPlannedIncome();
+    return;
+  }
   if(form.id!=='plannedBillForm')return;
   e.preventDefault();
   const values=new FormData(form),name=String(values.get('name')).trim();
@@ -1230,12 +1297,12 @@ $('#infoBody').addEventListener('submit',e=>{
   const item=form.dataset.id?items.find(i=>i.id==form.dataset.id):{id:uid++};
   if(!item)return;
   Object.assign(item,{name,amount,kind:cat.kind,cat:cat.key,date,day:due.getDate(),once:true});
-  if(!form.dataset.id)items.push(item);
+  if(!form.dataset.id){item.planOnly=true;items.push(item)}
   $('#infoDlg').close();
   save(true);showPlannedCycle(start);
 });
 $('#infoBody').addEventListener('input',e=>{
-  if(e.target.id==='planName')e.target.setCustomValidity('');
+  if(['planName','plannedIncomeName'].includes(e.target.id))e.target.setCustomValidity('');
 });
 $('#catBtn').addEventListener('click',openCats);
 $('#catDlg').addEventListener('close',()=>{closeCatEdit()});
@@ -1278,7 +1345,15 @@ $('#incList').addEventListener('input',e=>{
   renderIncSum();commit();
 });
 $('#incList').addEventListener('click',e=>{const id=e.target.closest('button')?.dataset.incdel;if(!id)return;S.income=S.income.filter(o=>o.id!=id);save();renderIncome();render()});
-$('#incAdd').addEventListener('click',()=>{const x={id:uid++,label:'',amount:null,date:iso(new Date())};S.income.push(x);openSheet('inc',x,true,'#il'+x.id)});
+$('#incList').addEventListener('click',e=>{
+  const id=e.target.closest('[data-plan-income]')?.dataset.planIncome;
+  const item=viewNext&&S.income.find(x=>x.id==id);
+  if(item)openPlannedIncome(item);
+});
+$('#incAdd').addEventListener('click',()=>{
+  if(viewNext){openPlannedIncome();return}
+  const x={id:uid++,label:'',amount:null,date:iso(new Date())};S.income.push(x);openSheet('inc',x,true,'#il'+x.id);
+});
 
 function srcInput(e){
   const row=e.target.closest('.form');if(!row)return;const s=S.sources.find(x=>x.id==row.dataset.sid),k=e.target.dataset.k;if(!s||!k)return;
@@ -1396,6 +1471,7 @@ function trackClose(C){
   const left=cents(Math.max(0,C.surplus)),nk=keyOf(C.next);
   S.closed={key:k,start:iso(C.start),end:iso(C.end),at:Date.now(),left,prevCarry:S.carry&&S.carry.key===k?S.carry:null};
   S.done=k;S.carry={key:nk,amount:left};S.cycleLeft={key:nk,amount:0};delete S.reopened;
+  expirePlannedBills();
   save();return true;
 }
 function purgeClosed(){
@@ -1606,7 +1682,7 @@ function applyBB(bills,{reconcile=false}={}){
     const bank=squash(b.bank),due=parseD(b.due_date),amt=num(b.amount);
     if(!bank||!due||!Number.isFinite(amt)||amt<0)return;
     const kind=bbKind(b),l4=String(b.last4||'').replace(/\D/g,'').slice(-4),key=b.account_key||null;
-    const ofBank=i=>squash(i.name).includes(bank),free=i=>!billed(i)&&!i.bbInst&&!i.bbOld&&!claimed.has(i)&&(!i.bbKey||i.bbKey===key);
+    const ofBank=i=>squash(i.name).includes(bank),free=i=>!i.planOnly&&!billed(i)&&!i.bbInst&&!i.bbOld&&!claimed.has(i)&&(!i.bbKey||i.bbKey===key);
     // same account as last time, then same last 4 digits (same type first, then any), then same bank and type
     // (several loans at one bank: the one with this amount, then this due day)
     let it=(key&&byKey.has(key)&&!claimed.has(byKey.get(key))&&byKey.get(key))
@@ -1838,7 +1914,14 @@ $('#bbClear').addEventListener('click',()=>{
 });
 scheduleBBExpiry();
 setInterval(()=>{if(!document.hidden&&!bbBusy)syncBillBuddy()},3000);
-setInterval(()=>{if(document.hidden)return;const expired=pruneExpiredBB(),rolled=rollover();if(expired||rolled)save();if(editingId==null&&!document.activeElement?.closest?.('.form'))renderItems();render()},60000);
+setInterval(()=>{
+  if(document.hidden)return;
+  if(viewNext){refreshPlanningDate();return}
+  const expired=pruneExpiredBB(),rolled=rollover();
+  if(expired||rolled)save();
+  if(editingId==null&&!document.activeElement?.closest?.('.form'))renderItems();
+  render();
+},60000);
 
 // ---------- AI: should I take this loan? ----------
 // The planner does the arithmetic itself: it lays the new loan's payments over the coming pay cycles
@@ -1990,9 +2073,10 @@ function dueIn(start){
 function advancedCycleFacts(){
   return withLivePlanner(()=>{
     const current=cycleStart(),starts=new Map(futureBillCycles().map(d=>[iso(d),d]));
-    for(const item of S.items){
-      const due=exactDue(item);
-      if(!due||due<shiftCycle(current,1)||billed(item))continue;
+    const dated=[...S.items.filter(i=>!billed(i)).map(exactDue),...S.income.map(x=>parseD(x.date)),
+      ...Object.keys(S.pay||{}).map(key=>new Date(key.replace(/-/g,'/')))];
+    for(const due of dated){
+      if(!due||!(due>=shiftCycle(current,1)))continue;
       const start=prevPay(new Date(due.getFullYear(),due.getMonth(),due.getDate()+1));
       starts.set(iso(start),start);
     }
@@ -2001,10 +2085,13 @@ function advancedCycleFacts(){
       const rows=futureBillRows(start);
       const bills=rows.filter(({recurring})=>!recurring).map(({item,date})=>({
         name:item.name,type:item.kind,amount:item.amount==null?null:cents(item.amount),
-        due:iso(date)
+        due:iso(date),plan_only:item.planOnly||undefined
       }));
       const total=rows.reduce((sum,{item})=>sum+num(item.amount),0);
+      const income=S.income.filter(x=>{const date=parseD(x.date);return date&&date>=start&&date<end})
+        .map(x=>({name:x.label,amount:cents(x.amount),date:x.date}));
       return {start:iso(start),end:iso(new Date(end.getFullYear(),end.getMonth(),end.getDate()-1)),money_in_expected:cents(money),
+        salary_expected:cents(salaryOf(start,true)),other_income:income.length?income:undefined,
         bills_total:cents(total),left_before_carry:cents(money-total),dated_bills:bills};
     });
   });
@@ -2018,7 +2105,7 @@ function planningFacts(){
       advance_cycles:advancedCycleFacts()};
   }),selected_cycle_start:selected,selected_cycle_is_projection:viewNext};
 }
-const PLANNING_RULES='Use planning.current_cycle for the live cycle and planning.selected_cycle_start for the cycle the user is viewing. planning.advance_cycles covers all saved planning dates and future dated bills, even beyond the regular forecast. Each bills_total already includes projected recurring bills and all listed dated_bills. Treat projected income and recurring payments as estimates. A missing statement amount is unknown.';
+const PLANNING_RULES='Use planning.current_cycle for the live cycle and planning.selected_cycle_start for the cycle the user is viewing. planning.advance_cycles covers all saved planning dates and future dated bills, even beyond the regular forecast. Each bills_total already includes projected recurring bills and all listed dated_bills. A bill marked plan_only contributes to the advance forecast while that cycle is in the future and clears when it becomes current. Treat projected income and recurring payments as estimates. A missing statement amount is unknown.';
 function loanPlan(f){
   const r=f.rate/100;
   if(f.type==='once')return [{d:f.due,amt:f.amt*(1+r)}];
@@ -2771,6 +2858,7 @@ document.addEventListener('visibilitychange',async()=>{
   if(document.hidden)return;
   scheduleBBExpiry();
   checkUpdate();
+  if(viewNext&&refreshPlanningDate())return;
   if(cloudReady&&pruneExpiredBB()){save();renderAll()}
   syncBillBuddy();
   if(!cloudReady||cloudTimer||pushing||draft||viewNext)return;
@@ -2985,8 +3073,18 @@ function withLivePlanner(read){
   try{return read()}finally{S=projected;viewNext=true}
 }
 function liveCycleStart(){return withLivePlanner(cycleStart)}
+function refreshPlanningDate(){
+  const live=liveCycleStart();
+  if(+live===+preview.baseStart)return false;
+  if(preview.start<=live){closePreview();return true}
+  if(withLivePlanner(expirePlannedBills))save(true);
+  closeDialogs();
+  showPlannedCycle(preview.start);
+  return false;
+}
 function showPlannedCycle(start){
-  if(!start||start<=liveCycleStart())return;
+  const baseStart=liveCycleStart();
+  if(!start||start<=baseStart)return;
   const main=preview?.main||S;
   const projected=withLivePlanner(()=>{
     const current=cycleStart(),state=clone(S);
@@ -3010,7 +3108,7 @@ function showPlannedCycle(start){
     state.carry={key:keyOf(start),amount:cents(carry)};
     return {state,rows};
   });
-  preview={main,start,rows:projected.rows};
+  preview={main,start,baseStart,rows:projected.rows};
   S=projected.state;
   viewNext=true;
   plannedCycle=iso(start);
@@ -3030,6 +3128,7 @@ function closePreview(){
   if(!viewNext)return;
   closeDialogs();
   clearPreview();
+  if(expirePlannedBills())save();
   refreshCycleView();
 }
 function refreshCycleView(){

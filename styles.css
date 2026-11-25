@@ -796,9 +796,9 @@ header .acctbar{flex-wrap:wrap}
   background:var(--accent-soft);color:var(--ink);font-size:.88rem}
 .previewbar b{font-weight:650}
 /* nothing can be changed: inputs, add/edit/paid/remove buttons and edit links are hidden or inert */
-body.previewing .hero input,body.previewing .hero select{pointer-events:none;border-color:transparent;background:transparent}
-body.previewing .main :is(input,select,textarea):not(#aiForm *){pointer-events:none}
-body.previewing .main :is(.bt,.acts,.add,#catBtn,#resetBtn,#resetConfirm,.ask4,.inc .x,details.sec:has(#srcList)):not(#aiForm *){display:none!important}
+body.previewing .hero input:not(#salary),body.previewing .hero select{pointer-events:none;border-color:transparent;background:transparent}
+body.previewing .main :is(input,select,textarea):not(#aiForm *,#salary){pointer-events:none}
+body.previewing .main :is(.bt,.acts,.add,#catBtn,#resetBtn,#resetConfirm,.ask4,.inc .x,details.sec:has(#srcList)):not(#aiForm *,#incAdd){display:none!important}
 body.previewing .main [data-edit]{pointer-events:none;text-decoration:none}
 body.previewing #tab-bbsync,body.previewing [data-moretab="bbsync"]{display:none}
 body.previewing #advice .btn,body.previewing #advice .ghost{display:none}
@@ -1318,4 +1318,4 @@ header .acctbar .ghost.sm:active{transform:none;opacity:.5}
 #itemList .planned-bill{grid-template-columns:minmax(0,1fr) auto}
 .planned-progress{display:grid;gap:4px;margin-top:6px;font-size:.8125rem;color:var(--muted)}
 .planned-progress .bar{margin:0}
-#plannedBillForm{display:grid;gap:12px}
+#plannedBillForm,#plannedIncomeForm{display:grid;gap:12px}

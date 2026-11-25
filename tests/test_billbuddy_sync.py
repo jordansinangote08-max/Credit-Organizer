@@ -51,6 +51,60 @@ class SyncTest(unittest.TestCase):
         self.context.close()
         self.assertEqual(self.errors, [])
 
+    def test_future_planning_keeps_income_and_salary_but_expires_temporary_bills(self):
+        p = self.page
+        p.set_viewport_size({'width': 390, 'height': 844})
+        planned_start = p.evaluate("""() => {
+          save=()=>{};cloudReady=true;cloudUser={id:'fixture'};authKnown=true;
+          S.payday=24;S.salary=30000;S.pay={[cycleKey()]:30000};
+          const next=shiftCycle(cycleStart(),1);
+          S.items=[{id:uid++,name:'Recurring rent',kind:'essential',amount:5000,day:26},
+            {id:uid++,name:'Ordinary one-time bill',kind:'bill',amount:50,once:true,date:iso(dueDate(26,next))}];
+          ensureCats();selectTab('bills');renderAll();renderAuth();
+          return iso(next);
+        }""")
+        p.locator('#billCycleBtn').click()
+        p.locator('[data-bill-cycle]').nth(1).click()
+        p.get_by_role('button', name='Plan a bill').click()
+        p.locator('#planName').fill('Temporary bill')
+        p.locator('#planAmount').fill('1200')
+        p.get_by_role('button', name='Save bill').click()
+        self.assertIn('Plan only', p.locator('#itemList').inner_text())
+        p.locator('#tab-cycle').click()
+        p.locator('#salary').click()
+        p.locator('#salary').fill('38000')
+        p.locator('#tab-more').click()
+        p.locator('[data-moretab=money]').click()
+        p.locator('#incAdd').click()
+        p.locator('#plannedIncomeName').fill('Bonus')
+        p.locator('#plannedIncomeAmount').fill('3000')
+        p.get_by_role('button', name='Save income').click()
+        p.get_by_role('button', name='Bonus', exact=False).click()
+        p.locator('#plannedIncomeAmount').fill('3500')
+        p.get_by_role('button', name='Save income').click()
+        self.assertEqual(p.evaluate('compute().salary'), 38000)
+        self.assertEqual(p.evaluate('compute().other'), 3500)
+        self.assertEqual(p.evaluate('compute().total'), 6250)
+        self.assertTrue(p.evaluate("""() => {
+          const f=blueFacts().planning.advance_cycles.find(c=>c.start===iso(preview.start));
+          return f.salary_expected===38000&&f.other_income.some(x=>x.name==='Bonus'&&x.amount===3500)&&
+            f.dated_bills.some(x=>x.name==='Temporary bill'&&x.plan_only);
+        }"""))
+        p.locator('#previewBack').click()
+        self.assertEqual(p.evaluate('compute().salary'), 30000)
+        self.assertFalse(p.evaluate("compute().lines.some(x=>x.i.name==='Temporary bill')"))
+        p.evaluate("d=>{window.savedPlanning=JSON.parse(snapshot());showPlannedCycle(parseD(d))}", planned_start)
+        p.clock.set_system_time(datetime.fromisoformat(planned_start+'T17:00:00+00:00'))
+        p.evaluate("refreshPlanningDate()")
+        for reload in (False, True):
+            if reload:
+                p.evaluate('adopt(savedPlanning)')
+            self.assertFalse(p.evaluate('viewNext||S.items.some(i=>i.planOnly)'))
+            self.assertEqual(p.evaluate('compute().salary'), 38000)
+            self.assertEqual(p.evaluate('compute().other'), 3500)
+            self.assertEqual(p.evaluate('compute().lines.map(l=>l.i.name).sort()'),
+                             ['Ordinary one-time bill', 'Recurring rent'])
+
     def test_statement_expiry_keeps_accounts_manual_bills_and_future_plans(self):
         self.page.evaluate('''() => {
           S.items.push({id:uid++,name:'Rent',kind:'bill',amount:50,day:14});
