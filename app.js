@@ -493,9 +493,85 @@ function expectedRow(i){
     <div class="rt"><span class="amt">${peso(num(i.amount))}</span></div></div>`;
 }
 let billView='pay';   // the Bills tab's To pay / Paid switch
+let plannedCycle=null;
+function futureBillCycles(start=cycleStart()){
+  const next=shiftCycle(start,1);
+  const saved=(S.billPlanCycles||[]).map(parseD)
+    .filter(d=>d&&d>next&&+prevPay(new Date(d.getFullYear(),d.getMonth(),d.getDate()+1))===+d);
+  return [next,...saved.sort((a,b)=>a-b)];
+}
+function billCycleLabel(start){
+  const end=new Date(shiftCycle(start,1));
+  end.setDate(end.getDate()-1);
+  return fmtD(start)+' – '+fmtD(end)+', '+end.getFullYear();
+}
+function openBillCycles(){
+  const cycles=futureBillCycles();
+  const options=[['','This cycle'],...cycles.map((date,index)=>[iso(date),index===0?'Next cycle · '+billCycleLabel(date):billCycleLabel(date)])];
+  infoWin('Choose a bill cycle',`<div class="glist">${options.map(([value,label])=>
+    `<button class="ghost bill-cycle-option" type="button" data-bill-cycle="${value}" aria-current="${value===(plannedCycle||'')}">${label}</button>`).join('')}</div>
+    <button class="ghost" type="button" data-more-bill-cycles>+ Add another cycle</button>`);
+}
+function futureBillRows(start){
+  const end=shiftCycle(start,1),inside=date=>date>=start&&date<end;
+  const rows=[],loanGroups=new Map();
+  for(const item of S.items){
+    if(item.inCard)continue;
+    const date=exactDue(item);
+    if(date&&inside(date)&&!billed(item)){
+      rows.push({item,date,editable:item.once&&!item.bbDue&&repeats(item)});
+    }else if(!date&&repeats(item)&&!billed(item)&&inCycle(item,start)){
+      rows.push({item,date:dueOf(item,start),recurring:true});
+    }else if(item.kind==='loan'&&!hasParts(item)){
+      const due=loanDates(item).find(d=>inside(d)&&(!item.bbStatementDue||iso(d)>item.bbStatementDue));
+      if(!due)continue;
+      if(!item.inBill){rows.push({item,date:due,recurring:true});continue}
+      const parent=partOf(item);
+      if(parent&&inside(exactDue(parent)))continue;
+      const key=item.inBill+'|'+iso(due);
+      if(!loanGroups.has(key))loanGroups.set(key,{item:{name:lenderName(item),kind:'loan',cat:parent?.cat||item.cat,amount:0},date:due,recurring:true});
+      loanGroups.get(key).item.amount+=num(item.amount);
+    }
+  }
+  return [...rows,...loanGroups.values()].sort((a,b)=>a.date-b.date);
+}
+function renderPlannedBills(start){
+  const rows=futureBillRows(start);
+  $('#itemList').innerHTML=S.cats.map(cat=>{
+    const bills=rows.filter(({item})=>catOf(item)?.key===cat.key);
+    if(!bills.length)return '';
+    const total=bills.reduce((sum,{item})=>sum+num(item.amount),0);
+    return `<section class="gsec" data-c="${esc(cat.color)}"><h3 class="ghdr">${esc(cat.name)} · ${peso(total)}</h3><div class="glist">${bills.map(({item,date,editable,recurring})=>
+      `<div class="bill planned-bill"><div class="bmain">${editable?`<button class="nm openw" data-plan-edit="${item.id}" aria-haspopup="dialog">${esc(item.name||'Untitled bill')}</button>`:`<span class="nm">${esc(item.name||'Untitled bill')}</span>`}
+      <div class="mt"><span>Due ${fmtD(date)}</span><span>${editable?'One-time':recurring?'Recurring':'Statement'}</span></div></div>
+      <div class="rt"><span class="amt">${num(item.amount)>0?peso(num(item.amount)):'Amount pending'}</span></div></div>`).join('')}</div></section>`;
+  }).join('')||'<div class="glist"><p class="gempty">No bills planned for this cycle.</p></div>';
+}
+function openPlannedBill(item){
+  const start=parseD(plannedCycle),end=new Date(shiftCycle(start,1));
+  end.setDate(end.getDate()-1);
+  const categories=S.cats.filter(repeats);
+  infoWin(item?'Edit planned bill':'Plan a bill',`<form id="plannedBillForm" data-id="${item?.id??''}" data-cycle="${iso(start)}">
+    <div class="field"><label for="planName">Name</label><input id="planName" name="name" value="${esc(item?.name||'')}" required></div>
+    <div class="field"><label for="planCategory">Category</label><select id="planCategory" name="category" required>${categories.map(cat=>
+      `<option value="${esc(cat.key)}" ${cat.key===(item?.cat||categories.find(c=>c.kind==='bill')?.key)?'selected':''}>${esc(cat.name)}</option>`).join('')}</select></div>
+    <div class="field"><label for="planAmount">Amount</label><input id="planAmount" name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" value="${item?.amount??''}" required></div>
+    <div class="field"><label for="planDue">Due date</label><input id="planDue" name="date" type="date" min="${iso(start)}" max="${iso(end)}" value="${item?.date||iso(start)}" required></div>
+    <div class="dlg-acts">${item?`<button class="ghost t-bad" type="button" data-plan-remove="${item.id}">Delete bill</button>`:'<span></span>'}<button class="btn" type="submit">Save bill</button></div>
+  </form>`);
+}
 function renderItems(){
   ensureCats();
   const start=cycleStart();
+  if(viewNext||!futureBillCycles(start).some(d=>iso(d)===plannedCycle))plannedCycle=null;
+  const future=parseD(plannedCycle);
+  $('#billCycleBtn').hidden=viewNext;
+  $('#billCycleBtn span').textContent=future?billCycleLabel(future):'This cycle';
+  $('#catBtn').hidden=!!future;
+  $('#billResetRow').hidden=!!future;
+  $('#addBtn').setAttribute('aria-label',future?'Plan a bill':'Add bill');
+  $('#addBtn').title=future?'Plan a bill':'Add bill';
+  if(future){renderPlannedBills(future);return}
   // installments billed with a card are part of its statement, so the Bills tab doesn't list them twice
   // a BillBuddy statement's paid mark belongs to the statement, so it is listed only in its own cycle
   const hidden=S.items.filter(i=>!billed(i)&&isHiddenPaid(i)&&(!i.bbDue||inCycle(i,start))),vis=S.items.filter(i=>!billed(i)&&!isHiddenPaid(i)&&inCycle(i,start));
@@ -510,8 +586,6 @@ function renderItems(){
     const sum=(pv?its:its.filter(i=>!isPaid(i))).reduce((s,i)=>s+num(i.amount),0);
     return `<section class="gsec" data-c="${esc(c.color)}"><h3 class="ghdr">${esc(c.name)} · ${peso(sum)}</h3><div class="glist">${its.map(i=>i.expected?expectedRow(i):itemRow(i,start)).join('')}</div></section>`;
   }).join('');
-  const left=vis.filter(i=>!isPaid(i)).reduce((s,i)=>s+num(i.amount),0);
-  const bl=$('#billsLeft');if(bl)bl.innerHTML=left>0.004?`${peso(left)} left to pay this cycle`:'All paid this cycle';
   const seg=`<div class="seg2" role="group" aria-label="Show"><button data-bview="pay" aria-pressed="${!pv}">To pay · ${unpaidN}</button><button data-bview="paid" aria-pressed="${pv}">Paid · ${paid.length}</button></div>`;
   $('#itemList').innerHTML=seg+(html||`<div class="glist"><p class="gempty">${pv?'Nothing paid yet this cycle.':'Nothing left to pay this cycle.'}</p></div>`)+
     (!pv&&later.length?`<details class="paidlist"><summary>Coming in a later cycle (${later.length})</summary><div class="later">${later.map(i=>
@@ -1005,6 +1079,11 @@ function setKind(it,kind){
 }
 $('#itemList').addEventListener('click',e=>{
   const t=e.target.closest('button');if(!t)return;
+  if(t.dataset.planEdit){
+    const item=S.items.find(i=>i.id==t.dataset.planEdit);
+    if(item)openPlannedBill(item);
+    return;
+  }
   if(t.dataset.bview){billView=t.dataset.bview;renderItems();return}
   if(t.dataset.edit){openBill(+t.dataset.edit);return}
   const id=t.dataset.paid||t.dataset.unpaid;if(!id)return;const it=S.items.find(i=>i.id==id);if(!it)return;
@@ -1051,7 +1130,56 @@ function newBill(kind){
   if(c.kind==='loan')Object.assign(it,{left:null,total:null,rate:null});
   S.items.push(it);ensureLinks();openBill(it.id,true);
 }
-$('#addBtn').addEventListener('click',()=>newBill('bill'));
+$('#addBtn').addEventListener('click',()=>plannedCycle?openPlannedBill():newBill('bill'));
+$('#billCycleBtn').addEventListener('click',openBillCycles);
+$('#infoBody').addEventListener('click',e=>{
+  const option=e.target.closest('[data-bill-cycle]');
+  if(option){
+    plannedCycle=option.dataset.billCycle||null;
+    $('#infoDlg').close();
+    renderItems();
+    return;
+  }
+  if(e.target.closest('[data-more-bill-cycles]')){
+    const cycles=futureBillCycles();
+    const added=iso(nextPay(cycles[cycles.length-1]));
+    S.billPlanCycles=[...cycles.slice(1).map(iso),added];
+    save();
+    openBillCycles();
+    $('#infoBody [data-bill-cycle="'+added+'"]').focus();
+    return;
+  }
+  const remove=e.target.closest('[data-plan-remove]');
+  if(remove){
+    S.items=S.items.filter(i=>i.id!=remove.dataset.planRemove);
+    $('#infoDlg').close();
+    save();renderAll();
+  }
+});
+$('#infoBody').addEventListener('submit',e=>{
+  const form=e.target;
+  if(form.id!=='plannedBillForm')return;
+  e.preventDefault();
+  const values=new FormData(form),name=String(values.get('name')).trim();
+  const cat=S.cats.find(c=>c.key===values.get('category')&&repeats(c));
+  const date=String(values.get('date')),due=parseD(date),start=parseD(form.dataset.cycle);
+  const amount=Number(values.get('amount'));
+  if(!name){
+    form.elements.name.setCustomValidity('Enter a bill name.');
+    form.elements.name.reportValidity();
+    return;
+  }
+  if(!cat||!due||start<=cycleStart()||due<start||due>=shiftCycle(start,1)||!Number.isFinite(amount)||amount<=0)return;
+  const item=form.dataset.id?S.items.find(i=>i.id==form.dataset.id):{id:uid++};
+  if(!item)return;
+  Object.assign(item,{name,amount,kind:cat.kind,cat:cat.key,date,day:due.getDate(),once:true});
+  if(!form.dataset.id)S.items.push(item);
+  $('#infoDlg').close();
+  save();renderAll();
+});
+$('#infoBody').addEventListener('input',e=>{
+  if(e.target.id==='planName')e.target.setCustomValidity('');
+});
 $('#catBtn').addEventListener('click',openCats);
 $('#catDlg').addEventListener('close',()=>{closeCatEdit()});
 $('#catDlg').addEventListener('click',e=>{

@@ -759,8 +759,6 @@ header .acctbar{flex-wrap:wrap}
 
 /* Bills header: "Still to pay" beside the heading */
 .bills-h{display:flex;align-items:baseline;gap:4px 10px;flex-wrap:wrap;min-width:0}
-.bills-left{font-size:.88rem;color:var(--muted);font-variant-numeric:tabular-nums}
-.bills-left b{color:var(--ink);font-weight:600}
 
 /* ---------- financial manager: minimal ----------
    The advice is the page; asking a question is one quiet line that opens a small box. */
@@ -1130,7 +1128,6 @@ body::before{display:none}
   #tab-money,#tab-borrow,#tab-ahead,#tab-ai,#tab-bbsync{display:none}
   .more-tab{display:flex}
   .bills-h h2{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}   /* the large title already says Bills */
-  .bills-h .bills-left{font-size:.9375rem}
   body[data-tab="money"] .more-tab,body[data-tab="borrow"] .more-tab,body[data-tab="ahead"] .more-tab,body[data-tab="ai"] .more-tab,body[data-tab="bbsync"] .more-tab{color:var(--accent)}
   .main{padding-bottom:calc(64px + var(--safe-b))}
   .blue-fab{bottom:calc(78px + var(--safe-b))}
@@ -1192,7 +1189,6 @@ body::before{display:none}
 #itemList .glist .bill .mt{font-size:.8125rem}
 #panel-bills>.sec{background:transparent;padding:0;gap:14px}
 #panel-bills>.sec>.sec-h{padding:0 4px}
-.bills-left{font-size:.9375rem;color:var(--muted)}
 /* Installments and Credit cards */
 #panel-inst>.sec,#panel-acct>.sec{background:transparent;padding:0;gap:20px}
 .hsum{background:var(--surface);border-radius:16px;padding:18px 20px;display:grid;gap:12px}
@@ -1310,3 +1306,11 @@ header .acctbar .ghost.sm:active{transform:none;opacity:.5}
 .cchip.haslogo{width:44px;height:44px;border-radius:11px;padding:0;overflow:hidden;background:#fff;place-items:center;box-shadow:0 0 0 .5px rgba(60,60,67,.29)}
 .cchip.haslogo img{width:100%;height:100%;object-fit:contain;display:block}
 .cchip.big.haslogo{width:60px;height:60px;border-radius:14px}
+
+/* Bills cycle picker */
+#billCycleBtn{display:inline-flex;align-items:center;gap:10px;text-align:left}
+#billCycleBtn .chev{width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg) translateY(-2px)}
+.bill-cycle-option{width:100%;min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left}
+.bill-cycle-option[aria-current="true"]{font-weight:700;color:var(--accent)}
+#itemList .planned-bill{grid-template-columns:minmax(0,1fr) auto}
+#plannedBillForm{display:grid;gap:12px}
